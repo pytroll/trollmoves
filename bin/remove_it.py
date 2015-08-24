@@ -128,7 +128,7 @@ if __name__ == '__main__':
 
     if args.config_item is None:
         config_items = conf.sections()
-    elif args.config_item not in conf.sections:
+    elif args.config_item not in conf.sections():
         logger.error("No section named %s in %s", args.config_item, args.configuration_file)
     else:
         config_items = [args.config_item]
