@@ -118,7 +118,7 @@ if __name__ == '__main__':
     else:
         handler = logging.StreamHandler()
     handler.setLevel(logging.DEBUG)
-    handler.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
+    handler.setFormatter(logging.Formatter('[%(asctime)-15s %(levelname)-8s] %(message)s'))
 
     logger.addHandler(handler)
 
