@@ -149,7 +149,7 @@ if __name__ == '__main__':
             logger.info("Cleaning in %s", base_dir)
             templates = (item.strip() for item in info["templates"].split(","))
             kws = {}
-            for key in ["years", "months", "days", "hours", "minutes", "seconds"]:
+            for key in ["days", "hours", "minutes", "seconds"]:
                 try:
                     kws[key] = int(info[key])
                 except KeyError:
