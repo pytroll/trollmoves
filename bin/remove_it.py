@@ -92,7 +92,9 @@ if __name__ == '__main__':
                         help="do not actually run, just fake it",
                         action="store_true")
     parser.add_argument("-c", "--config-item",
-                        help="just run this config_item")
+                        help="just run this config_item, can be provided several times",
+                        default=[],
+                        action="append")
     parser.add_argument("-l", "--logfile",
                         help="file to log to (stdout by default)")
     parser.add_argument("-v", "--verbose",
@@ -126,12 +128,14 @@ if __name__ == '__main__':
 
     config_items = []
 
-    if args.config_item is None:
-        config_items = conf.sections()
-    elif args.config_item not in conf.sections():
-        logger.error("No section named %s in %s", args.config_item, args.configuration_file)
+    if args.config_item:
+        for config_item in args.config_item:
+            if config_item not in conf.sections():
+                logger.error("No section named %s in %s", config_item, args.configuration_file)
+            else:
+                config_items.append(config_item)
     else:
-        config_items = [args.config_item]
+        config_items = conf.sections()
 
     logger.debug("Setting up posttroll connexion...")
     with Publish("remover") as pub:
@@ -163,11 +167,12 @@ if __name__ == '__main__':
                     if datetime.fromtimestamp(stat.st_ctime) < ref_time:
                         if not args.dry_run:
                             try:
-                                os.remove(filename)
-                                pub.send(
-                                    str(Message("deletion",
-                                                "del", {"uri": filename})))
-                                logger.debug("Removed %s", filename)
+                                if os.path.isdir(filename):
+                                    os.rmdir(filename)
+                                else:
+                                    os.remove(filename)
+                                    pub.send(str(Message("deletion", "del", {"uri": filename})))
+                                logger.debug("    Removed %s", filename)
                             except (IOError, OSError) as err:
                                 logger.warning("Can't remove " + filename +
                                                ": " + str(err))
