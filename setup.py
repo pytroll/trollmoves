@@ -25,7 +25,7 @@
 from setuptools import setup
 
 setup(name="pytroll-file-utils",
-      version=0.1.0,
+      version="0.1.0",
       description='Pytroll file utilities',
       author='Martin Raspaud',
       author_email='martin.raspaud@smhi.se',
