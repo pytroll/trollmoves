@@ -22,7 +22,12 @@
 
 """Remove files, and send messages about it.
 
-Example configuration items:
+Example configuration:
+
+[DEFAULT]
+mailhost=localhost
+to=me@me.org,you@you.com
+subject=Cleanup Error on {hostname}
 
 [msg_local_12h]
 base_dir=/san2
@@ -32,7 +37,7 @@ hours=12
 [msg_local_24h]
 base_dir=/san1
 templates=/globalpps/import/NWP_data/global_out/*
-hours=24
+days=1
 
 [msg_serverfiles_3h]
 base_dir=/data/prodtest/saf
@@ -42,7 +47,7 @@ hours=3
 [msg_serverfiles_48h]
 base_dir=/data/prodtest/saf
 templates=geo_out/iodc/*,geo_out/world/*
-hours=3
+days=2
 
 [azur_local_12h]
 base_dir=/san1
@@ -51,7 +56,7 @@ hours=12
 
 """
 
-from ConfigParser import ConfigParser
+from ConfigParser import ConfigParser, NoOptionError
 from datetime import datetime, timedelta
 from glob import glob
 import os
@@ -59,6 +64,10 @@ import time
 import argparse
 import logging
 import logging.handlers
+import getpass
+import socket
+
+logger = logging.getLogger("remove_it")
 
 try:
 
@@ -82,7 +91,39 @@ except ImportError:
         del args, kwargs
 
 
-if __name__ == '__main__':
+class BufferingSMTPHandler(logging.handlers.BufferingHandler):
+
+    def __init__(self, mailhost, fromaddr, toaddrs, subject, capacity):
+        logging.handlers.BufferingHandler.__init__(self, capacity)
+        self.mailhost = mailhost
+        self.mailport = None
+        self.fromaddr = fromaddr
+        self.toaddrs = toaddrs
+        self.subject = subject
+        self.setFormatter(
+            logging.Formatter("[%(asctime)s %(levelname)-5s] %(message)s"))
+
+    def flush(self):
+        if len(self.buffer) > 0:
+            try:
+                import smtplib
+                port = self.mailport
+                if not port:
+                    port = smtplib.SMTP_PORT
+                smtp = smtplib.SMTP(self.mailhost, port)
+                msg = "From: %s\r\nTo: %s\r\nSubject: %s\r\n\r\n" % (
+                    self.fromaddr, ",".join(self.toaddrs), self.subject)
+                for record in self.buffer:
+                    s = self.format(record)
+                    msg = msg + s + "\r\n"
+                smtp.sendmail(self.fromaddr, self.toaddrs, msg)
+                smtp.quit()
+            except:
+                self.handleError(None)  # no particular record
+            self.buffer = []
+
+
+def main():
     conf = ConfigParser()
 
     parser = argparse.ArgumentParser()
@@ -102,6 +143,9 @@ if __name__ == '__main__':
                         action="store_true")
     parser.add_argument("-q", "--quiet",
                         help="decrease the verbosity of the script",
+                        action="store_true")
+    parser.add_argument("-m", "--mail",
+                        help="send errors and warning via mail",
                         action="store_true")
 
     args = parser.parse_args()
@@ -126,6 +170,24 @@ if __name__ == '__main__':
 
     conf.read(args.configuration_file)
 
+    info = {"hostname": socket.gethostname(),
+            "user": getpass.getuser()}
+
+    if args.mail:
+        try:
+            mailhandler = BufferingSMTPHandler(conf.get("DEFAULT", "mailhost"),
+                                               "{user}@{hostname}".format(**info),
+                                               conf.get("DEFAULT", "to").split(","),
+                                               conf.get("DEFAULT", "subject").format(**info),
+                                               500)
+        except NoOptionError:
+            logger.info("Mail information missing, won't send emails")
+        else:
+            mailhandler.setLevel(logging.WARNING)
+            logger.addHandler(mailhandler)
+
+    logger.info("Starting cleanup as {user} on {hostname}".format(**info))
+
     config_items = []
 
     if args.config_item:
@@ -146,6 +208,9 @@ if __name__ == '__main__':
         for section in config_items:
             info = dict(conf.items(section))
             base_dir = info.get("base_dir", "")
+            if not os.path.exists(base_dir):
+                logger.warning("Path %s missing, skipping section %s", base_dir, section)
+                continue
             logger.info("Cleaning in %s", base_dir)
             templates = (item.strip() for item in info["templates"].split(","))
             kws = {}
@@ -187,3 +252,10 @@ if __name__ == '__main__':
             tot_size += section_size
             tot_files += section_files
     logger.info("Thanks for using pytroll/remove_it. See you soon on pytroll.org!")
+
+if __name__ == '__main__':
+    try:
+        main()
+    except:
+        logger.exception("Something bad happened")
+        raise
