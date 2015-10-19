@@ -43,5 +43,5 @@ setup(name="pytroll-file-utils",
       data_files=[],
       zip_safe=False,
       install_requires=['pyinotify', 'posttroll',
-                        'trollsift'],
+                        'trollsift', 'netifaces'],
       )
