@@ -233,7 +233,10 @@ def main():
                         if not args.dry_run:
                             try:
                                 if os.path.isdir(filename):
-                                    os.rmdir(filename)
+                                    if not os.listdir(filename):
+                                        os.rmdir(filename)
+                                    else:
+                                        logger.info("%s not empty.", filename)
                                 else:
                                     os.remove(filename)
                                     pub.send(str(Message("deletion", "del", {"uri": filename})))
