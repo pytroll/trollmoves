@@ -229,7 +229,7 @@ def main():
                 flist = glob(pathname)
                 for filename in flist:
                     stat = os.lstat(filename)
-                    if datetime.fromtimestamp(stat.st_ctime) < ref_time:
+                    if datetime.fromtimestamp(stat.st_mtime) < ref_time:
                         if not args.dry_run:
                             try:
                                 if os.path.isdir(filename):
