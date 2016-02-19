@@ -102,8 +102,8 @@ from collections import deque
 import netifaces
 
 
-NP = NoisyPublisher("move_it_client")
-PUB = NP.start()
+NP = None
+PUB = None
 
 queue = Queue()
 
@@ -157,15 +157,13 @@ def read_config(filename):
         else:
             res[section]["providers"] = ["tcp://" + item for item in res[section]["providers"].split()]
 
-        if "destinations" not in res[section]:
+        if "destination" not in res[section]:
             LOGGER.warning("Incomplete section " + section
-                           + ": add an 'destinations' item.")
+                           + ": add an 'destination' item.")
             LOGGER.info("Ignoring section " + section
                         + ": incomplete.")
             del res[section]
             continue
-        else:
-            res[section]["destinations"] = res[section]["destinations"].split()
 
         if "topic" in res[section]:
             try:
@@ -217,8 +215,8 @@ def reload_config(filename):
         try:
             for provider in chains[key]["providers"]:
                 chains[key]["listeners"][provider] = Listener(provider, val["topic"], request_push,
-                                                              chains[key]["destinations"],
-                                                              chains[key]["login"])
+                                                              chains[key]["destination"],
+                                                              chains[key].get("login"))
                 chains[key]["listeners"][provider].start()
         except Exception as err:
             LOGGER.exception(str(err))
@@ -304,36 +302,57 @@ class Listener(Thread):
             self.subscriber = None
 
 
-def request_push(msg, destinations, login):
-    # TODO make this a bit more elaborate (like create a new message)
-    #hostname = "localhost"
+def request_push(msg, destination, login):
     with cache_lock:
+        # fixme: remove this
         if msg.data["uid"] in file_cache:
             urlobj = urlparse(msg.data['uri'])
             if socket.gethostbyname(urlobj.netloc) in get_local_ips():
-                PUB.send(msg)
+                LOGGER.debug('Sending: %s', str(msg))
+                PUB.send(str(msg))
+            # fixme this should be one step up
             return
-        file_cache.append(msg.data["uid"])
 
-    hostname, port = msg.data["request_address"].split(":")
-    requester = PushRequester(hostname, int(port))
-    req = Message(msg.subject, "push", data=msg.data.copy())
+        hostname, port = msg.data["request_address"].split(":")
+        requester = PushRequester(hostname, int(port))
+        req = Message(msg.subject, "push", data=msg.data.copy())
 
-    duris = []
-    for destination in destinations:
-        duris.append(urlunparse(("ftp",
-                                 login + "@" + socket.gethostname(),
-                                 destination,
-                                 "", "", "")))
+        duri = urlparse(destination)
+        scheme = duri.scheme or 'file'
+        dest_hostname = socket.gethostname()
 
-    req.data["destinations"] = duris
+        # A request without credentials is build first to be printed in the logs
+        req.data["destination"] = urlunparse((scheme,
+                                              dest_hostname,
+                                              os.path.join(destination,
+                                                           msg.data['uid']),
+                                              "", "", ""))
+        LOGGER.info("Requesting: " + str(req))
+        if login:
+            # if necessary add the credentials for the real request
+            req.data["destination"] = urlunparse((scheme,
+                                                  login + "@" + dest_hostname,
+                                                  os.path.join(destination,
+                                                               msg.data['uid']),
+                                                  "", "", ""))
 
-    LOGGER.info("Requesting: " + str(req))
-    response = requester.send_and_recv(req)
-    if response.type == "ack":
-        LOGGER.debug("Server ack")
-    else:
-        LOGGER.error("Received an erraneous response from server %s", str(response))
+        response = requester.send_and_recv(req, 60 * 1000) # fixme timeout should be in us for zmq2 ?
+        if response and response.type == "ack":
+            LOGGER.debug("Server done sending file")
+            file_cache.append(msg.data["uid"])
+            local_msg = Message(msg.subject, "push", data=msg.data.copy())
+            local_uri = urlunparse(('file',
+                                    '',
+                                    os.path.join(destination,
+                                                 msg.data['uid']),
+                                    "", "", ""))
+            local_msg.data['uri'] = local_uri
+            local_msg.data['origin'] = local_msg.data['request_address']
+            local_msg.data.pop('request_address')
+            LOGGER.debug("publishing %s", str(local_msg))
+            PUB.send(str(local_msg))
+        else:
+            LOGGER.error("Failed to get file from server %s: %s", str(dest_hostname), str(response))
 
 
 class PushRequester(object):
@@ -497,6 +516,9 @@ if __name__ == '__main__':
     pyinotify.log.handlers = [fh]
 
     LOGGER.info("Starting up.")
+
+    NP = NoisyPublisher("move_it_client")
+    PUB = NP.start()
 
     mask = (pyinotify.IN_CLOSE_WRITE |
             pyinotify.IN_MOVED_TO |

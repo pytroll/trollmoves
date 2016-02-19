@@ -111,6 +111,7 @@ import subprocess
 import time
 import glob
 import sys
+import traceback
 
 from posttroll.publisher import Publisher, get_own_ip
 from posttroll.message import Message
@@ -126,8 +127,8 @@ chains = {}
 
 # Config management
 
-PUB = Publisher("tcp://*:9090", "move_it_server")
-
+#PUB = Publisher("tcp://*:9090", "move_it_server")
+PUB = None
 class RequestManager(Thread):
 
     """Manage requests.
@@ -162,7 +163,11 @@ class RequestManager(Thread):
     def push(self, message):
         """Reply to scanline request
         """
-        Thread(target=move_it, args=[message, self._attrs]).start()
+        #Thread(target=move_it, args=[message, self._attrs]).start()
+        try:
+            move_it(message, self._attrs)
+        except Exception as err:
+            return Message(message.subject, "err", data=str(err))
         return Message(message.subject, "ack", data=message.data.copy())
 
 
@@ -183,7 +188,13 @@ class RequestManager(Thread):
                 LOGGER.debug("Received a request, waiting for the lock")
                 with self._lock:
                     message = Message(rawstr=self._socket.recv(NOBLOCK))
-                    LOGGER.debug("processing request: " + str(message))
+                    urlobj = urlparse(message.data['destination'])
+                    fake_msg = Message(rawstr=str(message))
+                    fake_msg.data['destination'] = urlunparse((urlobj.scheme,
+                                                              urlobj.hostname,
+                                                              urlobj.path,
+                                                              "", "", ""))
+                    LOGGER.debug("processing request: " + str(fake_msg))
                     reply = Message(message.subject, "error")
                     try:
                         if message.type == "ping":
@@ -233,13 +244,13 @@ def read_config(filename):
             del res[section]
             continue
 
-        if "publisher_port" not in res[section]:
-            LOGGER.warning("Incomplete section " + section
-                           + ": add an 'publisher_port' item.")
-            LOGGER.info("Ignoring section " + section
-                        + ": incomplete.")
-            del res[section]
-            continue
+        #if "publisher_port" not in res[section]:
+        #    LOGGER.warning("Incomplete section " + section
+        #                   + ": add an 'publisher_port' item.")
+        #    LOGGER.info("Ignoring section " + section
+        #                + ": incomplete.")
+        #    del res[section]
+        #    continue
 
         if "topic" not in res[section]:
             LOGGER.warning("Incomplete section " + section
@@ -462,51 +473,55 @@ def move_it(message, attrs=None, hook=None):
     if it is.
     """
     uri = urlparse(message.data["uri"])
-    destinations = message.data["destinations"]
+    dest = message.data["destination"]
 
     pathname = uri.path
 
-    e = None
     LOGGER.debug(str(attrs))
-    for dest in destinations:
-        LOGGER.debug("Copying to: " + dest)
-        dest_url = urlparse(dest)
-        try:
-            mover = MOVERS[dest_url.scheme]
-        except KeyError, e:
-            LOGGER.error("Unsupported protocol '" + str(dest_url.scheme)
-                         + "'. Could not copy " + pathname + " to "
-                         + str(dest))
-            continue
-        try:
-            mover(pathname, dest_url).copy()
-            if hook:
-                hook(pathname, dest_url)
-        except Exception, e:
-            LOGGER.exception("Something went wrong during copy of "
-                             + pathname + " to " + str(dest))
-            continue
-        else:
-            LOGGER.info("Successfully copied " + pathname +
-                        " to " + str(dest))
+    urlobj = urlparse(message.data['destination'])
+    clean_dest = urlunparse((urlobj.scheme,
+                             urlobj.hostname,
+                             urlobj.path,
+                             "", "", ""))
 
-            url_destination = urlparse(dest)
-            mdata = message.data.copy()
-            mdata.pop("destinations")
+    LOGGER.debug("Copying to: " + clean_dest)
+    dest_url = urlparse(dest)
+    try:
+        mover = MOVERS[dest_url.scheme]
+    except KeyError, e:
+        LOGGER.error("Unsupported protocol '" + str(dest_url.scheme)
+                     + "'. Could not copy " + pathname + " to "
+                     + str(dest))
+        raise
+    try:
+        mover(pathname, dest_url).copy()
+        if hook:
+            hook(pathname, dest_url)
+    except Exception as err:
+        exc_type, exc_value, exc_traceback = sys.exc_info()
+        LOGGER.error("Something went wrong during copy of %s to %s: %s",
+                     pathname, str(dest), str(err))
+        LOGGER.debug("".join(traceback.format_tb(exc_traceback)))
+        raise err
+    else:
+        LOGGER.info("Successfully copied " + pathname +
+                    " to " + str(dest))
 
-            mdata["uid"] = os.path.basename(pathname)
-            mdata["uri"] = urlunparse((url_destination.scheme,
-                                       url_destination.hostname,
-                                       os.path.join(url_destination.path, mdata["uid"]),
-                                       url_destination.params,
-                                       url_destination.query,
-                                       url_destination.fragment))
+        #url_destination = urlparse(dest)
+        #mdata = message.data.copy()
+        #mdata.pop("destination")
 
-            msg = Message(message.subject, "file", mdata)
-            LOGGER.debug("publishing %s", str(msg))
-            PUB.send(str(msg))
-    if e is not None:
-        raise e
+        #mdata["uid"] = os.path.basename(pathname)
+        #mdata["uri"] = urlunparse((url_destination.scheme,
+        #                           url_destination.hostname,
+        #                           os.path.join(url_destination.path, mdata["uid"]),
+        #                           url_destination.params,
+        #                           url_destination.query,
+        #                           url_destination.fragment))
+
+        #msg = Message(message.subject, "file", mdata)
+        #LOGGER.debug("publishing %s", str(msg))
+        #PUB.send(str(msg))
 
 
 class Mover(object):
@@ -597,7 +612,7 @@ MOVERS = {'ftp': FtpMover,
 
 
 # Generic event handler
-
+# fixme: on deletion, the file should be removed from the filecache
 class EventHandler(pyinotify.ProcessEvent):
 
     """Handle events with a generic *fun* function.
@@ -701,6 +716,9 @@ if __name__ == '__main__':
                         help="The configuration file to run on.")
     parser.add_argument("-l", "--log",
                         help="The file to log to. stdout otherwise.")
+    parser.add_argument("-p", "--port",
+                        help="The port to publish on. 9010 is the default",
+                        default=9010)
     cmd_args = parser.parse_args()
 
     log_format = "[%(asctime)s %(levelname)-8s] %(message)s"
@@ -723,6 +741,10 @@ if __name__ == '__main__':
     pyinotify.log.handlers = [fh]
 
     LOGGER.info("Starting up.")
+
+    LOGGER.info("Starting publisher on port %s.", str(cmd_args.port))
+
+    PUB = Publisher("tcp://*:" + str(cmd_args.port), "move_it_server")
 
     mask = (pyinotify.IN_CLOSE_WRITE |
             pyinotify.IN_MOVED_TO |
