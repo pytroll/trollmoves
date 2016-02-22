@@ -79,6 +79,8 @@ Ya Like To (MOVE IT!)
 
 """
 
+# TODO: implement ping and server selection
+
 from ConfigParser import ConfigParser
 import os
 from urlparse import urlparse, urlunparse

@@ -368,9 +368,11 @@ def reload_config(filename):
             LOGGER.debug("Touching old files")
             for fname in fnames:
                 if os.path.exists(fname):
-                    fp_ = open(fname, "ab")
-                    fp_.close()
-        old_glob = []
+                    try:
+                        fp_ = open(fname, "ab")
+                        fp_.close()
+                    except IOError as err:
+                        LOGGER.warning("Can't touch %s: %s", fname, str(err))
     LOGGER.debug("done reloading config")
 # Unpackers
 
@@ -524,6 +526,8 @@ def move_it(message, attrs=None, hook=None):
         #PUB.send(str(msg))
 
 
+# TODO: implement the creation of missing directories.
+
 class Mover(object):
 
     """Base mover object. Doesn't do anything as it has to be subclassed.
@@ -596,8 +600,17 @@ class FtpMover(Mover):
         else:
             connection.login()
 
+        def cd_tree(currentDir):
+            if currentDir != "":
+                try:
+                    connection.cwd(currentDir)
+                except IOError:
+                    cd_tree("/".join(currentDir.split("/")[:-1]))
+                    connection.mkd(currentDir)
+                    connection.cwd(currentDir)
+
         file_obj = file(self.origin, 'rb')
-        connection.cwd(self.destination.path)
+        cd_tree(self.destination.path)
         connection.storbinary('STOR ' + os.path.basename(self.origin),
                               file_obj)
 
