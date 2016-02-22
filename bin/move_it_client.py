@@ -345,7 +345,7 @@ def request_push(msg, destination, login):
             local_msg = Message(msg.subject, "push", data=msg.data.copy())
             local_uri = urlunparse(('file',
                                     '',
-                                    os.path.join(destination,
+                                    os.path.join(duri.path,
                                                  msg.data['uid']),
                                     "", "", ""))
             local_msg.data['uri'] = local_uri

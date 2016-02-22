@@ -610,8 +610,8 @@ class FtpMover(Mover):
                     connection.cwd(currentDir)
 
         file_obj = file(self.origin, 'rb')
-        LOGGER.debug('cd to %s', self.destination.path)
-        cd_tree(self.destination.path)
+        LOGGER.debug('cd to %s', os.path.dirname(self.destination.path))
+        cd_tree(os.path.dirname(self.destination.path))
         connection.storbinary('STOR ' + os.path.basename(self.origin),
                               file_obj)
 
