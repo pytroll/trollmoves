@@ -326,7 +326,7 @@ def request_push(msg, destination, login):
         # A request without credentials is build first to be printed in the logs
         req.data["destination"] = urlunparse((scheme,
                                               dest_hostname,
-                                              os.path.join(destination,
+                                              os.path.join(duri.path,
                                                            msg.data['uid']),
                                               "", "", ""))
         LOGGER.info("Requesting: " + str(req))
@@ -334,7 +334,7 @@ def request_push(msg, destination, login):
             # if necessary add the credentials for the real request
             req.data["destination"] = urlunparse((scheme,
                                                   login + "@" + dest_hostname,
-                                                  os.path.join(destination,
+                                                  os.path.join(duri.path,
                                                                msg.data['uid']),
                                                   "", "", ""))
 
