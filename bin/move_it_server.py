@@ -462,7 +462,6 @@ def move_it(message, attrs=None, hook=None):
 
     pathname = uri.path
 
-    LOGGER.debug(str(attrs))
     urlobj = urlparse(message.data['destination'])
     clean_dest = urlunparse((urlobj.scheme,
                              urlobj.hostname,
