@@ -108,6 +108,8 @@ NP = None
 PUB = None
 
 queue = Queue()
+requesters = []
+running = True
 
 LOGGER = logging.getLogger("move_it_client")
 
@@ -227,7 +229,7 @@ def reload_config(filename):
 
         # create logger too!
         if "publisher" in chains[key]:
-            pub = chains[key]["publisher"].start()
+            chains[key]["publisher"].start()
 
         if not identical:
             LOGGER.debug("Updated " + key)
@@ -242,7 +244,7 @@ def reload_config(filename):
             del chains[key]["providers"][provider]
 
         if "publisher" in chains[key]:
-            pub = chains[key]["publisher"].stop()
+            chains[key]["publisher"].stop()
 
         del chains[key]
         LOGGER.debug("Removed " + key)
@@ -285,11 +287,10 @@ class Listener(Thread):
         self.running = True
 
         for msg in self.subscriber(timeout=1):
+            if not self.running:
+                break
             if msg is None:
-                if self.running:
-                    continue
-                else:
-                    break
+                continue
             self.callback(msg, *self.cargs, **self.ckwargs)
 
         LOGGER.debug("exiting listener %s", str(self.address))
@@ -298,6 +299,8 @@ class Listener(Thread):
         '''Stop subscriber and delete the instance
         '''
         self.running = False
+        global running
+        running = False
         time.sleep(1)
         if self.subscriber is not None:
             self.subscriber.close()
@@ -316,7 +319,6 @@ def request_push(msg, destination, login):
             return
 
         hostname, port = msg.data["request_address"].split(":")
-        requester = PushRequester(hostname, int(port))
         req = Message(msg.subject, "push", data=msg.data.copy())
 
         duri = urlparse(destination)
@@ -337,8 +339,11 @@ def request_push(msg, destination, login):
                                                   os.path.join(duri.path,
                                                                msg.data['uid']),
                                                   "", "", ""))
-
-        response = requester.send_and_recv(req, 60 * 1000) # fixme timeout should be in us for zmq2 ?
+        global requesters
+        requester = PushRequester(hostname, int(port))
+        requesters.append(requester)
+        response = requester.send_and_recv(req, 10 * 1000) # fixme timeout should be in us for zmq2 ?
+        requesters.remove(requester)
         if response and response.type == "ack":
             LOGGER.debug("Server done sending file")
             file_cache.append(msg.data["uid"])
@@ -404,37 +409,42 @@ class PushRequester(object):
             request = str(msg)
             self._socket.send(request)
             rep = None
-            while retries_left:
-                socks = dict(self._poller.poll(timeout))
-                if socks.get(self._socket) == POLLIN:
-                    reply = self._socket.recv()
-                    if not reply:
-                        LOGGER.error("Empty reply!")
-                        break
-                    rep = Message(rawstr=reply)
-                    self.failures = 0
-                    self.jammed = False
-                    break
-                else:
-                    LOGGER.warning("Timeout from " + str(self._reqaddress)
-                                   + ", retrying...")
-                    # Socket is confused. Close and remove it.
-                    self.stop()
-                    retries_left -= 1
-                    if retries_left <= 0:
-                        LOGGER.error("Server doesn't answer, abandoning... " +
-                                     str(self._reqaddress))
-                        self.connect()
-                        self.failures += 1
-                        if self.failures == 5:
-                            LOGGER.critical("Server jammed ? %s",
-                                            self._reqaddress)
-                            self.jammed = True
-                        break
-                    LOGGER.info("Reconnecting and resending " + str(msg))
-                    # Create new connection
+            small_timeout = 0.1
+            while retries_left and running:
+                now = time.time()
+                while time.time() < now + timeout / 1000.0:
+                    if not running:
+                        return rep
+                    socks = dict(self._poller.poll(small_timeout))
+                    if socks.get(self._socket) == POLLIN:
+                        reply = self._socket.recv()
+                        if not reply:
+                            LOGGER.error("Empty reply!")
+                            break
+                        rep = Message(rawstr=reply)
+                        self.failures = 0
+                        self.jammed = False
+                        return rep
+
+                LOGGER.warning("Timeout from " + str(self._reqaddress)
+                               + ", retrying...")
+                # Socket is confused. Close and remove it.
+                self.stop()
+                retries_left -= 1
+                if retries_left <= 0:
+                    LOGGER.error("Server doesn't answer, abandoning... " +
+                                 str(self._reqaddress))
                     self.connect()
-                    self._socket.send(request)
+                    self.failures += 1
+                    if self.failures == 5:
+                        LOGGER.critical("Server jammed ? %s",
+                                        self._reqaddress)
+                        self.jammed = True
+                    break
+                LOGGER.info("Reconnecting and resending " + str(msg))
+                # Create new connection
+                self.connect()
+                self._socket.send(request)
 
         return rep
 
@@ -469,7 +479,7 @@ class EventHandler(pyinotify.ProcessEvent):
         self._fun(event.pathname)
 
 
-running = True
+
 
 def main():
     while running:
@@ -536,8 +546,15 @@ if __name__ == '__main__':
         notifier.stop()
         NP.stop()
         terminate(chains)
+        for requester in requesters:
+            requester.stop()
 
     signal.signal(signal.SIGTERM, chains_stop)
+
+    def reload_cfg_file(*args):
+        reload_config(cmd_args.config_file)
+
+    signal.signal(signal.SIGHUP, reload_cfg_file)
 
     notifier.start()
 

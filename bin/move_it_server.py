@@ -230,9 +230,6 @@ def read_config(filename):
 
     for section in cp_.sections():
         res[section] = dict(cp_.items(section))
-        res[section].setdefault("delete", False)
-        if res[section]["delete"] in ["", "False", "false", "0", "off"]:
-            res[section]["delete"] = False
         res[section].setdefault("working_directory", None)
         res[section].setdefault("compression", False)
 
@@ -334,20 +331,6 @@ def reload_config(filename):
 
             chains[key]["copy_hook"] = copy_hook
 
-            def delete_hook(pathname, val=val, pub=pub):
-                fname = os.path.basename(pathname)
-                info = val.get("info", "")
-                if info:
-                    info = dict((elt.strip().split('=')
-                                 for elt in info.split(";")))
-                info['uri'] = pathname
-                info['uid'] = fname
-                msg = Message(val["topic"], 'del', info)
-                pub.send(str(msg))
-                LOGGER.debug("Message sent: " + str(msg))
-
-            chains[key]["delete_hook"] = delete_hook
-
         if not identical:
             LOGGER.debug("Updated " + key)
         else:
@@ -415,7 +398,7 @@ def xrit(pathname, destination=None, cmd="./xRITDecompress"):
         LOGGER.exception("Can not extract file " + pathname
                          + " to " + destination
                          + ", destination has to be local.")
-    LOGGER.info("Successfully extracted" + pathname +
+    LOGGER.info("Successfully extracted " + pathname +
                 " to " + destination)
     return expected
 
@@ -495,6 +478,12 @@ def move_it(message, attrs=None, hook=None):
                      + "'. Could not copy " + pathname + " to "
                      + str(dest))
         raise
+
+    fake_dest = urlunparse((dest_url.scheme,
+                            dest_url.hostname,
+                            dest_url.path,
+                            '', '', ''))
+
     try:
         mover(pathname, dest_url).copy()
         if hook:
@@ -502,28 +491,12 @@ def move_it(message, attrs=None, hook=None):
     except Exception as err:
         exc_type, exc_value, exc_traceback = sys.exc_info()
         LOGGER.error("Something went wrong during copy of %s to %s: %s",
-                     pathname, str(dest), str(err))
+                     pathname, str(fake_dest), str(err))
         LOGGER.debug("".join(traceback.format_tb(exc_traceback)))
         raise err
     else:
         LOGGER.info("Successfully copied " + pathname +
-                    " to " + str(dest))
-
-        #url_destination = urlparse(dest)
-        #mdata = message.data.copy()
-        #mdata.pop("destination")
-
-        #mdata["uid"] = os.path.basename(pathname)
-        #mdata["uri"] = urlunparse((url_destination.scheme,
-        #                           url_destination.hostname,
-        #                           os.path.join(url_destination.path, mdata["uid"]),
-        #                           url_destination.params,
-        #                           url_destination.query,
-        #                           url_destination.fragment))
-
-        #msg = Message(message.subject, "file", mdata)
-        #LOGGER.debug("publishing %s", str(msg))
-        #PUB.send(str(msg))
+                    " to " + str(fake_dest))
 
 
 # TODO: implement the creation of missing directories.
@@ -675,6 +648,8 @@ def create_notifier(attrs):
 
         if not fnmatch.fnmatch(orig_pathname, globify(attrs["origin"])):
             return
+        else:
+            LOGGER.debug('We have a match: %s', orig_pathname)
 
         pathname = unpack(orig_pathname, **attrs)
 
@@ -774,6 +749,11 @@ if __name__ == '__main__':
         terminate(chains)
 
     signal.signal(signal.SIGTERM, chains_stop)
+
+    def reload_cfg_file(*args):
+        reload_config(cmd_args.config_file)
+
+    signal.signal(signal.SIGHUP, reload_cfg_file)
 
     try:
         reload_config(cmd_args.config_file)
