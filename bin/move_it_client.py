@@ -119,7 +119,7 @@ if zmq_version().startswith("2."):
 
 chains = {}
 listeners = {}
-file_cache = deque(maxlen=100)
+file_cache = deque(maxlen=1000)
 cache_lock = Lock()
 
 
@@ -176,80 +176,6 @@ def read_config(filename):
             except (KeyError, ValueError):
                 res[section]["publish_port"] = 0
     return res
-
-
-def reload_config(filename):
-    """Rebuild chains if needed (if the configuration changed) from *filename*.
-    """
-    if os.path.abspath(filename) != os.path.abspath(cmd_args.config_file):
-        return
-
-    LOGGER.debug("New config file detected! " + filename)
-
-    new_chains = read_config(filename)
-
-    # setup new chains
-
-    for key, val in new_chains.iteritems():
-        identical = True
-        if key in chains:
-            for key2, val2 in new_chains[key].iteritems():
-                if ((key2 not in ["listeners", "publisher"]) and
-                    ((key2 not in chains[key]) or
-                     (chains[key][key2] != val2))):
-                    identical = False
-                    break
-            if identical:
-                continue
-
-            if "publisher" in chains[key]:
-                chains[key]["publisher"].stop()
-            for provider in chains[key]["providers"]:
-                chains[key]["listeners"][provider].stop()
-                del chains[key]["listeners"][provider]
-
-        chains[key] = val
-        try:
-            chains[key]["publisher"] = NoisyPublisher("move_it_" + key,
-                                                      val["publish_port"])
-        except (KeyError, NameError):
-            pass
-
-        chains[key].setdefault("listeners", {})
-        try:
-            for provider in chains[key]["providers"]:
-                chains[key]["listeners"][provider] = Listener(provider, val["topic"], request_push,
-                                                              chains[key]["destination"],
-                                                              chains[key].get("login"))
-                chains[key]["listeners"][provider].start()
-        except Exception as err:
-            LOGGER.exception(str(err))
-            raise
-
-
-        # create logger too!
-        if "publisher" in chains[key]:
-            chains[key]["publisher"].start()
-
-        if not identical:
-            LOGGER.debug("Updated " + key)
-        else:
-            LOGGER.debug("Added " + key)
-
-    # disable old chains
-
-    for key in (set(chains.keys()) - set(new_chains.keys())):
-        for provider, listener in chains[key]["providers"].iteritems():
-            listener.stop()
-            del chains[key]["providers"][provider]
-
-        if "publisher" in chains[key]:
-            chains[key]["publisher"].stop()
-
-        del chains[key]
-        LOGGER.debug("Removed " + key)
-
-    LOGGER.debug("Reloaded config from " + filename)
 
 
 class Listener(Thread):
@@ -315,36 +241,40 @@ def request_push(msg, destination, login):
             if socket.gethostbyname(urlobj.netloc) in get_local_ips():
                 LOGGER.debug('Sending: %s', str(msg))
                 PUB.send(str(msg))
-            # fixme this should be one step up
-            return
-
+            mtype = 'ack'
+        else:
+            mtype = 'push'
         hostname, port = msg.data["request_address"].split(":")
-        req = Message(msg.subject, "push", data=msg.data.copy())
+        req = Message(msg.subject, mtype, data=msg.data.copy())
 
         duri = urlparse(destination)
         scheme = duri.scheme or 'file'
         dest_hostname = socket.gethostname()
 
-        # A request without credentials is build first to be printed in the logs
-        req.data["destination"] = urlunparse((scheme,
-                                              dest_hostname,
-                                              os.path.join(duri.path,
-                                                           msg.data['uid']),
-                                              "", "", ""))
-        LOGGER.info("Requesting: " + str(req))
-        if login:
-            # if necessary add the credentials for the real request
+        if mtype == 'push':
+            # A request without credentials is build first to be printed in the logs
             req.data["destination"] = urlunparse((scheme,
-                                                  login + "@" + dest_hostname,
+                                                  dest_hostname,
                                                   os.path.join(duri.path,
                                                                msg.data['uid']),
                                                   "", "", ""))
+            LOGGER.info("Requesting: " + str(req))
+            if login:
+                # if necessary add the credentials for the real request
+                req.data["destination"] = urlunparse((scheme,
+                                                      login + "@" + dest_hostname,
+                                                      os.path.join(duri.path,
+                                                                   msg.data['uid']),
+                                                      "", "", ""))
         global requesters
         requester = PushRequester(hostname, int(port))
         requesters.append(requester)
-        response = requester.send_and_recv(req, 10 * 1000) # fixme timeout should be in us for zmq2 ?
+        if mtype == 'push':
+            response = requester.send_and_recv(req, 10 * 1000) # fixme timeout should be in us for zmq2 ?
+        else:
+            response = requester.send_and_recv(req, 1 * 1000) # fixme timeout should be in us for zmq2 ?
         requesters.remove(requester)
-        if response and response.type == "ack":
+        if response and response.type == "file":
             LOGGER.debug("Server done sending file")
             file_cache.append(msg.data["uid"])
             local_msg = Message(msg.subject, "push", data=msg.data.copy())
@@ -358,8 +288,90 @@ def request_push(msg, destination, login):
             local_msg.data.pop('request_address')
             LOGGER.debug("publishing %s", str(local_msg))
             PUB.send(str(local_msg))
+        elif response and response.type == "ack":
+            pass
         else:
             LOGGER.error("Failed to get file from server %s: %s", str(dest_hostname), str(response))
+
+
+def reload_config(filename, callback=request_push):
+    """Rebuild chains if needed (if the configuration changed) from *filename*.
+    """
+    if os.path.abspath(filename) != os.path.abspath(cmd_args.config_file):
+        return
+
+    LOGGER.debug("New config file detected! " + filename)
+
+    new_chains = read_config(filename)
+
+    # setup new chains
+
+    for key, val in new_chains.iteritems():
+        identical = True
+        if key in chains:
+            for key2, val2 in new_chains[key].iteritems():
+                if ((key2 not in ["listeners", "publisher"]) and
+                    ((key2 not in chains[key]) or
+                     (chains[key][key2] != val2))):
+                    identical = False
+                    break
+            if identical:
+                continue
+
+            if "publisher" in chains[key]:
+                chains[key]["publisher"].stop()
+            for provider in chains[key]["providers"]:
+                chains[key]["listeners"][provider].stop()
+                del chains[key]["listeners"][provider]
+
+        chains[key] = val
+        try:
+            chains[key]["publisher"] = NoisyPublisher("move_it_" + key,
+                                                      val["publish_port"])
+        except (KeyError, NameError):
+            pass
+
+        chains[key].setdefault("listeners", {})
+        try:
+            for provider in chains[key]["providers"]:
+                if callback == request_push:
+                    chains[key]["listeners"][provider] = Listener(provider, val["topic"], callback,
+                                                                  chains[key]["destination"],
+                                                                  chains[key].get("login"))
+                else:
+                    chains[key]["listeners"][provider] = Listener(provider, val["topic"], callback,
+                                                                  chains[key])
+                chains[key]["listeners"][provider].start()
+        except Exception as err:
+            LOGGER.exception(str(err))
+            raise
+
+
+        # create logger too!
+        if "publisher" in chains[key]:
+            chains[key]["publisher"].start()
+
+        if not identical:
+            LOGGER.debug("Updated " + key)
+        else:
+            LOGGER.debug("Added " + key)
+
+    # disable old chains
+
+    for key in (set(chains.keys()) - set(new_chains.keys())):
+        for provider, listener in chains[key]["providers"].iteritems():
+            listener.stop()
+            del chains[key]["providers"][provider]
+
+        if "publisher" in chains[key]:
+            chains[key]["publisher"].stop()
+
+        del chains[key]
+        LOGGER.debug("Removed " + key)
+
+    LOGGER.debug("Reloaded config from " + filename)
+
+
 
 
 class PushRequester(object):
@@ -426,8 +438,8 @@ class PushRequester(object):
                         self.jammed = False
                         return rep
 
-                LOGGER.warning("Timeout from " + str(self._reqaddress)
-                               + ", retrying...")
+                LOGGER.warning("Timeout from " + str(self._reqaddress) +
+                               ", retrying...")
                 # Socket is confused. Close and remove it.
                 self.stop()
                 retries_left -= 1
@@ -480,6 +492,19 @@ class EventHandler(pyinotify.ProcessEvent):
 
 
 
+class StatCollector(object):
+
+    def __init__(self, statfile):
+        self.statfile = statfile
+
+    def collect(self, msg, config):
+        with open(self.statfile, 'a') as fd:
+            fd.write("{0:s}\t{1:s}\t{2:s}\t{3:s}\n".format(msg.data['uid'], msg.data['request_address'],
+                                                           str(time.time()),
+                                                           str(msg.time)))
+
+
+
 
 def main():
     while running:
@@ -506,6 +531,8 @@ if __name__ == '__main__':
                         help="The configuration file to run on.")
     parser.add_argument("-l", "--log",
                         help="The file to log to. stdout otherwise.")
+    parser.add_argument("-s", "--stats",
+                        help="Save stats to this file")
     cmd_args = parser.parse_args()
 
     log_format = "[%(asctime)s %(levelname)-8s] %(message)s"
@@ -559,7 +586,11 @@ if __name__ == '__main__':
     notifier.start()
 
     try:
-        reload_config(cmd_args.config_file)
+        if cmd_args.stats:
+            stat = StatCollector(cmd_args.stats)
+            reload_config(cmd_args.config_file, callback=stat.collect)
+        else:
+            reload_config(cmd_args.config_file)
         main()
     except KeyboardInterrupt:
         LOGGER.debug("Interrupting")
