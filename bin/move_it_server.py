@@ -120,6 +120,8 @@ from posttroll import context
 from trollsift import parse, globify
 from threading import Thread, Lock
 from zmq import Poller, REP, POLLIN, ZMQError, NOBLOCK, LINGER
+from Queue import Queue, Empty
+from threading import Timer
 
 LOGGER = logging.getLogger("move_it_server")
 
@@ -129,6 +131,37 @@ chains = {}
 
 #PUB = Publisher("tcp://*:9090", "move_it_server")
 PUB = None
+
+class Deleter(Thread):
+
+    def __init__(self):
+        Thread.__init__(self)
+        self.queue = Queue()
+        self.timer = None
+        self.loop = True
+
+    def add(self, filename):
+        self.queue.put((filename, time.time() + 30))
+
+    def run(self):
+        while self.loop:
+            try:
+                filename, the_time = self.queue.get(True, 1)
+            except Empty:
+                continue
+            LOGGER.debug('Scheduling %s for removal', filename)
+            self.timer = Timer(max(the_time - time.time(), 0), os.remove, args=[filename])
+            self.timer.start()
+            while self.loop:
+                self.timer.join(1)
+                if not self.timer.is_alive():
+                    break
+
+    def stop(self):
+        self.loop = False
+        if self.timer:
+            self.timer.cancel()
+
 class RequestManager(Thread):
 
     """Manage requests.
@@ -145,6 +178,9 @@ class RequestManager(Thread):
         self._poller = Poller()
         self._poller.register(self._socket, POLLIN)
         self._attrs = attrs
+        self._pattern = globify(attrs["origin"])
+        self._deleter = Deleter()
+        self._deleter.start()
 
     def send(self, message):
         """Send a message
@@ -163,13 +199,36 @@ class RequestManager(Thread):
     def push(self, message):
         """Reply to scanline request
         """
-        #Thread(target=move_it, args=[message, self._attrs]).start()
+        uri = urlparse(message.data["uri"])
+        pathname = uri.path
+
+        if not fnmatch.fnmatch(os.path.basename(pathname),
+                               os.path.basename(globify(self._attrs["origin"]))):
+            LOGGER.warning('Client trying to get invalid file: %s', pathname)
+            return Message(message.subject, "err", data="{0:s} not reacheable".format(pathname))
         try:
             move_it(message, self._attrs)
         except Exception as err:
             return Message(message.subject, "err", data=str(err))
-        return Message(message.subject, "ack", data=message.data.copy())
+        else:
+            if self._attrs.get('delete', 'False').lower() in ["1", "yes", "true", "on"]:
+                self._deleter.add(pathname)
+            return Message(message.subject, "file", data=message.data.copy())
 
+    def ack(self, message):
+        """Reply to scanline request
+        """
+        uri = urlparse(message.data["uri"])
+        pathname = uri.path
+
+        if not fnmatch.fnmatch(os.path.basename(pathname),
+                               os.path.basename(globify(self._attrs["origin"]))):
+            LOGGER.warning('Client trying to get invalid file: %s', pathname)
+            return Message(message.subject, "err", data="{0:s} not reacheable".format(pathname))
+
+        if self._attrs.get('delete', 'False').lower() in ["1", "yes", "true", "on"]:
+            self._deleter.add(pathname)
+        return Message(message.subject, "ack", data=message.data.copy())
 
     def unknown(self, message):
         """Reply to any unknown request.
@@ -188,19 +247,26 @@ class RequestManager(Thread):
                 LOGGER.debug("Received a request, waiting for the lock")
                 with self._lock:
                     message = Message(rawstr=self._socket.recv(NOBLOCK))
-                    urlobj = urlparse(message.data['destination'])
                     fake_msg = Message(rawstr=str(message))
-                    fake_msg.data['destination'] = urlunparse((urlobj.scheme,
-                                                              urlobj.hostname,
-                                                              urlobj.path,
-                                                              "", "", ""))
+                    try:
+                        urlobj = urlparse(message.data['destination'])
+                    except KeyError:
+                        pass
+                    else:
+                        fake_msg.data['destination'] = urlunparse((urlobj.scheme,
+                                                                  urlobj.hostname,
+                                                                  urlobj.path,
+                                                                  "", "", ""))
+
                     LOGGER.debug("processing request: " + str(fake_msg))
                     reply = Message(message.subject, "error")
                     try:
                         if message.type == "ping":
                             reply = self.pong()
-                        elif (message.type == "push"):
+                        elif message.type == "push":
                             reply = self.push(message)
+                        elif message.type == "ack":
+                            reply = self.ack(message)
                         else:  # unknown request
                             reply = self.unknown(message)
                     except:
@@ -216,6 +282,7 @@ class RequestManager(Thread):
         """Stop the request manager.
         """
         self._loop = False
+        self._deleter.stop()
         self._socket.setsockopt(LINGER, 0)
         self._socket.close()
 
@@ -291,6 +358,7 @@ def reload_config(filename):
             chains[key]["notifier"].stop()
             if "request_manager" in chains[key]:
                 chains[key]["request_manager"].stop()
+                LOGGER.debug('Stopped reqman')
 
         chains[key] = val.copy()
         try:
@@ -695,6 +763,10 @@ def stopped(notifier, **kwargs):
     notifier.stop()
     return not running
 
+def main():
+    while running:
+        time.sleep(1)
+
 if __name__ == '__main__':
     import argparse
     import signal
@@ -739,12 +811,13 @@ if __name__ == '__main__':
             pyinotify.IN_CREATE)
     watchman = pyinotify.WatchManager()
 
-    notifier = pyinotify.Notifier(watchman, EventHandler(reload_config))
+    notifier = pyinotify.ThreadedNotifier(watchman, EventHandler(reload_config))
     watchman.add_watch(os.path.dirname(cmd_args.config_file), mask)
 
     def chains_stop(*args):
         global running
         running = False
+        notifier.stop()
         terminate(chains)
 
     signal.signal(signal.SIGTERM, chains_stop)
@@ -754,9 +827,11 @@ if __name__ == '__main__':
 
     signal.signal(signal.SIGHUP, reload_cfg_file)
 
+    notifier.start()
+
     try:
         reload_config(cmd_args.config_file)
-        notifier.loop(stopped)
+        main()
     except KeyboardInterrupt:
         LOGGER.debug("Interrupting")
     finally:
