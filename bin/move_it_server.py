@@ -341,7 +341,7 @@ def reload_config(filename):
 
     new_chains = read_config(filename)
 
-    old_glob = []
+    # old_glob = []
 
     for key, val in new_chains.iteritems():
         identical = True
@@ -369,7 +369,7 @@ def reload_config(filename):
         chains[key]["notifier"] = create_notifier(val)
         chains[key]["request_manager"].start()
         chains[key]["notifier"].start()
-        old_glob.append(globify(val["origin"]))
+        # old_glob.append(globify(val["origin"]))
 
         if "publisher" in chains[key]:
             def copy_hook(pathname, dest, val=val, pub=pub):
@@ -410,20 +410,20 @@ def reload_config(filename):
         LOGGER.debug("Removed " + key)
 
     LOGGER.debug("Reloaded config from " + filename)
-    if old_glob:
-        fnames = []
-        for pattern in old_glob:
-            fnames += glob.glob(pattern)
-        if fnames:
-            time.sleep(3)
-            LOGGER.debug("Touching old files")
-            for fname in fnames:
-                if os.path.exists(fname):
-                    try:
-                        fp_ = open(fname, "ab")
-                        fp_.close()
-                    except IOError as err:
-                        LOGGER.warning("Can't touch %s: %s", fname, str(err))
+    # if old_glob:
+    #     fnames = []
+    #     for pattern in old_glob:
+    #         fnames += glob.glob(pattern)
+    #     if fnames:
+    #         time.sleep(3)
+    #         LOGGER.debug("Touching old files")
+    #         for fname in fnames:
+    #             if os.path.exists(fname):
+    #                 try:
+    #                     fp_ = open(fname, "ab")
+    #                     fp_.close()
+    #                 except IOError as err:
+    #                     LOGGER.warning("Can't touch %s: %s", fname, str(err))
     LOGGER.debug("done reloading config")
 # Unpackers
 
@@ -691,6 +691,15 @@ class EventHandler(pyinotify.ProcessEvent):
         """
         self._fun(event.pathname)
 
+def process_old_files(pattern, fun):
+    fnames = glob.glob(pattern)
+    if fnames:
+        #time.sleep(3)
+        LOGGER.debug("Touching old files")
+        for fname in fnames:
+            if os.path.exists(fname):
+                fun(fname)
+
 
 def create_notifier(attrs):
     """Create a notifier from the specified configuration attributes *attrs*.
@@ -702,14 +711,13 @@ def create_notifier(attrs):
 
     wm_ = pyinotify.WatchManager()
 
-    opath, ofile = os.path.split(globify(attrs["origin"]))
+    pattern = globify(attrs["origin"])
+    opath = os.path.dirname(pattern)
 
     def fun(orig_pathname):
         """Publish what we have
         """
-        fname = os.path.basename(orig_pathname)
-
-        if not fnmatch.fnmatch(orig_pathname, globify(attrs["origin"])):
+        if not fnmatch.fnmatch(orig_pathname, pattern):
             return
         else:
             LOGGER.debug('We have a match: %s', orig_pathname)
@@ -732,6 +740,7 @@ def create_notifier(attrs):
         PUB.send(str(msg))
         LOGGER.debug("Message sent: " + str(msg))
 
+    process_old_files(pattern, fun)
     tnotifier = pyinotify.ThreadedNotifier(wm_, EventHandler(fun))
 
     wm_.add_watch(opath, tmask)
