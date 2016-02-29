@@ -455,10 +455,6 @@ def xrit(pathname, destination=None, cmd="./xRITDecompress"):
     destination = destination or "/tmp/"
     dest_url = urlparse(destination)
     expected = os.path.join((destination or opath), ofile[:-2] + "__")
-    if pathname.endswith("__"):
-        return pathname
-    if os.path.exists(expected):
-        return expected
     if dest_url.scheme in ("", "file"):
         res = check_output([cmd, pathname], cwd=(destination or opath))
         del res
