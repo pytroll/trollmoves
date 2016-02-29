@@ -211,7 +211,8 @@ class RequestManager(Thread):
         except Exception as err:
             return Message(message.subject, "err", data=str(err))
         else:
-            if self._attrs.get('delete', 'False').lower() in ["1", "yes", "true", "on"]:
+            if (self._attrs.get('compression') or
+                        self._attrs.get('delete', 'False').lower() in ["1", "yes", "true", "on"]):
                 self._deleter.add(pathname)
             return Message(message.subject, "file", data=message.data.copy())
 
@@ -226,7 +227,8 @@ class RequestManager(Thread):
             LOGGER.warning('Client trying to get invalid file: %s', pathname)
             return Message(message.subject, "err", data="{0:s} not reacheable".format(pathname))
 
-        if self._attrs.get('delete', 'False').lower() in ["1", "yes", "true", "on"]:
+        if (self._attrs.get('compression') or
+                    self._attrs.get('delete', 'False').lower() in ["1", "yes", "true", "on"]):
             self._deleter.add(pathname)
         return Message(message.subject, "ack", data=message.data.copy())
 
@@ -411,6 +413,7 @@ def reload_config(filename):
 
     LOGGER.debug("Reloaded config from " + filename)
     if old_glob:
+        time.sleep(3)
         for pattern, fun in old_glob:
             process_old_files(pattern, fun)
 
@@ -497,7 +500,7 @@ def bzip(origin, destination=None):
 
 
 
-def unpack(pathname, compression=None, working_directory=None, prog=None, **kwargs):
+def unpack(pathname, compression=None, working_directory=None, prog=None, delete="False", **kwargs):
     del kwargs
     if compression:
         try:
@@ -509,9 +512,12 @@ def unpack(pathname, compression=None, working_directory=None, prog=None, **kwar
             else:
                 new_path = unpack_fun(pathname,
                                       working_directory)
-            return new_path
         except:
             LOGGER.exception("Could not decompress " + pathname)
+        else:
+            if delete.lower() in ["1", "yes", "true", "on"]:
+                os.remove(pathname)
+            return new_path
     return pathname
 
 
