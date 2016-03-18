@@ -112,6 +112,7 @@ import time
 import glob
 import sys
 import traceback
+import errno
 
 from posttroll.publisher import Publisher, get_own_ip
 from posttroll.message import Message
@@ -141,21 +142,33 @@ class Deleter(Thread):
         self.loop = True
 
     def add(self, filename):
+        LOGGER.debug('Scheduling %s for removal', filename)
         self.queue.put((filename, time.time() + 30))
 
     def run(self):
         while self.loop:
             try:
-                filename, the_time = self.queue.get(True, 1)
+                filename, the_time = self.queue.get(True, 2)
             except Empty:
                 continue
-            LOGGER.debug('Scheduling %s for removal', filename)
-            self.timer = Timer(max(the_time - time.time(), 0), os.remove, args=[filename])
-            self.timer.start()
             while self.loop:
-                self.timer.join(1)
-                if not self.timer.is_alive():
+                time.sleep(min(2, max(the_time - time.time(), 0)))
+                if the_time <= time.time():
+                    try:
+                        self.delete(filename)
+                    except:
+                        LOGGER.exception('Something went wrong when deleting %s:', filename)
+                    else:
+                        LOGGER.debug('Removed %s.', filename)
                     break
+
+    @staticmethod
+    def delete(filename):
+        try:
+            os.remove(filename)
+        except OSError as err:
+            if err.errno != errno.ENOENT:
+                raise
 
     def stop(self):
         self.loop = False
