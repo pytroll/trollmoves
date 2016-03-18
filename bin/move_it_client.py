@@ -119,7 +119,7 @@ if zmq_version().startswith("2."):
 
 chains = {}
 listeners = {}
-file_cache = deque(maxlen=1000)
+file_cache = deque(maxlen=11000)
 cache_lock = Lock()
 
 
