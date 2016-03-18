@@ -128,10 +128,12 @@ LOGGER = logging.getLogger("move_it_server")
 
 chains = {}
 
-# Config management
-
-#PUB = Publisher("tcp://*:9090", "move_it_server")
 PUB = None
+
+
+class ConfigError(Exception):
+    pass
+
 
 class Deleter(Thread):
 
@@ -191,7 +193,10 @@ class RequestManager(Thread):
         self._poller = Poller()
         self._poller.register(self._socket, POLLIN)
         self._attrs = attrs
-        self._pattern = globify(attrs["origin"])
+        try:
+            self._pattern = globify(attrs["origin"])
+        except ValueError as err:
+            raise ConfigError('Invalid file pattern: ' + str(err))
         self._deleter = Deleter()
         self._deleter.start()
 
@@ -381,38 +386,15 @@ def reload_config(filename):
             LOGGER.debug("Created request manager on port %s", val["request_port"])
         except (KeyError, NameError):
             pass
+        except ConfigError as err:
+            LOGGER.error('Invalid config parameters in %s: %s', key, str(err))
+            LOGGER.warning('Remove and skip %s', key)
+            del chains[key]
+            continue
         chains[key]["notifier"], fun = create_notifier(val)
         chains[key]["request_manager"].start()
         chains[key]["notifier"].start()
         old_glob.append((globify(val["origin"]), fun))
-
-        if "publisher" in chains[key]:
-            def copy_hook(pathname, dest, val=val, pub=pub):
-                fname = os.path.basename(pathname)
-
-                destination = urlunparse((dest.scheme,
-                                          dest.hostname,
-                                          os.path.join(dest.path, fname),
-                                          dest.params,
-                                          dest.query,
-                                          dest.fragment))
-                info = val.get("info", "")
-                if info:
-                    info = dict((elt.strip().split('=')
-                                 for elt in info.split(";")))
-                    for infokey, infoval in info.items():
-                        if "," in infoval:
-                            info[infokey] = infoval.split(",")
-                else:
-                    info = {}
-                info.update(parse(val["origin"], pathname))
-                info['uri'] = destination
-                info['uid'] = fname
-                msg = Message(val["topic"], 'file', info)
-                pub.send(str(msg))
-                LOGGER.debug("Message sent bla: " + str(msg))
-
-            chains[key]["copy_hook"] = copy_hook
 
         if not identical:
             LOGGER.debug("Updated " + key)
@@ -430,18 +412,8 @@ def reload_config(filename):
         for pattern, fun in old_glob:
             process_old_files(pattern, fun)
 
-    #        fnames = glob.glob(pattern)
-    #     if fnames:
-    #         time.sleep(3)
-    #         LOGGER.debug("Touching old files")
-    #         for fname in fnames:
-    #             if os.path.exists(fname):
-    #                 try:
-    #                     fp_ = open(fname, "ab")
-    #                     fp_.close()
-    #                 except IOError as err:
-    #                     LOGGER.warning("Can't touch %s: %s", fname, str(err))
     LOGGER.debug("done reloading config")
+
 # Unpackers
 
 # xrit
