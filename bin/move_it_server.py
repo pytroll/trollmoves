@@ -94,9 +94,6 @@ I Like To Move It Move It
 I Like To Move It Move It
 I Like To Move It Move It
 Ya Like To (MOVE IT!)
-
-TODO: unpacking
-
 """
 
 from ConfigParser import ConfigParser
@@ -119,10 +116,9 @@ from posttroll.message import Message
 from posttroll import context
 
 from trollsift import parse, globify
-from threading import Thread, Lock
-from zmq import Poller, REP, POLLIN, ZMQError, NOBLOCK, LINGER
+from threading import Thread
+from zmq import Poller, POLLIN, ZMQError, NOBLOCK, LINGER, ROUTER
 from Queue import Queue, Empty
-from threading import Timer
 
 LOGGER = logging.getLogger("move_it_server")
 
@@ -177,6 +173,7 @@ class Deleter(Thread):
         if self.timer:
             self.timer.cancel()
 
+
 class RequestManager(Thread):
 
     """Manage requests.
@@ -187,8 +184,7 @@ class RequestManager(Thread):
 
         self._loop = True
         self._port = port
-        self._lock = Lock()
-        self._socket = context.socket(REP)
+        self._socket = context.socket(ROUTER)
         self._socket.bind("tcp://*:" + str(self._port))
         self._poller = Poller()
         self._poller.register(self._socket, POLLIN)
@@ -200,19 +196,19 @@ class RequestManager(Thread):
         self._deleter = Deleter()
         self._deleter.start()
 
-    def send(self, message):
+    def send(self, message, address):
         """Send a message
         """
         if message.binary:
             LOGGER.debug("Response: " + " ".join(str(message).split()[:6]))
         else:
             LOGGER.debug("Response: " + str(message))
-        self._socket.send(str(message))
+        self._socket.send_multipart([address, b'', str(message)])
 
-    def pong(self):
+    def pong(self, message):
         """Reply to ping
         """
-        return Message(subject, "pong", {"station": self._station})
+        return Message(message.subject, "pong", {"station": self._station})
 
     def push(self, message):
         """Reply to scanline request
@@ -256,6 +252,16 @@ class RequestManager(Thread):
         del message
         return Message(message.subject, "unknown")
 
+    def reply_and_send(self, fun, address, message):
+        reply = Message(message.subject, "error")
+        try:
+            reply = fun(message)
+        except:
+            LOGGER.exception("Something went wrong"
+                             " when processing the request: %s", str(message))
+        finally:
+            self.send(reply, address)
+
     def run(self):
         while self._loop:
             try:
@@ -265,36 +271,28 @@ class RequestManager(Thread):
                 continue
             if self._socket in socks and socks[self._socket] == POLLIN:
                 LOGGER.debug("Received a request, waiting for the lock")
-                with self._lock:
-                    message = Message(rawstr=self._socket.recv(NOBLOCK))
-                    fake_msg = Message(rawstr=str(message))
-                    try:
-                        urlobj = urlparse(message.data['destination'])
-                    except KeyError:
-                        pass
-                    else:
-                        fake_msg.data['destination'] = urlunparse((urlobj.scheme,
-                                                                  urlobj.hostname,
-                                                                  urlobj.path,
-                                                                  "", "", ""))
+                address, empty, payload = self._socket.recv_multipart(NOBLOCK)
+                message = Message(rawstr=payload)
+                fake_msg = Message(rawstr=str(message))
+                try:
+                    urlobj = urlparse(message.data['destination'])
+                except KeyError:
+                    pass
+                else:
+                    fake_msg.data['destination'] = urlunparse((urlobj.scheme,
+                                                              urlobj.hostname,
+                                                              urlobj.path,
+                                                              "", "", ""))
 
-                    LOGGER.debug("processing request: " + str(fake_msg))
-                    reply = Message(message.subject, "error")
-                    try:
-                        if message.type == "ping":
-                            reply = self.pong()
-                        elif message.type == "push":
-                            reply = self.push(message)
-                        elif message.type == "ack":
-                            reply = self.ack(message)
-                        else:  # unknown request
-                            reply = self.unknown(message)
-                    except:
-                        LOGGER.exception("Something went wrong"
-                                         " when processing the request:")
-                    finally:
-                        self.send(reply)
-                LOGGER.debug("Lock released from manager")
+                LOGGER.debug("processing request: " + str(fake_msg))
+                if message.type == "ping":
+                    Thread(target=self.reply_and_send, args=(self.pong, address, message)).start()
+                elif message.type == "push":
+                    Thread(target=self.reply_and_send, args=(self.push, address, message)).start()
+                elif message.type == "ack":
+                    Thread(target=self.reply_and_send, args=(self.ack, address, message)).start()
+                else:  # unknown request
+                    Thread(target=self.reply_and_send, args=(self.unknown, address, message)).start()
             else:  # timeout
                 pass
 
@@ -363,10 +361,10 @@ def reload_config(filename):
 
     old_glob = []
 
-    for key, val in new_chains.iteritems():
+    for key, val in new_chains.items():
         identical = True
         if key in chains:
-            for key2, val2 in new_chains[key].iteritems():
+            for key2, val2 in new_chains[key].items():
                 if ((key2 not in ["notifier", "publisher"]) and
                     ((key2 not in chains[key]) or
                      (chains[key][key2] != val2))):
@@ -528,7 +526,7 @@ def move_it(message, attrs=None, hook=None):
     dest_url = urlparse(dest)
     try:
         mover = MOVERS[dest_url.scheme]
-    except KeyError, e:
+    except KeyError as e:
         LOGGER.error("Unsupported protocol '" + str(dest_url.scheme)
                      + "'. Could not copy " + pathname + " to "
                      + str(dest))
@@ -637,11 +635,11 @@ class FtpMover(Mover):
                     connection.mkd(currentDir)
                     connection.cwd(currentDir)
 
-        file_obj = file(self.origin, 'rb')
         LOGGER.debug('cd to %s', os.path.dirname(self.destination.path))
         cd_tree(os.path.dirname(self.destination.path))
-        connection.storbinary('STOR ' + os.path.basename(self.origin),
-                              file_obj)
+        with open(self.origin, 'rb') as file_obj:
+            connection.storbinary('STOR ' + os.path.basename(self.origin),
+                                  file_obj)
 
         try:
             connection.quit()
@@ -740,7 +738,7 @@ def create_notifier(attrs):
 
 
 def terminate(chains):
-    for chain in chains.itervalues():
+    for chain in chains.values():
         chain["notifier"].stop()
         if "request_manager" in chain:
             chain["request_manager"].stop()
