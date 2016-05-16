@@ -233,7 +233,7 @@ class Listener(Thread):
             self.subscriber = None
 
 
-def request_push(msg, destination, login):
+def request_push(msg, destination, login, **kwargs):
     with cache_lock:
         # fixme: remove this
         if msg.data["uid"] in file_cache:
@@ -286,6 +286,12 @@ def request_push(msg, destination, login):
             local_msg.data['uri'] = local_uri
             local_msg.data['origin'] = local_msg.data['request_address']
             local_msg.data.pop('request_address')
+
+            for key in local_msg.data:
+                if key in kwargs:
+                    replacement = dict(item.split(':') for item in kwargs[key].split('|'))
+                    local_msg.data[key] = replacement[local_msg.data[key]]
+
             LOGGER.debug("publishing %s", str(local_msg))
             PUB.send(str(local_msg))
         elif response and response.type == "ack":
@@ -306,10 +312,10 @@ def reload_config(filename, callback=request_push):
 
     # setup new chains
 
-    for key, val in new_chains.iteritems():
+    for key, val in new_chains.items():
         identical = True
         if key in chains:
-            for key2, val2 in new_chains[key].iteritems():
+            for key2, val2 in new_chains[key].items():
                 if ((key2 not in ["listeners", "publisher"]) and
                     ((key2 not in chains[key]) or
                      (chains[key][key2] != val2))):
@@ -334,13 +340,7 @@ def reload_config(filename, callback=request_push):
         chains[key].setdefault("listeners", {})
         try:
             for provider in chains[key]["providers"]:
-                if callback == request_push:
-                    chains[key]["listeners"][provider] = Listener(provider, val["topic"], callback,
-                                                                  chains[key]["destination"],
-                                                                  chains[key].get("login"))
-                else:
-                    chains[key]["listeners"][provider] = Listener(provider, val["topic"], callback,
-                                                                  chains[key])
+                chains[key]["listeners"][provider] = Listener(provider, val["topic"], callback, **chains[key])
                 chains[key]["listeners"][provider].start()
         except Exception as err:
             LOGGER.exception(str(err))
