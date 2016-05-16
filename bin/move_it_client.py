@@ -277,7 +277,7 @@ def request_push(msg, destination, login):
         if response and response.type == "file":
             LOGGER.debug("Server done sending file")
             file_cache.append(msg.data["uid"])
-            local_msg = Message(msg.subject, "push", data=msg.data.copy())
+            local_msg = Message(msg.subject, "file", data=msg.data.copy())
             local_uri = urlunparse(('file',
                                     '',
                                     os.path.join(duri.path,
