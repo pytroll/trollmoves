@@ -94,7 +94,7 @@ import socket
 
 from posttroll.publisher import NoisyPublisher
 from posttroll.subscriber import Subscriber
-from posttroll.message import Message
+from posttroll.message import Message, MessageError
 from posttroll import context
 
 from threading import Lock, Thread
@@ -433,7 +433,11 @@ class PushRequester(object):
                         if not reply:
                             LOGGER.error("Empty reply!")
                             break
-                        rep = Message(rawstr=reply)
+                        try:
+                            rep = Message(rawstr=reply)
+                        except MessageError as err:
+                            LOGGER.error('Message error: %s', str(err))
+                            break
                         self.failures = 0
                         self.jammed = False
                         return rep
@@ -597,4 +601,3 @@ if __name__ == '__main__':
     finally:
         if running:
             chains_stop()
-
