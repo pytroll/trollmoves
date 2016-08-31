@@ -265,7 +265,7 @@ def create_notifier(attrs, publisher):
         info.update(parse(attrs["origin"], orig_pathname))
         info['uri'] = pathname
         info['uid'] = os.path.basename(pathname)
-        info['request_address'] = get_own_ip() + ":" + attrs["request_port"]
+        info['request_address'] = attrs.get("request_address", get_own_ip()) + ":" + attrs["request_port"]
         msg = Message(attrs["topic"], 'file', info)
         publisher.send(str(msg))
         LOGGER.debug("Message sent: " + str(msg))
