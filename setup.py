@@ -40,7 +40,7 @@ setup(name="pytroll-file-utils",
       scripts=['bin/move_it.py',
                'bin/move_it_server.py',
                'bin/move_it_client.py',
-               'bin/move_it_mirror.py'
+               'bin/move_it_mirror.py',
                'bin/remove_it.py',
                ],
       data_files=[],
