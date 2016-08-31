@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# Copyright (c) 2015 Martin Raspaud
+# Copyright (c) 2015, 2016 Martin Raspaud
 
 # Author(s):
 
@@ -160,11 +160,13 @@ def main():
         logger.setLevel(logging.INFO)
 
     if args.logfile:
-        handler = logging.handlers.RotatingFileHandler(args.logfile, maxBytes=1000000, backupCount=10)
+        handler = logging.handlers.RotatingFileHandler(
+            args.logfile, maxBytes=1000000, backupCount=10)
     else:
         handler = logging.StreamHandler()
     handler.setLevel(logging.DEBUG)
-    handler.setFormatter(logging.Formatter('[%(asctime)-15s %(levelname)-8s] %(message)s'))
+    handler.setFormatter(
+        logging.Formatter('[%(asctime)-15s %(levelname)-8s] %(message)s'))
 
     logger.addHandler(handler)
 
@@ -176,9 +178,12 @@ def main():
     if args.mail:
         try:
             mailhandler = BufferingSMTPHandler(conf.get("DEFAULT", "mailhost"),
-                                               "{user}@{hostname}".format(**info),
-                                               conf.get("DEFAULT", "to").split(","),
-                                               conf.get("DEFAULT", "subject").format(**info),
+                                               "{user}@{hostname}".format(
+                                                   **info),
+                                               conf.get(
+                                                   "DEFAULT", "to").split(","),
+                                               conf.get("DEFAULT", "subject").format(
+                                                   **info),
                                                500)
         except NoOptionError:
             logger.info("Mail information missing, won't send emails")
@@ -193,7 +198,8 @@ def main():
     if args.config_item:
         for config_item in args.config_item:
             if config_item not in conf.sections():
-                logger.error("No section named %s in %s", config_item, args.configuration_file)
+                logger.error(
+                    "No section named %s in %s", config_item, args.configuration_file)
             else:
                 config_items.append(config_item)
     else:
@@ -209,7 +215,8 @@ def main():
             info = dict(conf.items(section))
             base_dir = info.get("base_dir", "")
             if not os.path.exists(base_dir):
-                logger.warning("Path %s missing, skipping section %s", base_dir, section)
+                logger.warning(
+                    "Path %s missing, skipping section %s", base_dir, section)
                 continue
             logger.info("Cleaning in %s", base_dir)
             templates = (item.strip() for item in info["templates"].split(","))
@@ -228,8 +235,15 @@ def main():
                 logger.info("  Cleaning %s", pathname)
                 flist = glob(pathname)
                 for filename in flist:
-                    stat = os.lstat(filename)
-                    if datetime.fromtimestamp(stat.st_mtime) < ref_time:
+                    if not os.path.exists(filename):
+                        continue
+                    try:
+                        stat = os.lstat(filename)
+                    except OSError:
+                        logger.warning("Couldn't lstat path=%s", str(filename))
+                        continue
+
+                    if datetime.fromtimestamp(stat.st_ctime) < ref_time:
                         if not args.dry_run:
                             try:
                                 if os.path.isdir(filename):
@@ -239,7 +253,8 @@ def main():
                                         logger.info("%s not empty.", filename)
                                 else:
                                     os.remove(filename)
-                                    pub.send(str(Message("deletion", "del", {"uri": filename})))
+                                    pub.send(
+                                        str(Message("deletion", "del", {"uri": filename})))
                                 logger.debug("    Removed %s", filename)
                             except (IOError, OSError) as err:
                                 logger.warning("Can't remove " + filename +
@@ -254,7 +269,8 @@ def main():
             logger.info("MB removed: %s", section_size / 1000000)
             tot_size += section_size
             tot_files += section_files
-    logger.info("Thanks for using pytroll/remove_it. See you soon on pytroll.org!")
+    logger.info(
+        "Thanks for using pytroll/remove_it. See you soon on pytroll.org!")
 
 if __name__ == '__main__':
     try:
