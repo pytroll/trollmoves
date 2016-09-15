@@ -79,34 +79,33 @@ def read_config(filename):
         res[section].setdefault("compression", False)
 
         if "providers" not in res[section]:
-            LOGGER.warning("Incomplete section " + section
-                           + ": add an 'providers' item.")
-            LOGGER.info("Ignoring section " + section
-                        + ": incomplete.")
+            LOGGER.warning("Incomplete section " + section +
+                           ": add an 'providers' item.")
+            LOGGER.info("Ignoring section " + section + ": incomplete.")
             del res[section]
             continue
         else:
-            res[section]["providers"] = ["tcp://" + item for item in res[section]["providers"].split()]
+            res[section]["providers"] = [
+                "tcp://" + item for item in res[section]["providers"].split()
+            ]
 
         if "destination" not in res[section]:
-            LOGGER.warning("Incomplete section " + section
-                           + ": add an 'destination' item.")
-            LOGGER.info("Ignoring section " + section
-                        + ": incomplete.")
+            LOGGER.warning("Incomplete section " + section +
+                           ": add an 'destination' item.")
+            LOGGER.info("Ignoring section " + section + ": incomplete.")
             del res[section]
             continue
 
         if "topic" in res[section]:
             try:
-                res[section]["publish_port"] = int(
-                    res[section]["publish_port"])
+                res[section]["publish_port"] = int(res[section][
+                    "publish_port"])
             except (KeyError, ValueError):
                 res[section]["publish_port"] = 0
     return res
 
 
 class Listener(Thread):
-
     '''PyTroll listener class for reading messages for Trollduction
     '''
 
@@ -130,7 +129,8 @@ class Listener(Thread):
         '''
         if self.subscriber is None:
             if self.topics:
-                LOGGER.info("Subscribing to %s with topics %s", str(self.address), str(self.topics))
+                LOGGER.info("Subscribing to %s with topics %s",
+                            str(self.address), str(self.topics))
                 self.subscriber = Subscriber(self.address, self.topics)
 
     def run(self):
@@ -163,7 +163,8 @@ def request_push(msg, destination, login, publisher=None, **kwargs):
         # fixme: remove this
         if msg.data["uid"] in file_cache:
             urlobj = urlparse(msg.data['uri'])
-            if publisher and socket.gethostbyname(urlobj.netloc) in get_local_ips():
+            if publisher and socket.gethostbyname(
+                    urlobj.netloc) in get_local_ips():
                 LOGGER.debug('Sending: %s', str(msg))
                 publisher.send(str(msg))
             mtype = 'ack'
@@ -174,53 +175,50 @@ def request_push(msg, destination, login, publisher=None, **kwargs):
 
         duri = urlparse(destination)
         scheme = duri.scheme or 'file'
-        dest_hostname = socket.gethostname()
+        dest_hostname = duri.hostname or socket.gethostname()
 
         if mtype == 'push':
             # A request without credentials is build first to be printed in the logs
-            req.data["destination"] = urlunparse((scheme,
-                                                  dest_hostname,
-                                                  os.path.join(duri.path,
-                                                               msg.data['uid']),
-                                                  "", "", ""))
+            req.data["destination"] = urlunparse((
+                scheme, dest_hostname, os.path.join(duri.path, msg.data[
+                    'uid']), "", "", ""))
             LOGGER.info("Requesting: " + str(req))
             if login:
                 # if necessary add the credentials for the real request
-                req.data["destination"] = urlunparse((scheme,
-                                                      login + "@" + dest_hostname,
-                                                      os.path.join(duri.path,
-                                                                   msg.data['uid']),
-                                                      "", "", ""))
+                req.data["destination"] = urlunparse((
+                    scheme, login + "@" + dest_hostname, os.path.join(
+                        duri.path, msg.data['uid']), "", "", ""))
 
         requester = PushRequester(hostname, int(port))
         if mtype == 'push':
-            response = requester.send_and_recv(req, 10 * 1000)  # fixme timeout should be in us for zmq2 ?
+            response = requester.send_and_recv(
+                req, 10 * 1000)  # fixme timeout should be in us for zmq2 ?
         else:
-            response = requester.send_and_recv(req, 1 * 1000)  # fixme timeout should be in us for zmq2 ?
+            response = requester.send_and_recv(
+                req, 1 * 1000)  # fixme timeout should be in us for zmq2 ?
         if response and response.type == "file":
             LOGGER.debug("Server done sending file")
             file_cache.append(msg.data["uid"])
             if publisher:
                 local_msg = Message(msg.subject, "file", data=msg.data.copy())
-                local_uri = urlunparse(('file',
-                                        '',
-                                        os.path.join(duri.path,
-                                                     msg.data['uid']),
-                                        "", "", ""))
+                local_uri = urlunparse(('file', '', os.path.join(
+                    duri.path, msg.data['uid']), "", "", ""))
                 local_msg.data['uri'] = local_uri
                 local_msg.data['origin'] = local_msg.data['request_address']
                 local_msg.data.pop('request_address')
 
                 for key in local_msg.data:
                     if key in kwargs:
-                        replacement = dict(item.split(':') for item in kwargs[key].split('|'))
+                        replacement = dict(item.split(':')
+                                           for item in kwargs[key].split('|'))
                         local_msg.data[key] = replacement[local_msg.data[key]]
                 LOGGER.debug("publishing %s", str(local_msg))
                 publisher.send(str(local_msg))
         elif response and response.type == "ack":
             pass
         else:
-            LOGGER.error("Failed to get valid response from server %s: %s", str(dest_hostname), str(response))
+            LOGGER.error("Failed to get valid response from server %s: %s",
+                         str(dest_hostname), str(response))
 
 
 def reload_config(filename, chains, callback=request_push, pub_instance=None):
@@ -262,7 +260,11 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
         try:
             for provider in chains[key]["providers"]:
                 chains[key]["listeners"][provider] = Listener(
-                    provider, val["topic"], callback, pub_instance=pub_instance, **chains[key])
+                    provider,
+                    val["topic"],
+                    callback,
+                    pub_instance=pub_instance,
+                    **chains[key])
                 chains[key]["listeners"][provider].start()
         except Exception as err:
             LOGGER.exception(str(err))
@@ -294,7 +296,6 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
 
 
 class PushRequester(object):
-
     """Base requester class.
     """
 
@@ -369,13 +370,12 @@ class PushRequester(object):
                 self.stop()
                 retries_left -= 1
                 if retries_left <= 0:
-                    LOGGER.error("Server doesn't answer, abandoning... " +
-                                 str(self._reqaddress))
+                    LOGGER.error("Server doesn't answer, abandoning... " + str(
+                        self._reqaddress))
                     self.connect()
                     self.failures += 1
                     if self.failures == 5:
-                        LOGGER.critical("Server jammed ? %s",
-                                        self._reqaddress)
+                        LOGGER.critical("Server jammed ? %s", self._reqaddress)
                         self.jammed = True
                     break
                 LOGGER.info("Reconnecting and resending " + str(msg))
@@ -389,7 +389,6 @@ class PushRequester(object):
 
 
 class EventHandler(pyinotify.ProcessEvent):
-
     """Handle events with a generic *fun* function.
     """
 
@@ -418,15 +417,14 @@ class EventHandler(pyinotify.ProcessEvent):
 
 
 class StatCollector(object):
-
     def __init__(self, statfile):
         self.statfile = statfile
 
     def collect(self, msg, config):
         with open(self.statfile, 'a') as fd:
-            fd.write("{0:s}\t{1:s}\t{2:s}\t{3:s}\n".format(msg.data['uid'], msg.data['request_address'],
-                                                           str(time.time()),
-                                                           str(msg.time)))
+            fd.write("{0:s}\t{1:s}\t{2:s}\t{3:s}\n".format(msg.data[
+                'uid'], msg.data['request_address'], str(time.time()), str(
+                    msg.time)))
 
 
 def terminate(chains):
@@ -436,7 +434,7 @@ def terminate(chains):
         if "publisher" in chain:
             chain["publisher"].stop()
     LOGGER.info("Shutting down.")
-    print ("Thank you for using pytroll/move_it_client."
-           " See you soon on pytroll.org!")
+    print("Thank you for using pytroll/move_it_client."
+          " See you soon on pytroll.org!")
     time.sleep(1)
     sys.exit(0)
