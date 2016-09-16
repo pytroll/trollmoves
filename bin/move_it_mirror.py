@@ -59,11 +59,11 @@ def foo(*args, **kwargs):
 
 
 class Listeners(object):
-
     def __init__(self, callback, client_topic, providers, **attrs):
         self.listeners = []
         for provider in providers.split():
-            self.listeners.append(Listener('tcp://' + provider, [client_topic], callback, **attrs))
+            self.listeners.append(Listener('tcp://' + provider, [client_topic],
+                                           callback, **attrs))
 
     def start(self):
         for listener in self.listeners:
@@ -76,7 +76,8 @@ class Listeners(object):
 
 def create_listener_notifier(attrs, publisher):
 
-    request_address = get_own_ip() + ":" + attrs["request_port"]
+    request_address = attrs.get("request_address",
+                                get_own_ip()) + ":" + attrs["request_port"]
 
     def publish_callback(msg, *args, **kwargs):
         # save to file_cache
@@ -100,7 +101,6 @@ def create_listener_notifier(attrs, publisher):
 
 
 class MirrorRequestManager(RequestManager):
-
     def __init__(self, *args, **kwargs):
         RequestManager.__init__(self, *args, **kwargs)
         self._deleter = MirrorDeleter()
@@ -117,12 +117,12 @@ class MirrorRequestManager(RequestManager):
 
 
 class MirrorDeleter(Deleter):
-
     @staticmethod
     def delete(filename):
         Deleter.delete(filename)
         with cache_lock:
             file_registery.pop(os.path.basename(filename), None)
+
 
 if __name__ == '__main__':
     import argparse
@@ -131,9 +131,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("config_file",
                         help="The configuration file to run on.")
-    parser.add_argument("-l", "--log",
+    parser.add_argument("-l",
+                        "--log",
                         help="The file to log to. stdout otherwise.")
-    parser.add_argument("-p", "--port",
+    parser.add_argument("-p",
+                        "--port",
                         help="The port to publish on. 9010 is the default",
                         default=9010)
     cmd_args = parser.parse_args()
@@ -145,8 +147,7 @@ if __name__ == '__main__':
     if cmd_args.log:
         fh = logging.handlers.TimedRotatingFileHandler(
             os.path.join(cmd_args.log),
-            "midnight",
-            backupCount=7)
+            "midnight", backupCount=7)
     else:
         fh = logging.StreamHandler()
 
@@ -166,16 +167,18 @@ if __name__ == '__main__':
 
     PUB = Publisher("tcp://*:" + str(cmd_args.port), "move_it_server")
 
-    mask = (pyinotify.IN_CLOSE_WRITE |
-            pyinotify.IN_MOVED_TO |
+    mask = (pyinotify.IN_CLOSE_WRITE | pyinotify.IN_MOVED_TO |
             pyinotify.IN_CREATE)
     watchman = pyinotify.WatchManager()
 
     def local_reload_config(finename):
-        return reload_config(filename, chains, create_listener_notifier, MirrorRequestManager, PUB)
+        return reload_config(filename, chains, create_listener_notifier,
+                             MirrorRequestManager, PUB)
 
-    notifier = pyinotify.ThreadedNotifier(watchman, EventHandler(
-        local_reload_config, cmd_filename=cmd_args.config_file))
+    notifier = pyinotify.ThreadedNotifier(
+        watchman,
+        EventHandler(local_reload_config,
+                     cmd_filename=cmd_args.config_file))
     watchman.add_watch(os.path.dirname(cmd_args.config_file), mask)
 
     def chains_stop(*args):
@@ -187,14 +190,16 @@ if __name__ == '__main__':
     signal.signal(signal.SIGTERM, chains_stop)
 
     def reload_cfg_file(*args):
-        reload_config(cmd_args.config_file, chains, create_listener_notifier, MirrorRequestManager, PUB)
+        reload_config(cmd_args.config_file, chains, create_listener_notifier,
+                      MirrorRequestManager, PUB)
 
     signal.signal(signal.SIGHUP, reload_cfg_file)
 
     notifier.start()
 
     try:
-        reload_config(cmd_args.config_file, chains, create_listener_notifier, MirrorRequestManager, PUB)
+        reload_config(cmd_args.config_file, chains, create_listener_notifier,
+                      MirrorRequestManager, PUB)
         main()
     except KeyboardInterrupt:
         LOGGER.debug("Interrupting")

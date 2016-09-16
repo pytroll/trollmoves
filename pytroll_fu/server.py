@@ -55,7 +55,6 @@ class ConfigError(Exception):
 
 
 class Deleter(Thread):
-
     def __init__(self):
         Thread.__init__(self)
         self.queue = Queue()
@@ -78,7 +77,8 @@ class Deleter(Thread):
                     try:
                         self.delete(filename)
                     except:
-                        LOGGER.exception('Something went wrong when deleting %s:', filename)
+                        LOGGER.exception(
+                            'Something went wrong when deleting %s:', filename)
                     else:
                         LOGGER.debug('Removed %s.', filename)
                     break
@@ -98,7 +98,6 @@ class Deleter(Thread):
 
 
 class RequestManager(Thread):
-
     """Manage requests.
     """
 
@@ -141,20 +140,26 @@ class RequestManager(Thread):
         uri = urlparse(message.data["uri"])
         pathname = uri.path
 
-        if not fnmatch.fnmatch(os.path.basename(pathname),
-                               os.path.basename(globify(self._attrs["origin"]))):
+        if not fnmatch.fnmatch(
+                os.path.basename(pathname),
+                os.path.basename(globify(self._attrs["origin"]))):
             LOGGER.warning('Client trying to get invalid file: %s', pathname)
-            return Message(message.subject, "err", data="{0:s} not reachable".format(pathname))
+            return Message(message.subject,
+                           "err",
+                           data="{0:s} not reachable".format(pathname))
         try:
             move_it(message, self._attrs)
         except Exception as err:
             return Message(message.subject, "err", data=str(err))
         else:
-            if (self._attrs.get('compression') or
-                    self._attrs.get('delete', 'False').lower() in ["1", "yes", "true", "on"]):
+            if (self._attrs.get('compression') or self._attrs.get(
+                    'delete', 'False').lower() in ["1", "yes", "true", "on"]):
                 self._deleter.add(pathname)
-            new_msg = Message(message.subject, "file", data=message.data.copy())
-            new_msg.data['destination'] = clean_url(new_msg.data['destination'])
+            new_msg = Message(message.subject,
+                              "file",
+                              data=message.data.copy())
+            new_msg.data['destination'] = clean_url(new_msg.data[
+                'destination'])
             return new_msg
 
     def ack(self, message):
@@ -163,16 +168,23 @@ class RequestManager(Thread):
         uri = urlparse(message.data["uri"])
         pathname = uri.path
 
-        if not fnmatch.fnmatch(os.path.basename(pathname),
-                               os.path.basename(globify(self._attrs["origin"]))):
+        if not fnmatch.fnmatch(
+                os.path.basename(pathname),
+                os.path.basename(globify(self._attrs["origin"]))):
             LOGGER.warning('Client trying to get invalid file: %s', pathname)
-            return Message(message.subject, "err", data="{0:s} not reacheable".format(pathname))
+            return Message(message.subject,
+                           "err",
+                           data="{0:s} not reacheable".format(pathname))
 
-        if (self._attrs.get('compression') or
-                self._attrs.get('delete', 'False').lower() in ["1", "yes", "true", "on"]):
+        if (self._attrs.get('compression') or self._attrs.get(
+                'delete', 'False').lower() in ["1", "yes", "true", "on"]):
             self._deleter.add(pathname)
         new_msg = Message(message.subject, "ack", data=message.data.copy())
-        new_msg.data['destination'] = clean_url(new_msg.data['destination'])
+        try:
+            new_msg.data['destination'] = clean_url(new_msg.data[
+                'destination'])
+        except KeyError:
+            pass
         return new_msg
 
     def unknown(self, message):
@@ -208,17 +220,22 @@ class RequestManager(Thread):
                 except KeyError:
                     pass
                 else:
-                    fake_msg.data['destination'] = clean_url(message.data['destination'])
+                    fake_msg.data['destination'] = clean_url(message.data[
+                        'destination'])
 
                 LOGGER.debug("processing request: " + str(fake_msg))
                 if message.type == "ping":
-                    Thread(target=self.reply_and_send, args=(self.pong, address, message)).start()
+                    Thread(target=self.reply_and_send,
+                           args=(self.pong, address, message)).start()
                 elif message.type == "push":
-                    Thread(target=self.reply_and_send, args=(self.push, address, message)).start()
+                    Thread(target=self.reply_and_send,
+                           args=(self.push, address, message)).start()
                 elif message.type == "ack":
-                    Thread(target=self.reply_and_send, args=(self.ack, address, message)).start()
+                    Thread(target=self.reply_and_send,
+                           args=(self.ack, address, message)).start()
                 else:  # unknown request
-                    Thread(target=self.reply_and_send, args=(self.unknown, address, message)).start()
+                    Thread(target=self.reply_and_send,
+                           args=(self.unknown, address, message)).start()
             else:  # timeout
                 pass
 
@@ -235,8 +252,7 @@ def create_notifier(attrs, publisher):
     """Create a notifier from the specified configuration attributes *attrs*.
     """
 
-    tmask = (pyinotify.IN_CLOSE_WRITE |
-             pyinotify.IN_MOVED_TO |
+    tmask = (pyinotify.IN_CLOSE_WRITE | pyinotify.IN_MOVED_TO |
              pyinotify.IN_CREATE)
 
     wm_ = pyinotify.WatchManager()
@@ -256,8 +272,7 @@ def create_notifier(attrs, publisher):
 
         info = attrs.get("info", {})
         if info:
-            info = dict((elt.strip().split('=')
-                         for elt in info.split(";")))
+            info = dict((elt.strip().split('=') for elt in info.split(";")))
             for infokey, infoval in info.items():
                 if "," in infoval:
                     info[infokey] = infoval.split(",")
@@ -265,7 +280,8 @@ def create_notifier(attrs, publisher):
         info.update(parse(attrs["origin"], orig_pathname))
         info['uri'] = pathname
         info['uid'] = os.path.basename(pathname)
-        info['request_address'] = attrs.get("request_address", get_own_ip()) + ":" + attrs["request_port"]
+        info['request_address'] = attrs.get(
+            "request_address", get_own_ip()) + ":" + attrs["request_port"]
         msg = Message(attrs["topic"], 'file', info)
         publisher.send(str(msg))
         LOGGER.debug("Message sent: " + str(msg))
@@ -279,10 +295,8 @@ def create_notifier(attrs, publisher):
 
 def clean_url(url):
     urlobj = urlparse(url)
-    return urlunparse((urlobj.scheme,
-                       urlobj.hostname,
-                       urlobj.path,
-                       "", "", ""))
+    return urlunparse((urlobj.scheme, urlobj.hostname, urlobj.path, "", "", ""
+                       ))
 
 
 def read_config(filename):
@@ -299,10 +313,9 @@ def read_config(filename):
         res[section].setdefault("compression", False)
 
         if "origin" not in res[section]:
-            LOGGER.warning("Incomplete section " + section
-                           + ": add an 'origin' item.")
-            LOGGER.info("Ignoring section " + section
-                        + ": incomplete.")
+            LOGGER.warning("Incomplete section " + section +
+                           ": add an 'origin' item.")
+            LOGGER.info("Ignoring section " + section + ": incomplete.")
             del res[section]
             continue
 
@@ -315,21 +328,24 @@ def read_config(filename):
         #    continue
 
         if "topic" not in res[section]:
-            LOGGER.warning("Incomplete section " + section
-                           + ": add an 'topic' item.")
-            LOGGER.info("Ignoring section " + section
-                        + ": incomplete.")
+            LOGGER.warning("Incomplete section " + section +
+                           ": add an 'topic' item.")
+            LOGGER.info("Ignoring section " + section + ": incomplete.")
             continue
         else:
             try:
-                res[section]["publish_port"] = int(
-                    res[section]["publish_port"])
+                res[section]["publish_port"] = int(res[section][
+                    "publish_port"])
             except (KeyError, ValueError):
                 res[section]["publish_port"] = 0
     return res
 
 
-def reload_config(filename, chains, notifier_builder=create_notifier, manager=RequestManager, publisher=None):
+def reload_config(filename,
+                  chains,
+                  notifier_builder=create_notifier,
+                  manager=RequestManager,
+                  publisher=None):
     """Rebuild chains if needed (if the configuration changed) from *filename*.
     """
 
@@ -358,8 +374,10 @@ def reload_config(filename, chains, notifier_builder=create_notifier, manager=Re
 
         chains[key] = val.copy()
         try:
-            chains[key]["request_manager"] = manager(int(val["request_port"]), val)
-            LOGGER.debug("Created request manager on port %s", val["request_port"])
+            chains[key]["request_manager"] = manager(
+                int(val["request_port"]), val)
+            LOGGER.debug("Created request manager on port %s",
+                         val["request_port"])
         except (KeyError, NameError):
             LOGGER.exception('In reading config')
         except ConfigError as err:
@@ -424,13 +442,10 @@ def xrit(pathname, destination=None, cmd="./xRITDecompress"):
         res = check_output([cmd, pathname], cwd=(destination or opath))
         del res
     else:
-        LOGGER.exception("Can not extract file " + pathname
-                         + " to " + destination
-                         + ", destination has to be local.")
-    LOGGER.info("Successfully extracted " + pathname +
-                " to " + destination)
+        LOGGER.exception("Can not extract file " + pathname + " to " +
+                         destination + ", destination has to be local.")
+    LOGGER.info("Successfully extracted " + pathname + " to " + destination)
     return expected
-
 
 # bzip
 
@@ -459,18 +474,20 @@ def bzip(origin, destination=None):
     return destfile
 
 
-def unpack(pathname, compression=None, working_directory=None, prog=None, delete="False", **kwargs):
+def unpack(pathname,
+           compression=None,
+           working_directory=None,
+           prog=None,
+           delete="False",
+           **kwargs):
     del kwargs
     if compression:
         try:
             unpack_fun = eval(compression)
             if prog is not None:
-                new_path = unpack_fun(pathname,
-                                      working_directory,
-                                      prog)
+                new_path = unpack_fun(pathname, working_directory, prog)
             else:
-                new_path = unpack_fun(pathname,
-                                      working_directory)
+                new_path = unpack_fun(pathname, working_directory)
         except:
             LOGGER.exception("Could not decompress " + pathname)
         else:
@@ -478,7 +495,6 @@ def unpack(pathname, compression=None, working_directory=None, prog=None, delete
                 os.remove(pathname)
             return new_path
     return pathname
-
 
 # Mover
 
@@ -498,9 +514,8 @@ def move_it(message, attrs=None, hook=None):
     try:
         mover = MOVERS[dest_url.scheme]
     except KeyError as e:
-        LOGGER.error("Unsupported protocol '" + str(dest_url.scheme)
-                     + "'. Could not copy " + pathname + " to "
-                     + str(dest))
+        LOGGER.error("Unsupported protocol '" + str(dest_url.scheme) +
+                     "'. Could not copy " + pathname + " to " + str(dest))
         raise
 
     try:
@@ -514,14 +529,13 @@ def move_it(message, attrs=None, hook=None):
         LOGGER.debug("".join(traceback.format_tb(exc_traceback)))
         raise err
     else:
-        LOGGER.info("Successfully copied " + pathname +
-                    " to " + str(fake_dest))
-
+        LOGGER.info("Successfully copied " + pathname + " to " + str(
+            fake_dest))
 
 # TODO: implement the creation of missing directories.
 
-class Mover(object):
 
+class Mover(object):
     """Base mover object. Doesn't do anything as it has to be subclassed.
     """
 
@@ -537,19 +551,18 @@ class Mover(object):
         """Copy it !
         """
 
-        raise NotImplementedError("Copy for scheme " + self.destination.scheme +
-                                  " not implemented (yet).")
+        raise NotImplementedError("Copy for scheme " + self.destination.scheme
+                                  + " not implemented (yet).")
 
     def move(self):
         """Move it !
         """
 
-        raise NotImplementedError("Move for scheme " + self.destination.scheme +
-                                  " not implemented (yet).")
+        raise NotImplementedError("Move for scheme " + self.destination.scheme
+                                  + " not implemented (yet).")
 
 
 class FileMover(Mover):
-
     """Move files in the filesystem.
     """
 
@@ -568,7 +581,6 @@ class FileMover(Mover):
 
 
 class FtpMover(Mover):
-
     """Move files over ftp.
     """
 
@@ -582,8 +594,8 @@ class FtpMover(Mover):
         """Push it !
         """
         connection = FTP(timeout=10)
-        connection.connect(self.destination.hostname,
-                           self.destination.port or 21)
+        connection.connect(self.destination.hostname, self.destination.port or
+                           21)
         if self.destination.username and self.destination.password:
             connection.login(self.destination.username,
                              self.destination.password)
@@ -610,15 +622,13 @@ class FtpMover(Mover):
         except all_errors:
             connection.close()
 
-MOVERS = {'ftp': FtpMover,
-          'file': FileMover,
-          '': FileMover}
+
+MOVERS = {'ftp': FtpMover, 'file': FileMover, '': FileMover}
 
 
 # Generic event handler
 # fixme: on deletion, the file should be removed from the filecache
 class EventHandler(pyinotify.ProcessEvent):
-
     """Handle events with a generic *fun* function.
     """
 
@@ -632,14 +642,16 @@ class EventHandler(pyinotify.ProcessEvent):
     def process_IN_CLOSE_WRITE(self, event):
         """On closing after writing.
         """
-        if self._cmd_filename and os.path.abspath(event.pathname) != self._cmd_filename:
+        if self._cmd_filename and os.path.abspath(
+                event.pathname) != self._cmd_filename:
             return
         self._fun(event.pathname)
 
     def process_IN_CREATE(self, event):
         """On closing after linking.
         """
-        if self._cmd_filename and os.path.abspath(event.pathname) != self._cmd_filename:
+        if self._cmd_filename and os.path.abspath(
+                event.pathname) != self._cmd_filename:
             return
         try:
             if os.stat(event.pathname).st_nlink > 1:
@@ -650,7 +662,8 @@ class EventHandler(pyinotify.ProcessEvent):
     def process_IN_MOVED_TO(self, event):
         """On closing after moving.
         """
-        if self._cmd_filename and os.path.abspath(event.pathname) != self._cmd_filename:
+        if self._cmd_filename and os.path.abspath(
+                event.pathname) != self._cmd_filename:
             return
         self._fun(event.pathname)
 
@@ -675,7 +688,7 @@ def terminate(chains, publisher=None):
         publisher.stop()
 
     LOGGER.info("Shutting down.")
-    print ("Thank you for using pytroll/move_it_server."
-           " See you soon on pytroll.org!")
+    print("Thank you for using pytroll/move_it_server."
+          " See you soon on pytroll.org!")
     time.sleep(1)
     sys.exit(0)
