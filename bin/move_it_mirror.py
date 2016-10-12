@@ -59,6 +59,7 @@ def foo(*args, **kwargs):
 
 
 class Listeners(object):
+
     def __init__(self, callback, client_topic, providers, **attrs):
         self.listeners = []
         for provider in providers.split():
@@ -101,22 +102,28 @@ def create_listener_notifier(attrs, publisher):
 
 
 class MirrorRequestManager(RequestManager):
+
     def __init__(self, *args, **kwargs):
         RequestManager.__init__(self, *args, **kwargs)
         self._deleter = MirrorDeleter()
 
     def push(self, message):
+        new_uri = None
         for source_message in file_registery.get(message.data['uid'], []):
             request_push(source_message, publisher=None, **self._attrs)
             destination = urlparse(self._attrs['destination']).path
             new_uri = os.path.join(destination, message.data['uid'])
             if os.path.exists(new_uri):
                 break
+        if new_uri is None:
+            raise KeyError('No source message found for %s',
+                           str(message.data['uid']))
         message.data['uri'] = new_uri
         return RequestManager.push(self, message)
 
 
 class MirrorDeleter(Deleter):
+
     @staticmethod
     def delete(filename):
         Deleter.delete(filename)

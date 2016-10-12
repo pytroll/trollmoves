@@ -178,7 +178,8 @@ def request_push(msg, destination, login, publisher=None, **kwargs):
         dest_hostname = duri.hostname or socket.gethostname()
 
         if mtype == 'push':
-            # A request without credentials is build first to be printed in the logs
+            # A request without credentials is build first to be printed in the
+            # logs
             req.data["destination"] = urlunparse((
                 scheme, dest_hostname, os.path.join(duri.path, msg.data[
                     'uid']), "", "", ""))
@@ -218,7 +219,7 @@ def request_push(msg, destination, login, publisher=None, **kwargs):
             pass
         else:
             LOGGER.error("Failed to get valid response from server %s: %s",
-                         str(dest_hostname), str(response))
+                         str(hostname), str(response))
 
 
 def reload_config(filename, chains, callback=request_push, pub_instance=None):
@@ -417,6 +418,7 @@ class EventHandler(pyinotify.ProcessEvent):
 
 
 class StatCollector(object):
+
     def __init__(self, statfile):
         self.statfile = statfile
 
