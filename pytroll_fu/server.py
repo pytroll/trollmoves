@@ -36,7 +36,7 @@ import traceback
 from ConfigParser import ConfigParser
 from ftplib import FTP, all_errors
 from Queue import Empty, Queue
-from threading import Thread
+from threading import Lock, Thread
 from urlparse import urlparse, urlunparse
 
 import pyinotify
@@ -55,6 +55,7 @@ class ConfigError(Exception):
 
 
 class Deleter(Thread):
+
     def __init__(self):
         Thread.__init__(self)
         self.queue = Queue()
@@ -110,6 +111,7 @@ class RequestManager(Thread):
         self._poller = Poller()
         self._poller.register(self._socket, POLLIN)
         self._attrs = attrs
+        self._lock = Lock()
         try:
             self._pattern = globify(attrs["origin"])
         except ValueError as err:
@@ -127,7 +129,8 @@ class RequestManager(Thread):
             LOGGER.debug("Response: " + " ".join(str(message).split()[:6]))
         else:
             LOGGER.debug("Response: " + str(message))
-        self._socket.send_multipart([address, b'', str(message)])
+        with self._lock:
+            self._socket.send_multipart([address, b'', str(message)])
 
     def pong(self, message):
         """Reply to ping
