@@ -189,7 +189,8 @@ def request_push(msg, destination, login, publisher=None, **kwargs):
                 req.data["destination"] = urlunparse((
                     scheme, login + "@" + dest_hostname, os.path.join(
                         duri.path, msg.data['uid']), "", "", ""))
-
+            if not os.path.exists(duri.path):
+                os.makedirs(duri.path)
         requester = PushRequester(hostname, int(port))
         if mtype == 'push':
             response = requester.send_and_recv(
