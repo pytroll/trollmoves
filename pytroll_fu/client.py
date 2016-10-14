@@ -191,6 +191,7 @@ def request_push(msg, destination, login, publisher=None, **kwargs):
                         duri.path, msg.data['uid']), "", "", ""))
             if not os.path.exists(duri.path):
                 os.makedirs(duri.path)
+                os.chmod(duri.path, 0o777)
         requester = PushRequester(hostname, int(port))
         if mtype == 'push':
             response = requester.send_and_recv(
