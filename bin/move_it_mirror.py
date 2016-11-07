@@ -26,7 +26,7 @@ import logging
 import os
 import time
 from datetime import datetime
-from threading import Lock
+from threading import Lock, Timer
 from urlparse import urlparse
 
 import pyinotify
@@ -80,6 +80,14 @@ def create_listener_notifier(attrs, publisher):
     request_address = attrs.get("request_address",
                                 get_own_ip()) + ":" + attrs["request_port"]
 
+    delay = float(attrs.get('delay', 0))
+    if delay > 0:
+        def send(msg):
+            Timer(delay, publisher.send, msg).start()
+    else:
+        def send(msg):
+            publisher.send(msg)
+
     def publish_callback(msg, *args, **kwargs):
         # save to file_cache
         with cache_lock:
@@ -94,7 +102,7 @@ def create_listener_notifier(attrs, publisher):
 
         # send onwards
         LOGGER.debug('Sending %s', str(new_msg))
-        publisher.send(str(new_msg))
+        send(str(new_msg))
 
     listeners = Listeners(publish_callback, **attrs)
 
