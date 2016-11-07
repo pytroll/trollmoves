@@ -83,7 +83,7 @@ def create_listener_notifier(attrs, publisher):
     delay = float(attrs.get('delay', 0))
     if delay > 0:
         def send(msg):
-            Timer(delay, publisher.send, msg).start()
+            Timer(delay, publisher.send, [msg]).start()
     else:
         def send(msg):
             publisher.send(msg)
