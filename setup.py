@@ -48,5 +48,6 @@ setup(name="pytroll-file-utils",
       zip_safe=False,
       install_requires=['pyinotify', 'posttroll',
                         'trollsift', 'netifaces',
-                        'pyzmq'],
+                        'pyzmq', 
+                        'scp'],
       )
