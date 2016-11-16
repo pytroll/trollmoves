@@ -215,7 +215,9 @@ class RequestManager(Thread):
                 continue
             if self._socket in socks and socks[self._socket] == POLLIN:
                 LOGGER.debug("Received a request, waiting for the lock")
-                address, empty, payload = self._socket.recv_multipart(NOBLOCK)
+                with self._lock:
+                    address, empty, payload = self._socket.recv_multipart(
+                        NOBLOCK)
                 message = Message(rawstr=payload)
                 fake_msg = Message(rawstr=str(message))
                 try:
