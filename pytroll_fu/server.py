@@ -36,11 +36,11 @@ import traceback
 from ConfigParser import ConfigParser
 from ftplib import FTP, all_errors
 from Queue import Empty, Queue
-from threading import Lock, Thread
+from threading import Thread
 from urlparse import urlparse, urlunparse
 
 import pyinotify
-from zmq import LINGER, NOBLOCK, POLLIN, ROUTER, Poller, ZMQError
+from zmq import LINGER, NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
 
 from posttroll import context
 from posttroll.message import Message
@@ -106,12 +106,15 @@ class RequestManager(Thread):
         Thread.__init__(self)
 
         self._loop = True
-        self._socket = context.socket(ROUTER)
-        self._socket.bind("tcp://*:" + str(port))
+        self.out_socket = context.socket(ROUTER)
+        self.out_socket.bind("tcp://*:" + str(port))
+        self.in_socket = context.socket(PULL)
+        self.in_socket.bind("inproc://replies")
+
         self._poller = Poller()
-        self._poller.register(self._socket, POLLIN)
+        self._poller.register(self.out_socket, POLLIN)
+        self._poller.register(self.in_socket, POLLIN)
         self._attrs = attrs
-        self._lock = Lock()
         try:
             self._pattern = globify(attrs["origin"])
         except ValueError as err:
@@ -121,16 +124,6 @@ class RequestManager(Thread):
     def start(self):
         self._deleter.start()
         Thread.start(self)
-
-    def send(self, message, address):
-        """Send a message
-        """
-        if message.binary:
-            LOGGER.debug("Response: " + " ".join(str(message).split()[:6]))
-        else:
-            LOGGER.debug("Response: " + str(message))
-        with self._lock:
-            self._socket.send_multipart([address, b'', str(message)])
 
     def pong(self, message):
         """Reply to ping
@@ -197,6 +190,9 @@ class RequestManager(Thread):
         return Message(message.subject, "unknown")
 
     def reply_and_send(self, fun, address, message):
+        in_socket = context.socket(PUSH)
+        in_socket.connect("inproc://replies")
+
         reply = Message(message.subject, "error")
         try:
             reply = fun(message)
@@ -204,7 +200,8 @@ class RequestManager(Thread):
             LOGGER.exception("Something went wrong"
                              " when processing the request: %s", str(message))
         finally:
-            self.send(reply, address)
+            LOGGER.debug("Response: " + str(message))
+            in_socket.send_multipart([address, b'', str(reply)])
 
     def run(self):
         while self._loop:
@@ -213,11 +210,10 @@ class RequestManager(Thread):
             except ZMQError:
                 LOGGER.info("Poller interrupted.")
                 continue
-            if self._socket in socks and socks[self._socket] == POLLIN:
-                LOGGER.debug("Received a request, waiting for the lock")
-                with self._lock:
-                    address, empty, payload = self._socket.recv_multipart(
-                        NOBLOCK)
+            if socks.get(self.out_socket) == POLLIN:
+                LOGGER.debug("Received a request")
+                address, empty, payload = self.out_socket.recv_multipart(
+                    NOBLOCK)
                 message = Message(rawstr=payload)
                 fake_msg = Message(rawstr=str(message))
                 try:
@@ -241,16 +237,19 @@ class RequestManager(Thread):
                 else:  # unknown request
                     Thread(target=self.reply_and_send,
                            args=(self.unknown, address, message)).start()
+            elif socks.get(self.in_socket) == POLLIN:
+                self.out_socket.send_multipart(
+                    self.in_socket.recv_multipart(NOBLOCK))
+
             else:  # timeout
                 pass
 
     def stop(self):
-        """Stop the request manager.
-        """
+        """Stop the request manager."""
         self._loop = False
         self._deleter.stop()
-        self._socket.setsockopt(LINGER, 0)
-        self._socket.close()
+        self.out_socket.close(1)
+        self.in_socket.close(1)
 
 
 def create_notifier(attrs, publisher):
@@ -266,8 +265,7 @@ def create_notifier(attrs, publisher):
     opath = os.path.dirname(pattern)
 
     def fun(orig_pathname):
-        """Publish what we have
-        """
+        """Publish what we have."""
         if not fnmatch.fnmatch(orig_pathname, pattern):
             return
         else:
@@ -299,9 +297,10 @@ def create_notifier(attrs, publisher):
 
 
 def clean_url(url):
+    """Remove login info from *url*."""
     urlobj = urlparse(url)
-    return urlunparse((urlobj.scheme, urlobj.hostname, urlobj.path, "", "", ""
-                       ))
+    return urlunparse((urlobj.scheme, urlobj.hostname,
+                       urlobj.path, "", "", ""))
 
 
 def read_config(filename):
@@ -419,8 +418,7 @@ def reload_config(filename,
 
 
 def check_output(*popenargs, **kwargs):
-    """Copy from python 2.7, `subprocess.check_output`.
-    """
+    """Copy from python 2.7, `subprocess.check_output`."""
     if 'stdout' in kwargs:
         raise ValueError('stdout argument not allowed, it will be overridden.')
     LOGGER.debug("Calling " + str(popenargs))
@@ -437,15 +435,13 @@ def check_output(*popenargs, **kwargs):
 
 
 def xrit(pathname, destination=None, cmd="./xRITDecompress"):
-    """Unpacks xrit data.
-    """
+    """Unpacks xrit data."""
     opath, ofile = os.path.split(pathname)
     destination = destination or "/tmp/"
     dest_url = urlparse(destination)
     expected = os.path.join((destination or opath), ofile[:-2] + "__")
     if dest_url.scheme in ("", "file"):
-        res = check_output([cmd, pathname], cwd=(destination or opath))
-        del res
+        check_output([cmd, pathname], cwd=(destination or opath))
     else:
         LOGGER.exception("Can not extract file " + pathname + " to " +
                          destination + ", destination has to be local.")
@@ -458,8 +454,7 @@ BLOCK_SIZE = 1024
 
 
 def bzip(origin, destination=None):
-    """Unzip files.
-    """
+    """Unzip files."""
     ofile = os.path.split(origin)[1]
     destfile = os.path.join(destination or "/tmp/", ofile[:-4])
     if os.path.exists(destfile):
@@ -485,6 +480,7 @@ def unpack(pathname,
            prog=None,
            delete="False",
            **kwargs):
+    """Unpack *pathname*."""
     del kwargs
     if compression:
         try:
@@ -607,14 +603,14 @@ class FtpMover(Mover):
         else:
             connection.login()
 
-        def cd_tree(currentDir):
-            if currentDir != "":
+        def cd_tree(current_dir):
+            if current_dir != "":
                 try:
-                    connection.cwd(currentDir)
+                    connection.cwd(current_dir)
                 except IOError:
-                    cd_tree("/".join(currentDir.split("/")[:-1]))
-                    connection.mkd(currentDir)
-                    connection.cwd(currentDir)
+                    cd_tree("/".join(current_dir.split("/")[:-1]))
+                    connection.mkd(current_dir)
+                    connection.cwd(current_dir)
 
         LOGGER.debug('cd to %s', os.path.dirname(self.destination.path))
         cd_tree(os.path.dirname(self.destination.path))
@@ -645,16 +641,14 @@ class EventHandler(pyinotify.ProcessEvent):
         self._fun = fun
 
     def process_IN_CLOSE_WRITE(self, event):
-        """On closing after writing.
-        """
+        """On closing after writing."""
         if self._cmd_filename and os.path.abspath(
                 event.pathname) != self._cmd_filename:
             return
         self._fun(event.pathname)
 
     def process_IN_CREATE(self, event):
-        """On closing after linking.
-        """
+        """On closing after linking."""
         if self._cmd_filename and os.path.abspath(
                 event.pathname) != self._cmd_filename:
             return
@@ -665,8 +659,7 @@ class EventHandler(pyinotify.ProcessEvent):
             return
 
     def process_IN_MOVED_TO(self, event):
-        """On closing after moving.
-        """
+        """On closing after moving."""
         if self._cmd_filename and os.path.abspath(
                 event.pathname) != self._cmd_filename:
             return
