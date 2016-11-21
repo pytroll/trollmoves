@@ -108,8 +108,9 @@ class RequestManager(Thread):
         self._loop = True
         self.out_socket = context.socket(ROUTER)
         self.out_socket.bind("tcp://*:" + str(port))
+        self.port = port
         self.in_socket = context.socket(PULL)
-        self.in_socket.bind("inproc://replies")
+        self.in_socket.bind("inproc://replies" + str(port))
 
         self._poller = Poller()
         self._poller.register(self.out_socket, POLLIN)
@@ -191,7 +192,7 @@ class RequestManager(Thread):
 
     def reply_and_send(self, fun, address, message):
         in_socket = context.socket(PUSH)
-        in_socket.connect("inproc://replies")
+        in_socket.connect("inproc://replies" + str(self.port))
 
         reply = Message(message.subject, "error")
         try:
