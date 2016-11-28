@@ -624,8 +624,42 @@ class FtpMover(Mover):
         except all_errors:
             connection.close()
 
+from paramiko import SSHClient
+from scp import SCPClient
 
-MOVERS = {'ftp': FtpMover, 'file': FileMover, '': FileMover}
+class ScpMover(Mover):
+
+     """Move files over ssh with scp.
+     """
+
+     def move(self):
+         """Push it !
+         """
+         self.copy()
+         os.remove(self.origin)
+
+     def copy(self):
+         """Push it !
+         """
+         ssh=SSHClient()
+         ssh.load_system_host_keys()
+         ssh.connect(self.destination.hostname, username=self.destination.username)
+
+         LOGGER.debug('hostname %s', self.destination.hostname)
+         LOGGER.debug('dest path %s ', os.path.dirname(self.destination.path))
+         LOGGER.debug('origin %s ', self.origin)
+
+         scp=SCPClient(ssh.get_transport())
+         scp.put(self.origin,self.destination.path)
+
+         scp.close()
+         ssh.close()
+
+MOVERS = {'ftp': FtpMover,
+          'file': FileMover,
+          '': FileMover,
+          'scp':ScpMover
+}
 
 
 # Generic event handler
