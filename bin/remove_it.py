@@ -247,7 +247,10 @@ def main():
                         if not args.dry_run:
                             try:
                                 if os.path.isdir(filename):
-                                    os.rmdir(filename)
+                                    if not os.listdir(filename):
+                                        os.rmdir(filename)
+                                    else:
+                                        logger.info("%s not empty.", filename)
                                 else:
                                     os.remove(filename)
                                     pub.send(
@@ -274,4 +277,3 @@ if __name__ == '__main__':
         main()
     except:
         logger.exception("Something bad happened")
-        raise

@@ -131,18 +131,23 @@ Ya Like To (MOVE IT!)
 
 """
 
-from ConfigParser import ConfigParser
-import os
-from urlparse import urlparse, urlunparse
-import pyinotify
+import bz2
 import fnmatch
-import shutil
+import glob
 import logging
 import logging.handlers
+import os
+import shutil
 import subprocess
-import time
-import glob
 import sys
+import time
+from ConfigParser import ConfigParser
+from ftplib import FTP, all_errors
+from urlparse import urlparse, urlunparse
+
+import pyinotify
+
+from trollsift import globify, parse
 
 LOGGER = logging.getLogger("move_it")
 
@@ -154,7 +159,6 @@ except ImportError:
     print ("\nNOTICE! Import of posttroll failed, " +
            "messaging will not be used.\n")
 
-from trollsift import parse, globify
 
 chains = {}
 
@@ -263,7 +267,13 @@ def reload_config(filename):
                             info[infokey] = infoval.split(",")
                 else:
                     info = {}
-                info.update(parse(val["origin"], pathname))
+                try:
+                    info.update(parse(os.path.basename(val["origin"]),
+                                      os.path.basename(pathname)))
+                except ValueError:
+                    info.update(parse(os.path.basename(os.path.splitext(val["origin"])[0]),
+                                      os.path.basename(pathname)))
+
                 info['uri'] = destination
                 info['uid'] = fname
                 msg = Message(val["topic"], 'file', info)
@@ -353,7 +363,6 @@ def xrit(pathname, destination=None, cmd="./xRITDecompress"):
 
 # bzip
 
-import bz2
 BLOCK_SIZE = 1024
 
 
@@ -456,7 +465,6 @@ class FileMover(Mover):
         """
         shutil.move(self.origin, self.destination.path)
 
-from ftplib import FTP, all_errors
 
 
 class FtpMover(Mover):
