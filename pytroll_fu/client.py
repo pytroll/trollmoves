@@ -48,6 +48,7 @@ cache_lock = Lock()
 REQ_TIMEOUT = 1000
 if zmq_version().startswith("2."):
     REQ_TIMEOUT *= 1000
+BIG_REQ_TIMEOUT = 10 * REQ_TIMEOUT
 
 
 def get_local_ips():
@@ -132,6 +133,7 @@ class Listener(Thread):
                 LOGGER.info("Subscribing to %s with topics %s",
                             str(self.address), str(self.topics))
                 self.subscriber = Subscriber(self.address, self.topics)
+                LOGGER.debug("Subscriber %s" % str(self.subscriber))
 
     def run(self):
         '''Run listener
@@ -144,6 +146,7 @@ class Listener(Thread):
                 break
             if msg is None:
                 continue
+            LOGGER.debug("Receiving (SUB) %s" % str(msg))
             self.callback(msg, *self.cargs, **self.ckwargs)
 
         LOGGER.debug("Exiting listener %s", str(self.address))
@@ -192,19 +195,23 @@ def request_push(msg, destination, login, publisher=None, **kwargs):
             if not os.path.exists(duri.path):
                 os.makedirs(duri.path)
                 os.chmod(duri.path, 0o777)
-        requester = PushRequester(hostname, int(port))
-        if mtype == 'push':
-            response = requester.send_and_recv(
-                req, 10 * 1000)  # fixme timeout should be in us for zmq2 ?
+            timeout = BIG_REQ_TIMEOUT
         else:
-            response = requester.send_and_recv(
-                req, 1 * 1000)  # fixme timeout should be in us for zmq2 ?
+            LOGGER.debug("Sending: %s" % str(req))
+            timeout = REQ_TIMEOUT
+
+        requester = PushRequester(hostname, int(port))
+        response = requester.send_and_recv(req, timeout=timeout)
         if response and response.type == "file":
             LOGGER.debug("Server done sending file")
             file_cache.append(msg.data["uid"])
             if publisher:
+                if socket.gethostbyname(dest_hostname) in get_local_ips():
+                    scheme_, host_ = "file", ''  # local file
+                else:
+                    scheme_, host_ = scheme, dest_hostname  # remote file
                 local_msg = Message(msg.subject, "file", data=msg.data.copy())
-                local_uri = urlunparse(('file', '', os.path.join(
+                local_uri = urlunparse((scheme_, host_, os.path.join(
                     duri.path, msg.data['uid']), "", "", ""))
                 local_msg.data['uri'] = local_uri
                 local_msg.data['origin'] = local_msg.data['request_address']
@@ -363,6 +370,7 @@ class PushRequester(object):
                         except MessageError as err:
                             LOGGER.error('Message error: %s', str(err))
                             break
+                        LOGGER.debug("Receiving (REQ) %s" % str(rep))
                         self.failures = 0
                         self.jammed = False
                         return rep
