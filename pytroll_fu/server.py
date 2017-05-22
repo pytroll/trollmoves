@@ -40,11 +40,11 @@ from threading import Thread
 from urlparse import urlparse, urlunparse
 
 import pyinotify
-from zmq import LINGER, NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
+from zmq import NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
 
 from posttroll import context
 from posttroll.message import Message
-from posttroll.publisher import Publisher, get_own_ip
+from posttroll.publisher import get_own_ip
 from trollsift import globify, parse
 
 LOGGER = logging.getLogger(__name__)
@@ -122,6 +122,13 @@ class RequestManager(Thread):
             raise ConfigError('Invalid file pattern: ' + str(err))
         self._deleter = Deleter()
 
+        try:
+            self._station = self._attrs["station"]
+        except (KeyError, TypeError):
+            LOGGER.warning("Station is not defined in config file")
+            self._station = "unknown"
+        LOGGER.debug("Station is '%s'" % self._station)
+
     def start(self):
         self._deleter.start()
         Thread.start(self)
@@ -187,7 +194,7 @@ class RequestManager(Thread):
     def unknown(self, message):
         """Reply to any unknown request.
         """
-        del message
+        ### del message
         return Message(message.subject, "unknown")
 
     def reply_and_send(self, fun, address, message):
@@ -218,7 +225,7 @@ class RequestManager(Thread):
                 message = Message(rawstr=payload)
                 fake_msg = Message(rawstr=str(message))
                 try:
-                    urlobj = urlparse(message.data['destination'])
+                    urlparse(message.data['destination'])
                 except KeyError:
                     pass
                 else:
@@ -515,7 +522,7 @@ def move_it(message, attrs=None, hook=None):
     dest_url = urlparse(dest)
     try:
         mover = MOVERS[dest_url.scheme]
-    except KeyError as e:
+    except KeyError:
         LOGGER.error("Unsupported protocol '" + str(dest_url.scheme) +
                      "'. Could not copy " + pathname + " to " + str(dest))
         raise
