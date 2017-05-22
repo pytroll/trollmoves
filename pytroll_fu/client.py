@@ -133,7 +133,7 @@ class Listener(Thread):
                 LOGGER.info("Subscribing to %s with topics %s",
                             str(self.address), str(self.topics))
                 self.subscriber = Subscriber(self.address, self.topics)
-                LOGGER.debug("Subscriber %s" % str(self.subscriber))
+                LOGGER.debug("Subscriber %s", str(self.subscriber))
 
     def run(self):
         '''Run listener
@@ -146,7 +146,7 @@ class Listener(Thread):
                 break
             if msg is None:
                 continue
-            LOGGER.debug("Receiving (SUB) %s" % str(msg))
+            LOGGER.debug("Receiving (SUB) %s", str(msg))
             self.callback(msg, *self.cargs, **self.ckwargs)
 
         LOGGER.debug("Exiting listener %s", str(self.address))
@@ -192,9 +192,12 @@ def request_push(msg, destination, login, publisher=None, **kwargs):
                 req.data["destination"] = urlunparse((
                     scheme, login + "@" + dest_hostname, os.path.join(
                         duri.path, msg.data['uid']), "", "", ""))
-            if not os.path.exists(duri.path):
-                os.makedirs(duri.path)
-                os.chmod(duri.path, 0o777)
+            local_path = os.path.join(*([kwargs.get('ftp_root', '/')] +
+                                        duri.path.split(os.path.sep) +
+                                        [msg.data['uid']]))
+            if not os.path.exists(local_path):
+                os.makedirs(local_path)
+                os.chmod(local_path, 0o777)
             timeout = BIG_REQ_TIMEOUT
         else:
             LOGGER.debug("Sending: %s" % str(req))
@@ -211,8 +214,9 @@ def request_push(msg, destination, login, publisher=None, **kwargs):
                 else:
                     scheme_, host_ = scheme, dest_hostname  # remote file
                 local_msg = Message(msg.subject, "file", data=msg.data.copy())
-                local_uri = urlunparse((scheme_, host_, os.path.join(
-                    duri.path, msg.data['uid']), "", "", ""))
+                local_uri = urlunparse((scheme_, host_, 
+					local_path, 
+                                        "", "", ""))
                 local_msg.data['uri'] = local_uri
                 local_msg.data['origin'] = local_msg.data['request_address']
                 local_msg.data.pop('request_address')
@@ -370,7 +374,7 @@ class PushRequester(object):
                         except MessageError as err:
                             LOGGER.error('Message error: %s', str(err))
                             break
-                        LOGGER.debug("Receiving (REQ) %s" % str(rep))
+                        LOGGER.debug("Receiving (REQ) %s", str(rep))
                         self.failures = 0
                         self.jammed = False
                         return rep

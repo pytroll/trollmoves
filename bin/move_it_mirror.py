@@ -52,6 +52,7 @@ cache_lock = Lock()
 def main():
     while running:
         time.sleep(1)
+        PUB.heartbeat(30)
 
 
 def foo(*args, **kwargs):

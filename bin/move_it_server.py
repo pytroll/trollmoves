@@ -121,6 +121,7 @@ running = True
 def main():
     while running:
         time.sleep(1)
+        PUB.heartbeat(30)
 
 if __name__ == '__main__':
     import argparse
@@ -170,7 +171,8 @@ if __name__ == '__main__':
     def reload_cfg_file(filename):
         return reload_config(filename, chains, publisher=PUB)
 
-    notifier = pyinotify.ThreadedNotifier(watchman, EventHandler(reload_cfg_file, cmd_filename=cmd_args.config_file))
+    notifier = pyinotify.ThreadedNotifier(watchman, EventHandler(
+        reload_cfg_file, cmd_filename=cmd_args.config_file))
     watchman.add_watch(os.path.dirname(cmd_args.config_file), mask)
 
     def chains_stop(*args):
