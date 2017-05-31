@@ -33,7 +33,7 @@ from urlparse import urlparse, urlunparse
 
 import netifaces
 import pyinotify
-from zmq import LINGER, NOBLOCK, POLLIN, REQ, Poller, zmq_version
+from zmq import LINGER, POLLIN, REQ, Poller, zmq_version
 
 from posttroll import context
 from posttroll.message import Message, MessageError
@@ -49,6 +49,8 @@ REQ_TIMEOUT = 1000
 if zmq_version().startswith("2."):
     REQ_TIMEOUT *= 1000
 BIG_REQ_TIMEOUT = 10 * REQ_TIMEOUT
+
+HEARTBEAT_TOPIC = "/heartbeat/move_it_server"
 
 
 def get_local_ips():
@@ -78,6 +80,9 @@ def read_config(filename):
             res[section]["delete"] = False
         res[section].setdefault("working_directory", None)
         res[section].setdefault("compression", False)
+        res[section].setdefault("heartbeat", True)
+        if res[section]["heartbeat"] in ["", "False", "false", "0", "off"]:
+            res[section]["heartbeat"] = False
 
         if "providers" not in res[section]:
             LOGGER.warning("Incomplete section " + section +
@@ -103,6 +108,15 @@ def read_config(filename):
                     "publish_port"])
             except (KeyError, ValueError):
                 res[section]["publish_port"] = 0
+        elif not res[section]["heartbeat"]:
+            # We have no topics and therefor no subscriber (if you want to
+            # subscribe everything, then explicit specify an empty topic).
+            LOGGER.warning("Incomplete section " + section +
+                           ": add an 'topic' item or enable heartbeat.")
+            LOGGER.info("Ignoring section " + section + ": incomplete.")
+            del res[section]
+            continue
+
     return res
 
 
@@ -147,6 +161,10 @@ class Listener(Thread):
             if msg is None:
                 continue
             LOGGER.debug("Receiving (SUB) %s", str(msg))
+            if msg.type == "beat":
+                # Just swallow heartbeat, an enhancement could be a user
+                # specified callback.
+                continue
             self.callback(msg, *self.cargs, **self.ckwargs)
 
         LOGGER.debug("Exiting listener %s", str(self.address))
@@ -214,6 +232,9 @@ def request_push(msg, destination, login, publisher=None, **kwargs):
                     scheme_, host_ = "file", ''  # local file
                 else:
                     scheme_, host_ = scheme, dest_hostname  # remote file
+                    if login:
+                        # Add (only) user to uri.
+                        host_ = login.split(":")[0] + "@" + host_
                 local_msg = Message(msg.subject, "file", data=msg.data.copy())
                 local_uri = urlunparse((scheme_, host_,
                                         local_path,
@@ -273,10 +294,15 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
 
         chains[key].setdefault("listeners", {})
         try:
+            topics = []
+            if "topic" in val:
+                topics.append(val["topic"])
+            if val.get("heartbeat", False):
+                topics.append(HEARTBEAT_TOPIC)
             for provider in chains[key]["providers"]:
                 chains[key]["listeners"][provider] = Listener(
                     provider,
-                    val["topic"],
+                    topics,
                     callback,
                     pub_instance=pub_instance,
                     **chains[key])
@@ -437,11 +463,9 @@ class StatCollector(object):
     def __init__(self, statfile):
         self.statfile = statfile
 
-    def collect(self, msg, config):
+    def collect(self, msg, *args, **kwargs):
         with open(self.statfile, 'a') as fd:
-            fd.write("{0:s}\t{1:s}\t{2:s}\t{3:s}\n".format(msg.data[
-                'uid'], msg.data['request_address'], str(time.time()), str(
-                    msg.time)))
+            fd.write(time.asctime() + " - " + str(msg) + "\n")
 
 
 def terminate(chains):
