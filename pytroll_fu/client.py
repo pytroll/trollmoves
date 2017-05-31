@@ -232,6 +232,9 @@ def request_push(msg, destination, login, publisher=None, **kwargs):
                     scheme_, host_ = "file", ''  # local file
                 else:
                     scheme_, host_ = scheme, dest_hostname  # remote file
+                    if login:
+                        # Add (only) user to uri.
+                        host_ = login.split(":")[0] + "@" + host_
                 local_msg = Message(msg.subject, "file", data=msg.data.copy())
                 local_uri = urlunparse((scheme_, host_,
                                         local_path,
