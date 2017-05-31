@@ -195,9 +195,10 @@ def request_push(msg, destination, login, publisher=None, **kwargs):
             local_path = os.path.join(*([kwargs.get('ftp_root', '/')] +
                                         duri.path.split(os.path.sep) +
                                         [msg.data['uid']]))
-            if not os.path.exists(local_path):
-                os.makedirs(local_path)
-                os.chmod(local_path, 0o777)
+            local_dir = os.path.dirname(local_path)
+            if not os.path.exists(local_dir):
+                os.makedirs(local_dir)
+                os.chmod(local_dir, 0o777)
             timeout = BIG_REQ_TIMEOUT
         else:
             LOGGER.debug("Sending: %s" % str(req))
@@ -214,8 +215,8 @@ def request_push(msg, destination, login, publisher=None, **kwargs):
                 else:
                     scheme_, host_ = scheme, dest_hostname  # remote file
                 local_msg = Message(msg.subject, "file", data=msg.data.copy())
-                local_uri = urlunparse((scheme_, host_, 
-					local_path, 
+                local_uri = urlunparse((scheme_, host_,
+                                        local_path,
                                         "", "", ""))
                 local_msg.data['uri'] = local_uri
                 local_msg.data['origin'] = local_msg.data['request_address']
