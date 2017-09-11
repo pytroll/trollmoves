@@ -226,7 +226,7 @@ class RequestManager(Thread):
                 fake_msg = Message(rawstr=str(message))
                 try:
                     urlparse(message.data['destination'])
-                except KeyError:
+                except (KeyError, TypeError):
                     pass
                 else:
                     fake_msg.data['destination'] = clean_url(message.data[
