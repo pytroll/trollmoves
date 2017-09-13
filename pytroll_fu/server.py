@@ -713,7 +713,7 @@ class SftpMover(Mover):
         import paramiko
 
         transport = paramiko.Transport((self.destination.hostname, 22))
-        transport.start_client(timeout=300)
+        transport.start_client()
 
         self._agent_auth(transport)
 
@@ -722,6 +722,7 @@ class SftpMover(Mover):
 
         sftp = transport.open_session()
         sftp = paramiko.SFTPClient.from_transport(transport)
+        sftp.get_channel().settimeout(300)
 
         try:
             sftp.mkdir(os.path.dirname(self.destination.path))
