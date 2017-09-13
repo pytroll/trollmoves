@@ -33,7 +33,7 @@ from urlparse import urlparse, urlunparse
 
 import netifaces
 import pyinotify
-from zmq import LINGER, POLLIN, REQ, Poller, zmq_version
+from zmq import LINGER, POLLIN, REQ, Poller
 
 from posttroll import context
 from posttroll.message import Message, MessageError
@@ -45,10 +45,7 @@ LOGGER = logging.getLogger(__name__)
 file_cache = deque(maxlen=11000)
 cache_lock = Lock()
 
-REQ_TIMEOUT = 1000
-if zmq_version().startswith("2."):
-    REQ_TIMEOUT *= 1000
-BIG_REQ_TIMEOUT = 10 * REQ_TIMEOUT
+DEFAULT_REQ_TIMEOUT = 1
 
 HEARTBEAT_TOPIC = "/heartbeat/move_it_server"
 
@@ -81,6 +78,8 @@ def read_config(filename):
         res[section].setdefault("working_directory", None)
         res[section].setdefault("compression", False)
         res[section].setdefault("heartbeat", True)
+        res[section].setdefault("req_timeout", DEFAULT_REQ_TIMEOUT)
+        res[section].setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
         if res[section]["heartbeat"] in ["", "False", "false", "0", "off"]:
             res[section]["heartbeat"] = False
 
@@ -217,10 +216,12 @@ def request_push(msg, destination, login, publisher=None, **kwargs):
             if not os.path.exists(local_dir):
                 os.makedirs(local_dir)
                 os.chmod(local_dir, 0o777)
-            timeout = BIG_REQ_TIMEOUT
+            timeout = float(kwargs["transfer_req_timeout"])
         else:
             LOGGER.debug("Sending: %s" % str(req))
-            timeout = REQ_TIMEOUT
+            timeout = float(kwargs["req_timeout"])
+
+        LOGGER.debug("Send and recv timeout is %.2f", timeout)
 
         requester = PushRequester(hostname, int(port))
         response = requester.send_and_recv(req, timeout=timeout)
@@ -377,7 +378,7 @@ class PushRequester(object):
     def __del__(self, *args, **kwargs):
         self.stop()
 
-    def send_and_recv(self, msg, timeout=REQ_TIMEOUT):
+    def send_and_recv(self, msg, timeout=DEFAULT_REQ_TIMEOUT):
 
         with self._lock:
             retries_left = self.request_retries
@@ -387,7 +388,7 @@ class PushRequester(object):
             small_timeout = 0.1
             while retries_left and self.running:
                 now = time.time()
-                while time.time() < now + timeout / 1000.0:
+                while time.time() < now + timeout:
                     if not self.running:
                         return rep
                     socks = dict(self._poller.poll(small_timeout))
