@@ -673,18 +673,32 @@ class SftpMover(Mover):
         self.copy()
         os.remove(self.origin)
 
-    def _agent_auth(self, transport):
+    def _agent_auth(self, transport, key_file=None):
         """Attempt to authenticate to the given transport using any of the private
         keys available from an SSH agent ... or (not implemented) from a local
         private RSA key file (assumes no pass phrase).
+
+        Append keys from file like:
+            try:
+                ki = paramiko.RSAKey.from_private_key_file(rsa_private_key_file)
+            except Exception, e:
+                print 'Failed loading' % (rsa_private_key_file, e)
+
+            agent = paramiko.Agent()
+            agent_keys = agent.get_keys() + (ki,)
+
+        PFE: http://code.activestate.com/recipes/576810-copy-files-over-ssh-using-paramiko/
         """
         import paramiko
 
         agent = paramiko.Agent()
-        agent_keys = agent.get_keys()
+        if key_file:
+            LOGGER.debug("Loading keys from %s", key_file)
+            agent_keys = (paramiko.RSAKey.from_private_key_file(key_file),)
+        else:
+            agent_keys = agent.get_keys()
         if len(agent_keys) == 0:
-            LOGGER.debug("No available keys")
-            return
+            raise IOError("No available keys")
 
         for key in agent_keys:
             LOGGER.debug('Trying ssh-agent key %s', key.get_fingerprint().encode('hex'))
@@ -695,17 +709,21 @@ class SftpMover(Mover):
             except paramiko.SSHException:
                 continue
 
+        # We found no valid key
+        raise IOError("RSA key auth failed!")
+
     def copy(self):
         """Push it !"""
         import paramiko
 
         transport = paramiko.Transport((self.destination.hostname, 22))
         transport.start_client()
-        self._agent_auth(transport)
+
+        self._agent_auth(transport, key_file=os.path.expanduser('~/.ssh/sftp_rsa'))
 
         if not transport.is_authenticated():
-            LOGGER.error("RSA key auth failed!")
-            return
+            raise IOError("RSA key auth failed!")
+
         sftp = transport.open_session()
         sftp = paramiko.SFTPClient.from_transport(transport)
 
