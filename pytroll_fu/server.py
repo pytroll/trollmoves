@@ -688,7 +688,7 @@ class SftpMover(Mover):
         private_key_file = self.attrs.get("ssh_private_key_file", None)
         if private_key_file:
             private_key_file = os.path.expanduser(private_key_file)
-            LOGGER.info("Loading keys from %s", private_key_file)
+            LOGGER.info("Loading keys from local file %s", private_key_file)
             agent_keys = (paramiko.RSAKey.from_private_key_file(private_key_file),)
         else:
             LOGGER.info("Loading keys from SSH agent")
@@ -697,10 +697,10 @@ class SftpMover(Mover):
             raise IOError("No available keys")
 
         for key in agent_keys:
-            LOGGER.debug('Trying ssh-agent key %s', key.get_fingerprint().encode('hex'))
+            LOGGER.debug('Trying ssh key %s', key.get_fingerprint().encode('hex'))
             try:
                 transport.auth_publickey(self.destination.username, key)
-                LOGGER.debug('... success!')
+                LOGGER.debug('... ssh key success!')
                 return
             except paramiko.SSHException:
                 continue
@@ -722,7 +722,7 @@ class SftpMover(Mover):
 
         sftp = transport.open_session()
         sftp = paramiko.SFTPClient.from_transport(transport)
-        sftp.get_channel().settimeout(300)
+        ###sftp.get_channel().settimeout(300)
 
         try:
             sftp.mkdir(os.path.dirname(self.destination.path))
