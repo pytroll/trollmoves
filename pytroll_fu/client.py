@@ -405,6 +405,8 @@ class PushRequester(object):
                         self.failures = 0
                         self.jammed = False
                         return rep
+                    # During big file transfers, give some time to a friend.
+                    time.sleep(0.1)
 
                 LOGGER.warning("Timeout from " + str(self._reqaddress) +
                                ", retrying...")
