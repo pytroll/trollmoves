@@ -221,7 +221,7 @@ def request_push(msg, destination, login, publisher=None, **kwargs):
             LOGGER.debug("Sending: %s" % str(req))
             timeout = float(kwargs["req_timeout"])
 
-        LOGGER.debug("Send and recv timeout is %.2f", timeout)
+        LOGGER.debug("Send and recv timeout is %.2f seconds", timeout)
 
         requester = PushRequester(hostname, int(port))
         response = requester.send_and_recv(req, timeout=timeout)
