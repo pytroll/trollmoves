@@ -713,9 +713,8 @@ class SftpMover(Mover):
         import paramiko
 
         transport = paramiko.Transport((self.destination.hostname, 22))
-        transport.settimeout(300)
-        transport.start_client()
-        
+        transport.start_client(timeout=300)
+
         self._agent_auth(transport)
 
         if not transport.is_authenticated():
