@@ -187,7 +187,7 @@ if __name__ == '__main__':
             pyinotify.IN_CREATE)
     watchman = pyinotify.WatchManager()
 
-    def local_reload_config(finename):
+    def local_reload_config(filename):
         return reload_config(filename, chains, create_listener_notifier,
                              MirrorRequestManager, PUB)
 
