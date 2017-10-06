@@ -28,7 +28,7 @@ import sys
 import time
 from collections import deque
 from ConfigParser import ConfigParser
-from threading import Lock, Thread
+from threading import Lock, Thread, Event
 from urlparse import urlparse, urlunparse
 
 import netifaces
@@ -39,6 +39,8 @@ from posttroll import context
 from posttroll.message import Message, MessageError
 from posttroll.publisher import NoisyPublisher
 from posttroll.subscriber import Subscriber
+
+from pytroll_fu import heartbeat_monitor
 
 LOGGER = logging.getLogger(__name__)
 
@@ -132,10 +134,10 @@ class Listener(Thread):
         self.callback = callback
         self.subscriber = None
         self.address = address
-        self.create_subscriber()
         self.running = False
         self.cargs = args
         self.ckwargs = kwargs
+        self.restart_event = Event()
 
     def create_subscriber(self):
         '''Create a subscriber instance using specified addresses and
@@ -152,21 +154,38 @@ class Listener(Thread):
         '''Run listener
         '''
 
-        self.running = True
+        with heartbeat_monitor.Monitor(self.restart_event, **self.ckwargs) as beat_monitor:
 
-        for msg in self.subscriber(timeout=1):
-            if not self.running:
-                break
-            if msg is None:
-                continue
-            LOGGER.debug("Receiving (SUB) %s", str(msg))
-            if msg.type == "beat":
-                # Just swallow heartbeat, an enhancement could be a user
-                # specified callback.
-                continue
-            self.callback(msg, *self.cargs, **self.ckwargs)
+            self.running = True
 
-        LOGGER.debug("Exiting listener %s", str(self.address))
+            while self.running:
+                # Loop for restart.
+
+                LOGGER.debug("Starting listener %s", str(self.address))
+                self.create_subscriber()
+
+                for msg in self.subscriber(timeout=1):
+                    if not self.running:
+                        break
+
+                    if self.restart_event.is_set():
+                        self.restart_event.clear()
+                        self.stop()
+                        self.running = True
+                        break
+
+                    if msg is None:
+                        continue
+
+                    LOGGER.debug("Receiving (SUB) %s", str(msg))
+
+                    if msg.type == "beat":
+                        beat_monitor(msg)
+                        continue
+
+                    self.callback(msg, *self.cargs, **self.ckwargs)
+
+                LOGGER.debug("Exiting listener %s", str(self.address))
 
     def stop(self):
         '''Stop subscriber and delete the instance
