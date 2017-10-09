@@ -52,17 +52,18 @@ class Monitor(threading.Thread):
         self._finished = threading.Event()
         threading.Thread.__init__(self)
 
-    def __call__(self, msg):
-        """Receive a heartbeat and reset the timer.
+    def __call__(self, msg=None):
+        """Receive a heartbeat (or not) to reset the timer.
 
         TODO: If possibility for blocking, add a queue.
         """
         if self._alarm_scale:
-            try:
-                self._interval = self._alarm_scale * float(msg.data["min_interval"])
-            except (KeyError, AttributeError, TypeError, ValueError):
-                pass
-            LOGGER.debug("Got a heartbeat, setting alarm timer to %.1f sec", self._interval)
+            if msg and msg.type == "beat":
+                try:
+                    self._interval = self._alarm_scale * float(msg.data["min_interval"])
+                except (KeyError, AttributeError, TypeError, ValueError):
+                    pass
+            LOGGER.debug("Resetting heartbeat alarm timer to %.1f sec", self._interval)
             self._resetted = True
             self._finished.set()
             self._finished.clear()

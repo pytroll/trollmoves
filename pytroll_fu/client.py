@@ -179,8 +179,8 @@ class Listener(Thread):
 
                     LOGGER.debug("Receiving (SUB) %s", str(msg))
 
+                    beat_monitor(msg)
                     if msg.type == "beat":
-                        beat_monitor(msg)
                         continue
 
                     self.callback(msg, *self.cargs, **self.ckwargs)
