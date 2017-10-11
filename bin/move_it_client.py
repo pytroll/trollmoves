@@ -121,7 +121,7 @@ if __name__ == '__main__':
                         help="Save stats to this file")
     cmd_args = parser.parse_args()
 
-    log_format = "[%(asctime)s %(levelname)-8s] %(message)s"
+    log_format = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
     LOGGER = logging.getLogger('')
     LOGGER.setLevel(logging.DEBUG)
 
