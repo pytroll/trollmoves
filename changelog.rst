@@ -2,6 +2,13 @@ Changelog
 =========
 
 
+v0.1.1 (2017-11-13)
+-------------------
+- Update changelog. [Martin Raspaud]
+- Bump version: 0.1.0 → 0.1.1. [Martin Raspaud]
+- Add imp to import list. [Martin Raspaud]
+
+
 v0.1.0 (2017-11-13)
 -------------------
 - Update changelog. [Martin Raspaud]
