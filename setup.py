@@ -23,9 +23,10 @@
 """
 
 from setuptools import setup
+version = imp.load_source('trollmoves.version', 'trollmoves/version.py')
 
 setup(name="trollmoves",
-      version="0.1.0",
+      version=version.__version__,
       description='Pytroll file utilities',
       author='Martin Raspaud',
       author_email='martin.raspaud@smhi.se',
