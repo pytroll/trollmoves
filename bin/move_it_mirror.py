@@ -33,8 +33,8 @@ import pyinotify
 
 from posttroll.message import Message
 from posttroll.publisher import Publisher, get_own_ip
-from pytroll_fu.client import Listener, request_push
-from pytroll_fu.server import (Deleter, EventHandler, RequestManager,
+from trollmoves.client import Listener, request_push
+from trollmoves.server import (Deleter, EventHandler, RequestManager,
                                reload_config, terminate)
 
 LOGGER = logging.getLogger("move_it_mirror")

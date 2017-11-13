@@ -40,7 +40,7 @@ from posttroll.message import Message, MessageError
 from posttroll.publisher import NoisyPublisher
 from posttroll.subscriber import Subscriber
 
-from pytroll_fu import heartbeat_monitor
+from trollmoves import heartbeat_monitor
 
 LOGGER = logging.getLogger(__name__)
 

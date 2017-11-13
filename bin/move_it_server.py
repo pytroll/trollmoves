@@ -106,7 +106,7 @@ from datetime import datetime
 import pyinotify
 
 from posttroll.publisher import Publisher
-from pytroll_fu.server import EventHandler, reload_config, terminate
+from trollmoves.server import EventHandler, reload_config, terminate
 
 LOGGER = logging.getLogger("move_it_server")
 

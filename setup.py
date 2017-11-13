@@ -24,7 +24,7 @@
 
 from setuptools import setup
 
-setup(name="pytroll-file-utils",
+setup(name="trollmoves",
       version="0.1.0",
       description='Pytroll file utilities',
       author='Martin Raspaud',
@@ -44,7 +44,7 @@ setup(name="pytroll-file-utils",
                'bin/remove_it.py',
                ],
       data_files=[],
-      packages=['pytroll_fu'],
+      packages=['trollmoves'],
       zip_safe=False,
       install_requires=['pyinotify', 'posttroll',
                         'trollsift', 'netifaces',

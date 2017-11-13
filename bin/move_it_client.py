@@ -90,8 +90,8 @@ from datetime import datetime
 import pyinotify
 
 from posttroll.publisher import NoisyPublisher
-from pytroll_fu.client import StatCollector, reload_config, terminate
-from pytroll_fu.server import EventHandler
+from trollmoves.client import StatCollector, reload_config, terminate
+from trollmoves.server import EventHandler
 
 NP = None
 PUB = None
