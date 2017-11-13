@@ -23,6 +23,7 @@
 """
 
 from setuptools import setup
+import imp
 version = imp.load_source('trollmoves.version', 'trollmoves/version.py')
 
 setup(name="trollmoves",
