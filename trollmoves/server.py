@@ -357,7 +357,8 @@ def reload_config(filename,
                   chains,
                   notifier_builder=create_notifier,
                   manager=RequestManager,
-                  publisher=None):
+                  publisher=None,
+                  disable_backlog=False):
     """Rebuild chains if needed (if the configuration changed) from *filename*.
     """
 
@@ -413,7 +414,7 @@ def reload_config(filename,
         LOGGER.debug("Removed " + key)
 
     LOGGER.debug("Reloaded config from " + filename)
-    if old_glob:
+    if old_glob and not disable_backlog:
         time.sleep(3)
         for pattern, fun in old_glob:
             process_old_files(pattern, fun)
