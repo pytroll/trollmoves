@@ -266,7 +266,7 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
             if unpack is not None:
                 if unpack not in unpackers:
                     LOGGER.warning("Don't know how to unpack %s", unpack)
-                filenames = unpackers[unpack](local_path, delete)
+                filenames = list(unpackers[unpack](local_path, delete))
                 if len(filenames) > 1:
                     mtype = 'dataset'
 
@@ -293,8 +293,8 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
                                             "", "", ""))
                         ds_uid = os.path.basename(filename)
                         dataset.append({'uri': ds_uri, 'uid': ds_uid})
-                    local_msg.pop('uid', None)
-                    local_msg['dataset'] = dataset
+                    local_msg.data.pop('uri', None)
+                    local_msg.data['dataset'] = dataset
                 local_msg.data['origin'] = local_msg.data['request_address']
                 local_msg.data.pop('request_address')
 
