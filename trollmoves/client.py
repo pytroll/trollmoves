@@ -26,6 +26,7 @@ import os
 import socket
 import sys
 import time
+import tarfile
 from collections import deque
 from ConfigParser import ConfigParser
 from threading import Lock, Thread, Event
@@ -196,8 +197,20 @@ class Listener(Thread):
             self.subscriber.close()
             self.subscriber = None
 
+def unpack_tar(filename, delete=False):
+    """Unpack tar files."""
+    destdir = os.path.dirname(filename)
+    with tarfile.open(filename) as tar:
+        tar.extractall(destdir)
+        members = tar.getmembers()
 
-def request_push(msg, destination, login, publisher=None, **kwargs):
+    if delete:
+        os.remove(filename)
+    return (os.path.join(destdir, member.name) for member in members)
+
+unpackers = {'tar': unpack_tar}
+
+def request_push(msg, destination, login, publisher=None, unpack=None, delete=False, **kwargs):
     with cache_lock:
         # fixme: remove this
         if msg.data["uid"] in file_cache:
@@ -247,6 +260,16 @@ def request_push(msg, destination, login, publisher=None, **kwargs):
         if response and response.type == "file":
             LOGGER.debug("Server done sending file")
             file_cache.append(msg.data["uid"])
+
+            mtype = 'file'
+
+            if unpack is not None:
+                if unpack not in unpackers:
+                    LOGGER.warning("Don't know how to unpack %s", unpack)
+                filenames = unpackers[unpack](local_path, delete)
+                if len(filenames) > 1:
+                    mtype = 'dataset'
+
             if publisher:
                 if socket.gethostbyname(dest_hostname) in get_local_ips():
                     scheme_, host_ = "file", ''  # local file
@@ -255,11 +278,23 @@ def request_push(msg, destination, login, publisher=None, **kwargs):
                     if login:
                         # Add (only) user to uri.
                         host_ = login.split(":")[0] + "@" + host_
-                local_msg = Message(msg.subject, "file", data=msg.data.copy())
-                local_uri = urlunparse((scheme_, host_,
-                                        local_path,
-                                        "", "", ""))
-                local_msg.data['uri'] = local_uri
+                local_msg = Message(msg.subject, mtype, data=msg.data.copy())
+                if mtype == 'file':
+                    local_uri = urlunparse((scheme_, host_,
+                                            local_path,
+                                            "", "", ""))
+                    local_msg.data['uri'] = local_uri
+                elif mtype == 'dataset':
+                    local_dir = os.path.dirname(local_path)
+                    dataset = []
+                    for filename in filenames:
+                        ds_uri = urlunparse((scheme_, host_,
+                                            os.path.join(local_dir, filename),
+                                            "", "", ""))
+                        ds_uid = os.path.basename(filename)
+                        dataset.append({'uri': ds_uri, 'uid': ds_uid})
+                    local_msg.pop('uid', None)
+                    local_msg['dataset'] = dataset
                 local_msg.data['origin'] = local_msg.data['request_address']
                 local_msg.data.pop('request_address')
 
