@@ -122,13 +122,6 @@ When the script is launched, or when a section is added or updated, existing
 files matching the pattern defined in `origin` are touched in order to create a
 triggering of the chain on them. To avoid any race conditions, chain is
 executed tree seconds after the list of file is gathered.
-
-
-I Like To Move It Move It
-I Like To Move It Move It
-I Like To Move It Move It
-Ya Like To (MOVE IT!)
-
 """
 
 import bz2
