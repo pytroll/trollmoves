@@ -27,9 +27,9 @@ import socket
 import sys
 import time
 from collections import deque
-from ConfigParser import ConfigParser
+from six.moves.configparser import ConfigParser
 from threading import Lock, Thread, Event
-from urlparse import urlparse, urlunparse
+from six.moves.urllib.parse import urlparse, urlunparse
 
 import netifaces
 import pyinotify
