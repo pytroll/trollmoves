@@ -657,11 +657,14 @@ class ScpMover(Mover):
         LOGGER.debug('dest path %s ', os.path.dirname(self.destination.path))
         LOGGER.debug('origin %s ', self.origin)
 
-        scp = SCPClient(ssh.get_transport())
-        scp.put(self.origin, self.destination.path)
-
-        scp.close()
-        ssh.close()
+        try:
+            scp = SCPClient(ssh.get_transport())
+            scp.put(self.origin, self.destination.path)
+        except Exception as e:
+            LOGGER.error("Something went wrong with scp: " + str(e))
+        finally:
+            scp.close()
+            ssh.close()
 
 
 class SftpMover(Mover):
