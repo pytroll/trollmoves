@@ -648,17 +648,26 @@ class ScpMover(Mover):
         from paramiko import SSHClient
         from scp import SCPClient
 
-        ssh = SSHClient()
-        ssh.load_system_host_keys()
-        ssh.connect(self.destination.hostname,
-                    username=self.destination.username)
-
+        try:
+            ssh = SSHClient()
+            ssh.load_system_host_keys()
+            ssh.connect(self.destination.hostname,
+                        username=self.destination.username)
+        except Exception as e:
+            raise
+        
         LOGGER.debug('hostname %s', self.destination.hostname)
         LOGGER.debug('dest path %s ', os.path.dirname(self.destination.path))
         LOGGER.debug('origin %s ', self.origin)
 
         try:
             scp = SCPClient(ssh.get_transport())
+        except Exception as e:
+            LOGGER.error("Failed to initiate SCPClient: " +str(e))
+            ssh.close()
+            raise
+
+        try:
             scp.put(self.origin, self.destination.path)
         except Exception as e:
             LOGGER.error("Something went wrong with scp: " + str(e))
