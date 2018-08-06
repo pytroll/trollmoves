@@ -483,10 +483,11 @@ class FtpMover(Mover):
         else:
             connection.login()
 
-        file_obj = file(self.origin, 'rb')
+        file_obj = open(self.origin, 'rb')
         connection.cwd(self.destination.path)
         connection.storbinary('STOR ' + os.path.basename(self.origin),
                               file_obj)
+        file_obj.close()
 
         try:
             connection.quit()
