@@ -34,12 +34,13 @@ import sys
 import time
 import datetime
 import traceback
-from collections import deque
-from ConfigParser import ConfigParser
+
+from six.moves.configparser import ConfigParser
 from ftplib import FTP, all_errors
-from Queue import Empty, Queue
-from threading import Thread, Lock
-from urlparse import urlparse, urlunparse
+from six.moves.queue import Empty, Queue
+from six.moves.urllib.parse import urlparse, urlunparse
+from collections import deque
+from threading import Thread, Loc
 
 import pyinotify
 from zmq import NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError

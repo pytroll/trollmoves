@@ -122,13 +122,6 @@ When the script is launched, or when a section is added or updated, existing
 files matching the pattern defined in `origin` are touched in order to create a
 triggering of the chain on them. To avoid any race conditions, chain is
 executed tree seconds after the list of file is gathered.
-
-
-I Like To Move It Move It
-I Like To Move It Move It
-I Like To Move It Move It
-Ya Like To (MOVE IT!)
-
 """
 
 import bz2
@@ -141,9 +134,9 @@ import shutil
 import subprocess
 import sys
 import time
-from ConfigParser import ConfigParser
+from six.moves.configparser import ConfigParser
 from ftplib import FTP, all_errors
-from urlparse import urlparse, urlunparse
+from six.moves.urllib.parse import urlparse, urlunparse
 
 import pyinotify
 
@@ -156,8 +149,8 @@ try:
     from posttroll.publisher import NoisyPublisher
     from posttroll.message import Message
 except ImportError:
-    print ("\nNOTICE! Import of posttroll failed, " +
-           "messaging will not be used.\n")
+    print("\nNOTICE! Import of posttroll failed, "
+          "messaging will not be used.\n")
 
 
 chains = {}
@@ -219,10 +212,10 @@ def reload_config(filename):
 
     old_glob = []
 
-    for key, val in new_chains.iteritems():
+    for key, val in new_chains.items():
         identical = True
         if key in chains:
-            for key2, val2 in new_chains[key].iteritems():
+            for key2, val2 in new_chains[key].items():
                 if ((key2 not in ["notifier", "publisher"]) and
                     ((key2 not in chains[key]) or
                      (chains[key][key2] != val2))):
@@ -398,7 +391,7 @@ def move_it(pathname, destinations, hook=None):
         dest_url = urlparse(dest)
         try:
             mover = MOVERS[dest_url.scheme]
-        except KeyError, e:
+        except KeyError:
             LOGGER.error("Unsupported protocol '" + str(dest_url.scheme)
                          + "'. Could not copy " + pathname + " to "
                          + str(dest))
@@ -407,7 +400,7 @@ def move_it(pathname, destinations, hook=None):
             mover(pathname, dest_url).copy()
             if hook:
                 hook(pathname, dest_url)
-        except Exception, e:
+        except Exception:
             LOGGER.exception("Something went wrong during copy of "
                              + pathname + " to " + str(dest))
             continue
@@ -490,10 +483,11 @@ class FtpMover(Mover):
         else:
             connection.login()
 
-        file_obj = file(self.origin, 'rb')
+        file_obj = open(self.origin, 'rb')
         connection.cwd(self.destination.path)
         connection.storbinary('STOR ' + os.path.basename(self.origin),
                               file_obj)
+        file_obj.close()
 
         try:
             connection.quit()
@@ -573,7 +567,7 @@ def create_notifier(attrs):
             try:
                 move_it(new_path, attrs["destinations"],
                         attrs.get("copy_hook", None))
-            except Exception, e:
+            except Exception:
                 LOGGER.error("Something went wrong during copy of "
                              + pathname)
             else:
@@ -583,7 +577,7 @@ def create_notifier(attrs):
                         if attrs["delete_hook"]:
                             attrs["delete_hook"](pathname)
                         LOGGER.debug("Removed " + pathname)
-                    except OSError, e__:
+                    except OSError as e__:
                         if e__.errno == 2:
                             LOGGER.debug("Already deleted: " + pathname)
                         else:
@@ -593,7 +587,7 @@ def create_notifier(attrs):
             if pathname != new_path:
                 try:
                     os.remove(new_path)
-                except OSError, e__:
+                except OSError as e__:
                     if e__.errno == 2:
                         pass
                     else:
@@ -607,7 +601,7 @@ def create_notifier(attrs):
 
 
 def terminate(chains):
-    for chain in chains.itervalues():
+    for chain in chains.values():
         chain["notifier"].stop()
         if "publisher" in chain:
             chain["publisher"].stop()

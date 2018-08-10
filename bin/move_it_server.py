@@ -89,11 +89,6 @@ The logging is done on stdout per default. It is however possible to specify a f
 ith the -l or --log option::
 
   move_it_server --log /path/to/mylogfile.log myconfig.ini
-
-I Like To Move It Move It
-I Like To Move It Move It
-I Like To Move It Move It
-Ya Like To (MOVE IT!)
 """
 
 import _strptime
