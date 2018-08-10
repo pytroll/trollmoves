@@ -32,12 +32,15 @@ import shutil
 import subprocess
 import sys
 import time
+import datetime
 import traceback
+
 from six.moves.configparser import ConfigParser
 from ftplib import FTP, all_errors
 from six.moves.queue import Empty, Queue
-from threading import Thread
 from six.moves.urllib.parse import urlparse, urlunparse
+from collections import deque
+from threading import Thread, Loc
 
 import pyinotify
 from zmq import NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
@@ -48,6 +51,11 @@ from posttroll.publisher import get_own_ip
 from trollsift import globify, parse
 
 LOGGER = logging.getLogger(__name__)
+
+
+file_cache = deque(maxlen=61000)
+file_cache_lock = Lock()
+START_TIME = datetime.datetime.utcnow()
 
 
 class ConfigError(Exception):
@@ -191,6 +199,23 @@ class RequestManager(Thread):
             pass
         return new_msg
 
+    def info(self, message):
+        topic = message.subject
+        max_count = 2256  # Let's set a (close to arbitrary) limit on messages size.
+        try:
+            max_count = min(message.data.get("max_count", max_count), max_count)
+        except AttributeError:
+            pass
+        uptime = datetime.datetime.utcnow() - START_TIME
+        files = []
+        with file_cache_lock:
+            for i in file_cache:
+                if i.startswith(topic):
+                    files.append(i)
+                    if len(files) == max_count:
+                        break
+        return Message(message.subject, "info", data={"files": files, "max_count": max_count, "uptime": str(uptime)})
+
     def unknown(self, message):
         """Reply to any unknown request.
         """
@@ -242,6 +267,9 @@ class RequestManager(Thread):
                 elif message.type == "ack":
                     Thread(target=self.reply_and_send,
                            args=(self.ack, address, message)).start()
+                elif message.type == "info":
+                    Thread(target=self.reply_and_send,
+                           args=(self.info, address, message)).start()
                 else:  # unknown request
                     Thread(target=self.reply_and_send,
                            args=(self.unknown, address, message)).start()
@@ -295,6 +323,8 @@ def create_notifier(attrs, publisher):
             "request_address", get_own_ip()) + ":" + attrs["request_port"]
         msg = Message(attrs["topic"], 'file', info)
         publisher.send(str(msg))
+        with file_cache_lock:
+            file_cache.appendleft(attrs["topic"] + '/' + info["uid"])
         LOGGER.debug("Message sent: " + str(msg))
 
     tnotifier = pyinotify.ThreadedNotifier(wm_, EventHandler(fun))
@@ -357,7 +387,8 @@ def reload_config(filename,
                   chains,
                   notifier_builder=create_notifier,
                   manager=RequestManager,
-                  publisher=None):
+                  publisher=None,
+                  disable_backlog=False):
     """Rebuild chains if needed (if the configuration changed) from *filename*.
     """
 
@@ -413,7 +444,7 @@ def reload_config(filename,
         LOGGER.debug("Removed " + key)
 
     LOGGER.debug("Reloaded config from " + filename)
-    if old_glob:
+    if old_glob and not disable_backlog:
         time.sleep(3)
         for pattern, fun in old_glob:
             process_old_files(pattern, fun)
