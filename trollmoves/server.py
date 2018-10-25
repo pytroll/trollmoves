@@ -34,6 +34,7 @@ import sys
 import time
 import datetime
 import traceback
+import tempfile
 
 from six.moves.configparser import ConfigParser
 from ftplib import FTP, all_errors
@@ -487,6 +488,7 @@ def xrit(pathname, destination=None, cmd="./xRITDecompress"):
     LOGGER.info("Successfully extracted " + pathname + " to " + destination)
     return expected
 
+
 # bzip
 
 BLOCK_SIZE = 1024
@@ -615,7 +617,7 @@ class Mover(object):
             except KeyError:
                 connection = self.open_connection()
 
-            timer = CTimer(int(self.attrs.get('connection_uptime', 30)), 
+            timer = CTimer(int(self.attrs.get('connection_uptime', 30)),
                            self.delete_connection, (connection,))
             timer.start()
             self.active_connections[(hostname, port, username)] = connection, timer
@@ -637,6 +639,7 @@ class Mover(object):
                     if val[0] == connection:
                         del self.active_connections[key]
                         break
+
 
 class FileMover(Mover):
     """Move files in the filesystem.
@@ -736,7 +739,7 @@ class FtpMover(Mover):
                     connection.cwd(current_dir)
                 except IOError:
                     cd_tree("/".join(current_dir.split("/")[:-1]))
-                    connection.mkd(current_dir)
+                    connection.mkdfile(current_dir)
                     connection.cwd(current_dir)
 
         LOGGER.debug('cd to %s', os.path.dirname(self.destination.path))
@@ -744,6 +747,11 @@ class FtpMover(Mover):
         with open(self.origin, 'rb') as file_obj:
             connection.storbinary('STOR ' + os.path.basename(self.origin),
                                   file_obj)
+
+        try:
+            connection.quit()
+        except all_errors:
+            connection.close()
 
 
 class ScpMover(Mover):
@@ -835,7 +843,7 @@ class SftpMover(Mover):
 
         sftp = transport.open_session()
         sftp = paramiko.SFTPClient.from_transport(transport)
-        ###sftp.get_channel().settimeout(300)
+        # sftp.get_channel().settimeout(300)
 
         try:
             sftp.mkdir(os.path.dirname(self.destination.path))
@@ -844,6 +852,7 @@ class SftpMover(Mover):
             pass
         sftp.put(self.origin, self.destination.path)
         transport.close()
+
 
 MOVERS = {'ftp': FtpMover,
           'file': FileMover,
