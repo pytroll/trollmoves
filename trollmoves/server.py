@@ -48,6 +48,7 @@ from zmq import NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
 from posttroll import context
 from posttroll.message import Message
 from posttroll.publisher import get_own_ip
+from posttroll.subscriber import Subscribe
 from trollsift import globify, parse
 
 LOGGER = logging.getLogger(__name__)
@@ -85,7 +86,7 @@ class Deleter(Thread):
                 if the_time <= time.time():
                     try:
                         self.delete(filename)
-                    except:
+                    except Exception:
                         LOGGER.exception(
                             'Something went wrong when deleting %s:', filename)
                     else:
@@ -125,9 +126,13 @@ class RequestManager(Thread):
         self._poller.register(self.in_socket, POLLIN)
         self._attrs = attrs
         try:
-            self._pattern = globify(attrs["origin"])
+            # Checking the validity of the file pattern
+            _pattern = globify(attrs["origin"])
         except ValueError as err:
             raise ConfigError('Invalid file pattern: ' + str(err))
+        except KeyError:
+            if 'listen' not in attrs:
+                raise
         self._deleter = Deleter()
 
         try:
@@ -219,7 +224,6 @@ class RequestManager(Thread):
     def unknown(self, message):
         """Reply to any unknown request.
         """
-        ### del message
         return Message(message.subject, "unknown")
 
     def reply_and_send(self, fun, address, message):
@@ -229,7 +233,7 @@ class RequestManager(Thread):
         reply = Message(message.subject, "error")
         try:
             reply = fun(message)
-        except:
+        except Exception:
             LOGGER.exception("Something went wrong"
                              " when processing the request: %s", str(message))
         finally:
@@ -288,7 +292,61 @@ class RequestManager(Thread):
         self.in_socket.close(1)
 
 
-def create_notifier(attrs, publisher):
+class Listener(Thread):
+
+    def __init__(self, attrs, publisher):
+        super(Listener, self).__init__()
+        self.attrs = attrs
+        self.publisher = publisher
+        self.loop = True
+
+    def run(self):
+        with Subscribe('', topics=self.attrs['listen'], addr_listener=True) as sub:
+            for msg in sub.recv(1):
+                if msg is None:
+                    if not self.loop:
+                        break
+                    else:
+                        continue
+
+                LOGGER.debug('We have a match: %s', str(msg))
+
+                #pathname = unpack(orig_pathname, **attrs)
+
+                info = self.attrs.get("info", {})
+                if info:
+                    info = dict((elt.strip().split('=') for elt in info.split(";")))
+                    for infokey, infoval in info.items():
+                        if "," in infoval:
+                            info[infokey] = infoval.split(",")
+
+                # info.update(parse(attrs["origin"], orig_pathname))
+                # info['uri'] = pathname
+                # info['uid'] = os.path.basename(pathname)
+                info.update(msg.data)
+                info['request_address'] = self.attrs.get(
+                    "request_address", get_own_ip()) + ":" + self.attrs["request_port"]
+                msg = Message(self.attrs["topic"], msg.type, info)
+                self.publisher.send(str(msg))
+                with file_cache_lock:
+                    file_cache.appendleft(self.attrs["topic"] + '/' + info["uid"])
+                LOGGER.debug("Message sent: " + str(msg))
+                if not self.loop:
+                    break
+
+    def stop(self):
+        self.loop = False
+
+
+def create_posttroll_notifier(attrs, publisher):
+    """Create a notifier listening to posttroll messages from *attrs*.
+    """
+    listener = Listener(attrs, publisher)
+
+    return listener, None
+
+
+def create_file_notifier(attrs, publisher):
     """Create a notifier from the specified configuration attributes *attrs*.
     """
 
@@ -353,10 +411,9 @@ def read_config(filename):
         res[section] = dict(cp_.items(section))
         res[section].setdefault("working_directory", None)
         res[section].setdefault("compression", False)
-
-        if "origin" not in res[section]:
+        if ("origin" not in res[section]) and ('listen' not in res[section]):
             LOGGER.warning("Incomplete section " + section +
-                           ": add an 'origin' item.")
+                           ": add an 'origin' or 'listen' item.")
             LOGGER.info("Ignoring section " + section + ": incomplete.")
             del res[section]
             continue
@@ -385,7 +442,7 @@ def read_config(filename):
 
 def reload_config(filename,
                   chains,
-                  notifier_builder=create_notifier,
+                  notifier_builder=None,
                   manager=RequestManager,
                   publisher=None,
                   disable_backlog=False):
@@ -428,10 +485,18 @@ def reload_config(filename,
             LOGGER.warning('Remove and skip %s', key)
             del chains[key]
             continue
+
+        if notifier_builder is None:
+            if 'origin' in val:
+                notifier_builder = create_file_notifier
+            elif 'listen' in val:
+                notifier_builder = create_posttroll_notifier
+
         chains[key]["notifier"], fun = notifier_builder(val, publisher)
         chains[key]["request_manager"].start()
         chains[key]["notifier"].start()
-        old_glob.append((globify(val["origin"]), fun))
+        if 'origin' in val:
+            old_glob.append((globify(val["origin"]), fun))
 
         if not identical:
             LOGGER.debug("Updated " + key)
@@ -487,6 +552,7 @@ def xrit(pathname, destination=None, cmd="./xRITDecompress"):
     LOGGER.info("Successfully extracted " + pathname + " to " + destination)
     return expected
 
+
 # bzip
 
 BLOCK_SIZE = 1024
@@ -528,7 +594,7 @@ def unpack(pathname,
                 new_path = unpack_fun(pathname, working_directory, prog)
             else:
                 new_path = unpack_fun(pathname, working_directory)
-        except:
+        except Exception:
             LOGGER.exception("Could not decompress " + pathname)
         else:
             if delete.lower() in ["1", "yes", "true", "on"]:
