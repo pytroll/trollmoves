@@ -40,7 +40,7 @@ from ftplib import FTP, all_errors
 from six.moves.queue import Empty, Queue
 from six.moves.urllib.parse import urlparse, urlunparse
 from collections import deque
-from threading import Thread, Loc
+from threading import Thread, Lock
 
 import pyinotify
 from zmq import NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
@@ -154,48 +154,60 @@ class RequestManager(Thread):
     def push(self, message):
         """Reply to push request
         """
-        uri = urlparse(message.data["uri"])
-        pathname = uri.path
+        for url in gen_dict_extract(message.data, 'uri'):
+            uri = urlparse(url)
+            pathname = uri.path
+            # FIXME: check against file_cache
+            if 'origin' in self._attrs and not fnmatch.fnmatch(
+                    os.path.basename(pathname),
+                    os.path.basename(globify(self._attrs["origin"]))):
+                LOGGER.warning('Client trying to get invalid file: %s', pathname)
+                return Message(message.subject,
+                               "err",
+                               data="{0:s} not reachable".format(pathname))
+            try:
+                move_it(pathname, message.data['destination'], self._attrs)
+            except Exception as err:
+                return Message(message.subject, "err", data=str(err))
+            else:
+                if (self._attrs.get('compression') or self._attrs.get(
+                        'delete', 'False').lower() in ["1", "yes", "true", "on"]):
+                    self._deleter.add(pathname)
 
-        if not fnmatch.fnmatch(
-                os.path.basename(pathname),
-                os.path.basename(globify(self._attrs["origin"]))):
-            LOGGER.warning('Client trying to get invalid file: %s', pathname)
-            return Message(message.subject,
-                           "err",
-                           data="{0:s} not reachable".format(pathname))
-        try:
-            move_it(message, self._attrs)
-        except Exception as err:
-            return Message(message.subject, "err", data=str(err))
-        else:
-            if (self._attrs.get('compression') or self._attrs.get(
-                    'delete', 'False').lower() in ["1", "yes", "true", "on"]):
-                self._deleter.add(pathname)
-            new_msg = Message(message.subject,
-                              "file",
-                              data=message.data.copy())
-            new_msg.data['destination'] = clean_url(new_msg.data[
-                'destination'])
-            return new_msg
+            if 'dataset' in message.data:
+                mtype = 'dataset'
+            elif 'collection' in message.data:
+                mtype = 'collection'
+            elif 'uid' in message.data:
+                mtype = 'file'
+            else:
+                raise KeyError('No known metadata in message.')
+
+        new_msg = Message(message.subject,
+                          mtype,
+                          data=message.data.copy())
+        new_msg.data['destination'] = clean_url(new_msg.data[
+            'destination'])
+        return new_msg
 
     def ack(self, message):
         """Reply with ack to a publication
         """
-        uri = urlparse(message.data["uri"])
-        pathname = uri.path
+        for url in gen_dict_extract(message.data, 'uri'):
+            uri = urlparse(url)
+            pathname = uri.path
 
-        if not fnmatch.fnmatch(
-                os.path.basename(pathname),
-                os.path.basename(globify(self._attrs["origin"]))):
-            LOGGER.warning('Client trying to get invalid file: %s', pathname)
-            return Message(message.subject,
-                           "err",
-                           data="{0:s} not reacheable".format(pathname))
+            if 'origin' in self._attrs and not fnmatch.fnmatch(
+                    os.path.basename(pathname),
+                    os.path.basename(globify(self._attrs["origin"]))):
+                LOGGER.warning('Client trying to get invalid file: %s', pathname)
+                return Message(message.subject,
+                               "err",
+                               data="{0:s} not reacheable".format(pathname))
 
-        if (self._attrs.get('compression') or self._attrs.get(
-                'delete', 'False').lower() in ["1", "yes", "true", "on"]):
-            self._deleter.add(pathname)
+            if (self._attrs.get('compression') or self._attrs.get(
+                    'delete', 'False').lower() in ["1", "yes", "true", "on"]):
+                self._deleter.add(pathname)
         new_msg = Message(message.subject, "ack", data=message.data.copy())
         try:
             new_msg.data['destination'] = clean_url(new_msg.data[
@@ -237,8 +249,11 @@ class RequestManager(Thread):
             LOGGER.exception("Something went wrong"
                              " when processing the request: %s", str(message))
         finally:
-            LOGGER.debug("Response: " + str(message))
-            in_socket.send_multipart([address, b'', str(reply)])
+            LOGGER.debug("Response: " + str(reply))
+            try:
+                in_socket.send_multipart([address, b'', str(reply)])
+            except TypeError:
+                in_socket.send_multipart([address, b'', bytes(str(reply), 'utf-8')])
 
     def run(self):
         while self._loop:
@@ -292,6 +307,70 @@ class RequestManager(Thread):
         self.in_socket.close(1)
 
 
+def get_msg_file_name(msgdata):
+    uid = msgdata['uid']
+    uri = msgdata['uri']
+    return uid, uri
+
+
+def gen_dict_extract(var, key):
+    if hasattr(var, 'items'):
+        for k, v in var.items():
+            if k == key:
+                yield v
+            if hasattr(v, 'items'):
+                for result in gen_dict_extract(v, key):
+                    yield result
+            elif isinstance(v, list):
+                for d in v:
+                    for result in gen_dict_extract(d, key):
+                        yield result
+
+
+def translate_dict_value(var, key, callback):
+    newvar = var.copy()
+    if hasattr(var, 'items'):
+        for k, v in var.items():
+            if k == key:
+                newvar[key] = callback(k, v)
+            elif hasattr(v, 'items'):
+                newvar[k] = translate_dict_value(v, key, callback)
+            elif isinstance(v, list):
+                newvar[k] = [translate_dict_value(d, key, callback) for d in v]
+        return newvar
+    else:
+        return var
+
+
+def translate_dict_item(var, key, callback):
+    newvar = var.copy()
+    if hasattr(var, 'items'):
+        for k, v in var.items():
+            if k == key:
+                newvar = callback(var, k)
+            elif hasattr(v, 'items'):
+                newvar[k] = translate_dict_item(v, key, callback)
+            elif isinstance(v, list):
+                newvar[k] = [translate_dict_item(d, key, callback) for d in v]
+        return newvar
+    else:
+        return var
+
+
+def translate_dict(var, keys, callback):
+    newvar = var.copy()
+    if hasattr(var, 'items'):
+        if set(var.keys()) & set(keys):
+            newvar = callback(var)
+        for k, v in newvar.items():
+            if hasattr(v, 'items'):
+                newvar[k] = translate_dict(v, keys, callback)
+            elif isinstance(v, list):
+                newvar[k] = [translate_dict(d, keys, callback) for d in v]
+        return newvar
+    else:
+        return var
+
 class Listener(Thread):
 
     def __init__(self, attrs, publisher):
@@ -326,10 +405,12 @@ class Listener(Thread):
                 info.update(msg.data)
                 info['request_address'] = self.attrs.get(
                     "request_address", get_own_ip()) + ":" + self.attrs["request_port"]
+                old_data = msg.data
                 msg = Message(self.attrs["topic"], msg.type, info)
                 self.publisher.send(str(msg))
                 with file_cache_lock:
-                    file_cache.appendleft(self.attrs["topic"] + '/' + info["uid"])
+                    for filename in gen_dict_extract(old_data, 'uid'):
+                        file_cache.appendleft(self.attrs["topic"] + '/' + filename)
                 LOGGER.debug("Message sent: " + str(msg))
                 if not self.loop:
                     break
@@ -605,23 +686,19 @@ def unpack(pathname,
 # Mover
 
 
-def move_it(message, attrs=None, hook=None):
+def move_it(pathname, destination, attrs=None, hook=None):
     """Check if the file pointed by *filename* is in the filelist, and move it
     if it is.
     """
-    uri = urlparse(message.data["uri"])
-    dest = message.data["destination"]
-
-    pathname = uri.path
-    fake_dest = clean_url(dest)
+    fake_dest = clean_url(destination)
 
     LOGGER.debug("Copying to: " + fake_dest)
-    dest_url = urlparse(dest)
+    dest_url = urlparse(destination)
     try:
         mover = MOVERS[dest_url.scheme]
     except KeyError:
         LOGGER.error("Unsupported protocol '" + str(dest_url.scheme) +
-                     "'. Could not copy " + pathname + " to " + str(dest))
+                     "'. Could not copy " + pathname + " to " + str(destination))
         raise
 
     try:
