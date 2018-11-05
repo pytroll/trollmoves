@@ -427,7 +427,7 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
     # disable old chains
 
     for key in (set(chains.keys()) - set(new_chains.keys())):
-        for provider, listener in chains[key]["providers"].iteritems():
+        for provider, listener in chains[key]["providers"].items():
             listener.stop()
             del chains[key]["providers"][provider]
 
@@ -576,7 +576,7 @@ class StatCollector(object):
 
 
 def terminate(chains):
-    for chain in chains.itervalues():
+    for chain in chains.values():
         for listener in chain["listeners"].values():
             listener.stop()
         if "publisher" in chain:
