@@ -42,7 +42,8 @@ from posttroll.publisher import NoisyPublisher
 from posttroll.subscriber import Subscriber
 
 from trollmoves import heartbeat_monitor
-from trollmoves.server import gen_dict_extract, translate_dict, translate_dict_value
+from trollmoves.utils import get_local_ips
+from trollmoves.utils import gen_dict_extract, translate_dict, translate_dict_value
 
 LOGGER = logging.getLogger(__name__)
 
@@ -52,17 +53,6 @@ cache_lock = Lock()
 DEFAULT_REQ_TIMEOUT = 1
 
 HEARTBEAT_TOPIC = "/heartbeat/move_it_server"
-
-
-def get_local_ips():
-    inet_addrs = [netifaces.ifaddresses(iface).get(netifaces.AF_INET)
-                  for iface in netifaces.interfaces()]
-    ips = []
-    for addr in inet_addrs:
-        if addr is not None:
-            for add in addr:
-                ips.append(add['addr'])
-    return ips
 
 
 # Config management

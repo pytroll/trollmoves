@@ -34,6 +34,7 @@ import sys
 import time
 import datetime
 import traceback
+import socket
 
 from six.moves.configparser import ConfigParser
 from ftplib import FTP, all_errors
@@ -51,7 +52,8 @@ from posttroll.publisher import get_own_ip
 from posttroll.subscriber import Subscribe
 from trollsift import globify, parse
 
-from trollmoves.client import get_local_ips
+from trollmoves.utils import get_local_ips
+from trollmoves.utils import gen_dict_extract
 
 LOGGER = logging.getLogger(__name__)
 
@@ -308,64 +310,6 @@ class RequestManager(Thread):
         self.out_socket.close(1)
         self.in_socket.close(1)
 
-
-def gen_dict_extract(var, key):
-    if hasattr(var, 'items'):
-        for k, v in var.items():
-            if k == key:
-                yield v
-            if hasattr(v, 'items'):
-                for result in gen_dict_extract(v, key):
-                    yield result
-            elif isinstance(v, list):
-                for d in v:
-                    for result in gen_dict_extract(d, key):
-                        yield result
-
-
-def translate_dict_value(var, key, callback):
-    newvar = var.copy()
-    if hasattr(var, 'items'):
-        for k, v in var.items():
-            if k == key:
-                newvar[key] = callback(k, v)
-            elif hasattr(v, 'items'):
-                newvar[k] = translate_dict_value(v, key, callback)
-            elif isinstance(v, list):
-                newvar[k] = [translate_dict_value(d, key, callback) for d in v]
-        return newvar
-    else:
-        return var
-
-
-def translate_dict_item(var, key, callback):
-    newvar = var.copy()
-    if hasattr(var, 'items'):
-        for k, v in var.items():
-            if k == key:
-                newvar = callback(var, k)
-            elif hasattr(v, 'items'):
-                newvar[k] = translate_dict_item(v, key, callback)
-            elif isinstance(v, list):
-                newvar[k] = [translate_dict_item(d, key, callback) for d in v]
-        return newvar
-    else:
-        return var
-
-
-def translate_dict(var, keys, callback):
-    newvar = var.copy()
-    if hasattr(var, 'items'):
-        if set(var.keys()) & set(keys):
-            newvar = callback(var)
-        for k, v in newvar.items():
-            if hasattr(v, 'items'):
-                newvar[k] = translate_dict(v, keys, callback)
-            elif isinstance(v, list):
-                newvar[k] = [translate_dict(d, keys, callback) for d in v]
-        return newvar
-    else:
-        return var
 
 class Listener(Thread):
 
