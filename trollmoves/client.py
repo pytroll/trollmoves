@@ -342,6 +342,7 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
             lmsg.data['origin'] = response.data['request_address']
             lmsg.data.pop('request_address', None)
             lmsg = replace_mda(lmsg, kwargs)
+            lmsg.data.pop('destination', None)
 
             LOGGER.debug("publishing %s", str(lmsg))
             publisher.send(str(lmsg))
