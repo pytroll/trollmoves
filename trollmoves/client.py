@@ -294,7 +294,8 @@ def make_uris(msg, destination, login=None):
 
     def uri_callback(key, value):
         uri = urlparse(value)
-        return urlunparse((scheme_, host_, uri.path, "", "", ""))
+        path = os.path.join(duri.path, os.path.basename(uri.path))
+        return urlunparse((scheme_, host_, path, "", "", ""))
 
     msg.data = translate_dict_value(msg.data, 'uri', uri_callback)
 
