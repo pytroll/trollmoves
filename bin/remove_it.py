@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# Copyright (c) 2015, 2016 Martin Raspaud
+# Copyright (c) 2015 -2018 PyTroll Community
 
 # Author(s):
 
@@ -264,6 +264,9 @@ def main():
                             logger.debug("Would remove %s", filename)
                         section_files += 1
                         section_size += stat.st_size
+                    elif args.dry_run:
+                        logger.debug("ctime of file = %s - reftime = %s: Will not remove %s",
+                                     str(datetime.fromtimestamp(stat.st_ctime)), str(ref_time), filename)
 
             logger.info("# removed files: %s", section_files)
             logger.info("MB removed: %s", section_size / 1000000)
@@ -271,6 +274,7 @@ def main():
             tot_files += section_files
     logger.info(
         "Thanks for using pytroll/remove_it. See you soon on pytroll.org!")
+
 
 if __name__ == '__main__':
     try:
