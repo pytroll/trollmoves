@@ -51,6 +51,8 @@ from posttroll.publisher import get_own_ip
 from posttroll.subscriber import Subscribe
 from trollsift import globify, parse
 
+from trollmoves.client import get_local_ips
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -307,12 +309,6 @@ class RequestManager(Thread):
         self.in_socket.close(1)
 
 
-def get_msg_file_name(msgdata):
-    uid = msgdata['uid']
-    uri = msgdata['uri']
-    return uid, uri
-
-
 def gen_dict_extract(var, key):
     if hasattr(var, 'items'):
         for k, v in var.items():
@@ -388,32 +384,38 @@ class Listener(Thread):
                     else:
                         continue
 
-                LOGGER.debug('We have a match: %s', str(msg))
+                # check that files are local
+                for uri in gen_dict_extract(msg.data, 'uri'):
+                    urlobj = urlparse(uri)
+                    if not socket.gethostbyname(urlobj.netloc) in get_local_ips():
+                        break
+                else:
+                    LOGGER.debug('We have a match: %s', str(msg))
 
-                #pathname = unpack(orig_pathname, **attrs)
+                    #pathname = unpack(orig_pathname, **attrs)
 
-                info = self.attrs.get("info", {})
-                if info:
-                    info = dict((elt.strip().split('=') for elt in info.split(";")))
-                    for infokey, infoval in info.items():
-                        if "," in infoval:
-                            info[infokey] = infoval.split(",")
+                    info = self.attrs.get("info", {})
+                    if info:
+                        info = dict((elt.strip().split('=') for elt in info.split(";")))
+                        for infokey, infoval in info.items():
+                            if "," in infoval:
+                                info[infokey] = infoval.split(",")
 
-                # info.update(parse(attrs["origin"], orig_pathname))
-                # info['uri'] = pathname
-                # info['uid'] = os.path.basename(pathname)
-                info.update(msg.data)
-                info['request_address'] = self.attrs.get(
-                    "request_address", get_own_ip()) + ":" + self.attrs["request_port"]
-                old_data = msg.data
-                msg = Message(self.attrs["topic"], msg.type, info)
-                self.publisher.send(str(msg))
-                with file_cache_lock:
-                    for filename in gen_dict_extract(old_data, 'uid'):
-                        file_cache.appendleft(self.attrs["topic"] + '/' + filename)
-                LOGGER.debug("Message sent: " + str(msg))
-                if not self.loop:
-                    break
+                    # info.update(parse(attrs["origin"], orig_pathname))
+                    # info['uri'] = pathname
+                    # info['uid'] = os.path.basename(pathname)
+                    info.update(msg.data)
+                    info['request_address'] = self.attrs.get(
+                        "request_address", get_own_ip()) + ":" + self.attrs["request_port"]
+                    old_data = msg.data
+                    msg = Message(self.attrs["topic"], msg.type, info)
+                    self.publisher.send(str(msg))
+                    with file_cache_lock:
+                        for filename in gen_dict_extract(old_data, 'uid'):
+                            file_cache.appendleft(self.attrs["topic"] + '/' + filename)
+                    LOGGER.debug("Message sent: " + str(msg))
+                    if not self.loop:
+                        break
 
     def stop(self):
         self.loop = False
