@@ -293,7 +293,8 @@ def make_uris(msg, destination, login=None):
             host_ = login.split(":")[0] + "@" + host_
 
     def uri_callback(key, value):
-        return urlunparse((scheme_, host_, value, "", "", ""))
+        uri = urlparse(value)
+        return urlunparse((scheme_, host_, uri.path, "", "", ""))
 
     msg.data = translate_dict_value(msg.data, 'uri', uri_callback)
 
