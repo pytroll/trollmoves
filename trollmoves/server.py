@@ -739,7 +739,7 @@ class FtpMover(Mover):
                     connection.cwd(current_dir)
                 except IOError:
                     cd_tree("/".join(current_dir.split("/")[:-1]))
-                    connection.mkdfile(current_dir)
+                    connection.mkd(current_dir)
                     connection.cwd(current_dir)
 
         LOGGER.debug('cd to %s', os.path.dirname(self.destination.path))
@@ -747,11 +747,6 @@ class FtpMover(Mover):
         with open(self.origin, 'rb') as file_obj:
             connection.storbinary('STOR ' + os.path.basename(self.origin),
                                   file_obj)
-
-        try:
-            connection.quit()
-        except all_errors:
-            connection.close()
 
 
 class ScpMover(Mover):
