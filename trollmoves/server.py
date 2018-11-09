@@ -331,7 +331,8 @@ class Listener(Thread):
                 # check that files are local
                 for uri in gen_dict_extract(msg.data, 'uri'):
                     urlobj = urlparse(uri)
-                    if not socket.gethostbyname(urlobj.netloc) in get_local_ips():
+                    if(urlobj.scheme not in ['', 'file']
+                       and not socket.gethostbyname(urlobj.netloc) in get_local_ips()):
                         break
                 else:
                     LOGGER.debug('We have a match: %s', str(msg))
