@@ -282,10 +282,10 @@ def unpack_and_create_local_message(msg, local_dir, unpack=None, delete=False):
 
 def make_uris(msg, destination, login=None):
     duri = urlparse(destination)
-    scheme = duri.scheme or 'file'
+    scheme = duri.scheme or 'ssh'
     dest_hostname = duri.hostname or socket.gethostname()
     if socket.gethostbyname(dest_hostname) in get_local_ips():
-        scheme_, host_ = "file", ''  # local file
+        scheme_, host_ = "ssh", dest_hostname  # local file
     else:
         scheme_, host_ = scheme, dest_hostname  # remote file
         if login:
