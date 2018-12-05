@@ -104,6 +104,7 @@ import pyinotify
 from posttroll.publisher import Publisher
 from trollmoves.server import EventHandler, reload_config, terminate
 
+LOGGER = logging.getLogger("move_it_server")
 LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
 
 
@@ -111,44 +112,24 @@ class MoveItServer(object):
 
     def __init__(self, cmd_args):
         self.cmd_args = cmd_args
-        self.logger = logging.getLogger("move_it_server")
-        self.setup_logging(cmd_args)
-        self.logger.info("Starting up.")
-        self.logger.info("Starting publisher on port %s.", str(cmd_args.port))
-        self.pub = Publisher("tcp://*:" + str(cmd_args.port), "move_it_server")
         self.running = False
         self.notifier = None
         self.watchman = None
         self.chains = {}
+        setup_logging(cmd_args)
+        LOGGER.info("Starting up.")
+        LOGGER.info("Starting publisher on port %s.", str(cmd_args.port))
+        self.pub = Publisher("tcp://*:" + str(cmd_args.port), "move_it_server")
         self.setup_watchers(cmd_args)
 
     def run(self):
         signal.signal(signal.SIGTERM, self.chains_stop)
         signal.signal(signal.SIGHUP, self.signal_reload_cfg_file)
         self.notifier.start()
-        self._running = True
-        while self._running:
+        self.running = True
+        while self.running:
             time.sleep(1)
             self.pub.heartbeat(30)
-
-    def setup_logging(self, cmd_args):
-        """Setup logging"""
-        if cmd_args.verbose:
-            self.logger.setLevel(logging.DEBUG)
-
-        if cmd_args.log:
-            fh_ = logging.handlers.TimedRotatingFileHandler(
-                os.path.join(cmd_args.log),
-                "midnight",
-                backupCount=7)
-        else:
-            fh_ = logging.StreamHandler()
-
-        formatter = logging.Formatter(LOG_FORMAT)
-        fh_.setFormatter(formatter)
-
-        self.logger.addHandler(fh_)
-        pyinotify.log.handlers = [fh_]
 
     def reload_cfg_file(self, filename):
         return reload_config(filename, self.chains, publisher=self.pub)
@@ -175,6 +156,29 @@ class MoveItServer(object):
         self.reload_cfg_file(self.cmd_args.config_file)
 
 
+def setup_logging(cmd_args):
+    """Setup logging"""
+    global LOGGER
+    LOGGER = logging.getLogger('')
+    if cmd_args.verbose:
+        LOGGER.setLevel(logging.DEBUG)
+
+    if cmd_args.log:
+        fh_ = logging.handlers.TimedRotatingFileHandler(
+            os.path.join(cmd_args.log),
+            "midnight",
+            backupCount=7)
+    else:
+        fh_ = logging.StreamHandler()
+
+    formatter = logging.Formatter(LOG_FORMAT)
+    fh_.setFormatter(formatter)
+
+    LOGGER.addHandler(fh_)
+    LOGGER = logging.getLogger('move_it_server')
+    pyinotify.log.handlers = [fh_]
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("config_file",
@@ -196,7 +200,7 @@ def main():
 
     try:
         server.reload_cfg_file(cmd_args.config_file)
-        main()
+        server.run()
     except KeyboardInterrupt:
         server.logger.debug("Stopping Trollmoves server")
     finally:
