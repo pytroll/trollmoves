@@ -92,37 +92,90 @@ ith the -l or --log option::
 
 """
 
-import _strptime
 import logging
 import logging.handlers
 import os
 import time
-from datetime import datetime
+import argparse
+import signal
 
 import pyinotify
 
 from posttroll.publisher import Publisher
 from trollmoves.server import EventHandler, reload_config, terminate
 
-LOGGER = logging.getLogger("move_it_server")
-
-chains = {}
-
-PUB = None
+LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
 
 
-running = True
+class MoveItServer(object):
+
+    def __init__(self, cmd_args):
+        self.cmd_args = cmd_args
+        self.logger = logging.getLogger("move_it_server")
+        self.setup_logging(cmd_args)
+        self.logger.info("Starting up.")
+        self.logger.info("Starting publisher on port %s.", str(cmd_args.port))
+        self.pub = Publisher("tcp://*:" + str(cmd_args.port), "move_it_server")
+        self.running = False
+        self.notifier = None
+        self.watchman = None
+        self.chains = {}
+        self.setup_watchers(cmd_args)
+
+    def run(self):
+        signal.signal(signal.SIGTERM, self.chains_stop)
+        signal.signal(signal.SIGHUP, self.signal_reload_cfg_file)
+        self.notifier.start()
+        self._running = True
+        while self._running:
+            time.sleep(1)
+            self.pub.heartbeat(30)
+
+    def setup_logging(self, cmd_args):
+        """Setup logging"""
+        if cmd_args.verbose:
+            self.logger.setLevel(logging.DEBUG)
+
+        if cmd_args.log:
+            fh_ = logging.handlers.TimedRotatingFileHandler(
+                os.path.join(cmd_args.log),
+                "midnight",
+                backupCount=7)
+        else:
+            fh_ = logging.StreamHandler()
+
+        formatter = logging.Formatter(LOG_FORMAT)
+        fh_.setFormatter(formatter)
+
+        self.logger.addHandler(fh_)
+        pyinotify.log.handlers = [fh_]
+
+    def reload_cfg_file(self, filename):
+        return reload_config(filename, self.chains, publisher=self.pub)
+
+    def setup_watchers(self, cmd_args):
+        mask = (pyinotify.IN_CLOSE_WRITE |
+                pyinotify.IN_MOVED_TO |
+                pyinotify.IN_CREATE)
+        self.watchman = pyinotify.WatchManager()
+
+        event_handler = EventHandler(self.reload_cfg_file,
+                                     cmd_filename=self.cmd_args.config_file)
+        self.notifier = pyinotify.ThreadedNotifier(self.watchman, event_handler)
+        self.watchman.add_watch(os.path.dirname(cmd_args.config_file), mask)
+
+    def chains_stop(self, *args):
+        del args
+        self.running = False
+        self.notifier.stop()
+        terminate(self.chains, self.pub)
+
+    def signal_reload_cfg_file(self, *args):
+        del args
+        self.reload_cfg_file(self.cmd_args.config_file)
 
 
-def main():
-    while running:
-        time.sleep(1)
-        PUB.heartbeat(30)
-
-if __name__ == '__main__':
-    import argparse
-    import signal
-
+def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("config_file",
                         help="The configuration file to run on.")
@@ -131,66 +184,25 @@ if __name__ == '__main__':
     parser.add_argument("-p", "--port",
                         help="The port to publish on. 9010 is the default",
                         default=9010)
-    cmd_args = parser.parse_args()
+    parser.add_argument("-v", "--verbose", default=False, action='store_true')
 
-    log_format = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
-    LOGGER = logging.getLogger('')
-    LOGGER.setLevel(logging.DEBUG)
+    return parser.parse_args()
 
-    if cmd_args.log:
-        fh = logging.handlers.TimedRotatingFileHandler(
-            os.path.join(cmd_args.log),
-            "midnight",
-            backupCount=7)
-    else:
-        fh = logging.StreamHandler()
 
-    formatter = logging.Formatter(log_format)
-    fh.setFormatter(formatter)
-
-    LOGGER.addHandler(fh)
-    LOGGER = logging.getLogger('move_it_server')
-
-    pyinotify.log.handlers = [fh]
-
-    LOGGER.info("Starting up.")
-
-    LOGGER.info("Starting publisher on port %s.", str(cmd_args.port))
-
-    PUB = Publisher("tcp://*:" + str(cmd_args.port), "move_it_server")
-
-    mask = (pyinotify.IN_CLOSE_WRITE |
-            pyinotify.IN_MOVED_TO |
-            pyinotify.IN_CREATE)
-    watchman = pyinotify.WatchManager()
-
-    def reload_cfg_file(filename):
-        return reload_config(filename, chains, publisher=PUB)
-
-    notifier = pyinotify.ThreadedNotifier(watchman, EventHandler(
-        reload_cfg_file, cmd_filename=cmd_args.config_file))
-    watchman.add_watch(os.path.dirname(cmd_args.config_file), mask)
-
-    def chains_stop(*args):
-        global running
-        running = False
-        notifier.stop()
-        terminate(chains, PUB)
-
-    signal.signal(signal.SIGTERM, chains_stop)
-
-    def signal_reload_cfg_file(*args):
-        reload_cfg_file(cmd_args.config_file)
-
-    signal.signal(signal.SIGHUP, signal_reload_cfg_file)
-
-    notifier.start()
+def main():
+    """Main()"""
+    cmd_args = parse_args()
+    server = MoveItServer(cmd_args)
 
     try:
-        reload_cfg_file(cmd_args.config_file)
+        server.reload_cfg_file(cmd_args.config_file)
         main()
     except KeyboardInterrupt:
-        LOGGER.debug("Interrupting")
+        server.logger.debug("Stopping Trollmoves server")
     finally:
-        if running:
-            chains_stop()
+        if server.running:
+            server.chains_stop()
+
+
+if __name__ == '__main__':
+    main()
