@@ -33,7 +33,7 @@ import subprocess
 import sys
 import time
 import traceback
-from six.moves.configparser import ConfigParser
+from six.moves.configparser import RawConfigParser
 from ftplib import FTP, all_errors
 from six.moves.queue import Empty, Queue
 from threading import Thread
@@ -314,7 +314,7 @@ def clean_url(url):
 def read_config(filename):
     """Read the config file called *filename*.
     """
-    cp_ = ConfigParser()
+    cp_ = RawConfigParser()
     cp_.read(filename)
 
     res = {}
