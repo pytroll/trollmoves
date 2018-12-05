@@ -33,11 +33,11 @@ import subprocess
 import sys
 import time
 import traceback
-from ConfigParser import ConfigParser
+from six.moves.configparser import ConfigParser
 from ftplib import FTP, all_errors
-from Queue import Empty, Queue
+from six.moves.queue import Empty, Queue
 from threading import Thread
-from urlparse import urlparse, urlunparse
+from six.moves.urllib.parse import urlparse, urlunparse
 
 import pyinotify
 from zmq import NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
