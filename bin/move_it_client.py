@@ -51,7 +51,7 @@ For example::
 
   [eumetcast_hrit]
   providers=tellicast_server:9090
-  destinations=/the/directory/you/want/stuff/in /another/directory/you/want/stuff/in
+  destination=/the/directory/you/want/stuff/in /another/directory/you/want/stuff/in
   login=username:greatPassword
   topic=/1b/hrit/zds
   publish_port=0
@@ -75,12 +75,12 @@ with the -l or --log option::
 """
 
 # TODO: implement ping and server selection
-import _strptime
 import logging
 import logging.handlers
 import os
 import time
-from datetime import datetime
+import argparse
+import signal
 
 import pyinotify
 
@@ -88,25 +88,60 @@ from posttroll.publisher import NoisyPublisher
 from trollmoves.client import StatCollector, reload_config, terminate
 from trollmoves.server import EventHandler
 
-NP = None
-PUB = None
-
-running = True
-
 LOGGER = logging.getLogger("move_it_client")
+LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
 
 
-chains = {}
+class MoveItClient(object):
+
+    def __init__(self, cmd_args):
+        self.cmd_args = cmd_args
+        self.running = False
+        self.notifier = None
+        self.watchman = None
+        self.chains = {}
+        setup_logging(cmd_args)
+        LOGGER.info("Starting up.")
+        self._np = NoisyPublisher("move_it_client")
+        self.pub = self._np.start()
+        self.setup_watchers(cmd_args)
+
+    def reload_cfg_file(self, filename, *args, **kwargs):
+        reload_config(filename, self.chains, *args, pub_instance=self.pub,
+                      **kwargs)
+
+    def signal_reload_cfg_file(self, *args):
+        del args
+        reload_config(self.cmd_args.config_file, self.chains,
+                      pub_instance=self.pub)
+
+    def chains_stop(self, *args):
+        del args
+        self.running = False
+        self.notifier.stop()
+        self._np.stop()
+        terminate(self.chains)
+
+    def setup_watchers(self, cmd_args):
+        mask = (pyinotify.IN_CLOSE_WRITE |
+                pyinotify.IN_MOVED_TO |
+                pyinotify.IN_CREATE)
+        self.watchman = pyinotify.WatchManager()
+        event_handler = EventHandler(self.reload_cfg_file,
+                                     cmd_filename=cmd_args.config_file)
+        self.notifier = pyinotify.ThreadedNotifier(self.watchman, event_handler)
+        self.watchman.add_watch(os.path.dirname(cmd_args.config_file), mask)
+
+    def run(self):
+        signal.signal(signal.SIGTERM, self.chains_stop)
+        signal.signal(signal.SIGHUP, self.signal_reload_cfg_file)
+        self.notifier.start()
+        self.running = True
+        while self.running:
+            time.sleep(1)
 
 
-def main():
-    while running:
-        time.sleep(1)
-
-if __name__ == '__main__':
-    import argparse
-    import signal
-
+def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("config_file",
                         help="The configuration file to run on.")
@@ -114,71 +149,54 @@ if __name__ == '__main__':
                         help="The file to log to. stdout otherwise.")
     parser.add_argument("-s", "--stats",
                         help="Save stats to this file")
-    cmd_args = parser.parse_args()
+    parser.add_argument("-v", "--verbose", default=False, action="store_true",
+                        help="Toggle verbose logging")
+    return parser.parse_args()
 
-    log_format = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
+
+def setup_logging(cmd_args):
+    """Setup logging."""
+    global LOGGER
     LOGGER = logging.getLogger('')
-    LOGGER.setLevel(logging.DEBUG)
+    if cmd_args.verbose:
+        LOGGER.setLevel(logging.DEBUG)
 
     if cmd_args.log:
-        fh = logging.handlers.TimedRotatingFileHandler(
+        fh_ = logging.handlers.TimedRotatingFileHandler(
             os.path.join(cmd_args.log),
             "midnight",
             backupCount=7)
     else:
-        fh = logging.StreamHandler()
+        fh_ = logging.StreamHandler()
 
-    formatter = logging.Formatter(log_format)
-    fh.setFormatter(formatter)
+    formatter = logging.Formatter(LOG_FORMAT)
+    fh_.setFormatter(formatter)
 
-    LOGGER.addHandler(fh)
+    LOGGER.addHandler(fh_)
     LOGGER = logging.getLogger('move_it_client')
 
-    pyinotify.log.handlers = [fh]
+    pyinotify.log.handlers = [fh_]
 
-    LOGGER.info("Starting up.")
 
-    NP = NoisyPublisher("move_it_client")
-    PUB = NP.start()
-
-    mask = (pyinotify.IN_CLOSE_WRITE |
-            pyinotify.IN_MOVED_TO |
-            pyinotify.IN_CREATE)
-    watchman = pyinotify.WatchManager()
-
-    def reload_cfg_file(filename, *args, **kwargs):
-        reload_config(filename, chains, *args, pub_instance=PUB, **kwargs)
-
-    notifier = pyinotify.ThreadedNotifier(watchman, EventHandler(reload_cfg_file, cmd_filename=cmd_args.config_file))
-    watchman.add_watch(os.path.dirname(cmd_args.config_file), mask)
-
-    def chains_stop(*args):
-        global running
-        running = False
-        notifier.stop()
-        NP.stop()
-        terminate(chains)
-
-    signal.signal(signal.SIGTERM, chains_stop)
-
-    def signal_reload_cfg_file(*args):
-        reload_config(cmd_args.config_file, chains, pub_instance=PUB)
-
-    signal.signal(signal.SIGHUP, signal_reload_cfg_file)
-
-    notifier.start()
+def main():
+    """Main()"""
+    cmd_args = parse_args()
+    client = MoveItClient(cmd_args)
 
     try:
         if cmd_args.stats:
             stat = StatCollector(cmd_args.stats)
-            reload_cfg_file(cmd_args.config_file, callback=stat.collect)
+            client.reload_cfg_file(cmd_args.config_file, callback=stat.collect)
         else:
-            reload_cfg_file(cmd_args.config_file)
-        main()
+            client.reload_cfg_file(cmd_args.config_file)
+        client.run()
     except KeyboardInterrupt:
         LOGGER.debug("Interrupting")
-    except:
-        LOGGER.exception('wow')
     finally:
-        if running:
-            chains_stop()
+        if client.running:
+            client.chains_stop()
+
+
+if __name__ == '__main__':
+    main()
+
