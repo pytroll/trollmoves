@@ -135,7 +135,7 @@ def main():
         server.reload_cfg_file(cmd_args.config_file)
         server.run()
     except KeyboardInterrupt:
-        server.logger.debug("Stopping Trollmoves server")
+        LOGGER.debug("Stopping Trollmoves server")
     finally:
         if server.running:
             server.chains_stop()
