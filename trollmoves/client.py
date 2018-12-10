@@ -27,9 +27,10 @@ import socket
 import sys
 import time
 from collections import deque
-from ConfigParser import ConfigParser
+from six.moves.configparser import RawConfigParser
 from threading import Lock, Thread, Event
-from urlparse import urlparse, urlunparse
+import six
+from six.moves.urllib.parse import urlparse, urlunparse
 
 import netifaces
 import pyinotify
@@ -67,7 +68,7 @@ def get_local_ips():
 def read_config(filename):
     """Read the config file called *filename*.
     """
-    cp_ = ConfigParser()
+    cp_ = RawConfigParser()
     cp_.read(filename)
 
     res = {}
@@ -491,7 +492,7 @@ class StatCollector(object):
 
 
 def terminate(chains):
-    for chain in chains.itervalues():
+    for chain in six.itervalues(chains):
         for listener in chain["listeners"].values():
             listener.stop()
         if "publisher" in chain:
