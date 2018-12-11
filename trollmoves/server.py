@@ -1,23 +1,23 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
+#
 # Copyright (c) 2012, 2013, 2014, 2015, 2016
-
+#
 # Author(s):
-
+#
 #   Martin Raspaud <martin.raspaud@smhi.se>
 #   Panu Lahtinen <panu.lahtinen@fmi.fi>
-
+#
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-
+#
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
@@ -79,7 +79,7 @@ class Deleter(Thread):
                         self.delete(filename)
                     except:
                         LOGGER.exception(
-                            'Something went wrong when deleting %s:', filename)
+                            'Something went wrong when deleting %s', filename)
                     else:
                         LOGGER.debug('Removed %s.', filename)
                     break
@@ -127,7 +127,7 @@ class RequestManager(Thread):
         except (KeyError, TypeError):
             LOGGER.warning("Station is not defined in config file")
             self._station = "unknown"
-        LOGGER.debug("Station is '%s'" % self._station)
+        LOGGER.debug("Station is '%s'", self._station)
 
     def start(self):
         self._deleter.start()
@@ -208,7 +208,7 @@ class RequestManager(Thread):
             LOGGER.exception("Something went wrong"
                              " when processing the request: %s", str(message))
         finally:
-            LOGGER.debug("Response: " + str(message))
+            LOGGER.debug("Response: %s", str(message))
             in_socket.send_multipart([address, b'', str(reply)])
 
     def run(self):
@@ -220,7 +220,7 @@ class RequestManager(Thread):
                 continue
             if socks.get(self.out_socket) == POLLIN:
                 LOGGER.debug("Received a request")
-                address, empty, payload = self.out_socket.recv_multipart(
+                address, _, payload = self.out_socket.recv_multipart(
                     NOBLOCK)
                 message = Message(rawstr=payload)
                 fake_msg = Message(rawstr=str(message))
@@ -232,7 +232,7 @@ class RequestManager(Thread):
                     fake_msg.data['destination'] = clean_url(message.data[
                         'destination'])
 
-                LOGGER.debug("processing request: " + str(fake_msg))
+                LOGGER.debug("processing request: %s", str(fake_msg))
                 if message.type == "ping":
                     Thread(target=self.reply_and_send,
                            args=(self.pong, address, message)).start()
@@ -264,7 +264,8 @@ def create_notifier(attrs, publisher):
     """Create a notifier from the specified configuration attributes *attrs*.
     """
 
-    tmask = (pyinotify.IN_CLOSE_WRITE | pyinotify.IN_MOVED_TO |
+    tmask = (pyinotify.IN_CLOSE_WRITE |
+             pyinotify.IN_MOVED_TO |
              pyinotify.IN_CREATE)
 
     wm_ = pyinotify.WatchManager()
@@ -295,7 +296,7 @@ def create_notifier(attrs, publisher):
             "request_address", get_own_ip()) + ":" + attrs["request_port"]
         msg = Message(attrs["topic"], 'file', info)
         publisher.send(str(msg))
-        LOGGER.debug("Message sent: " + str(msg))
+        LOGGER.debug("Message sent: %s", str(msg))
 
     tnotifier = pyinotify.ThreadedNotifier(wm_, EventHandler(fun))
 
@@ -325,9 +326,9 @@ def read_config(filename):
         res[section].setdefault("compression", False)
 
         if "origin" not in res[section]:
-            LOGGER.warning("Incomplete section " + section +
-                           ": add an 'origin' item.")
-            LOGGER.info("Ignoring section " + section + ": incomplete.")
+            LOGGER.warning("Incomplete section %s: add an 'origin' item.",
+                           section)
+            LOGGER.info("Ignoring section %s: incomplete.", section)
             del res[section]
             continue
 
@@ -340,9 +341,10 @@ def read_config(filename):
         #    continue
 
         if "topic" not in res[section]:
-            LOGGER.warning("Incomplete section " + section +
-                           ": add an 'topic' item.")
-            LOGGER.info("Ignoring section " + section + ": incomplete.")
+            LOGGER.warning("Incomplete section %s: add an 'topic' item.",
+                           section)
+            LOGGER.info("Ignoring section %s: incomplete.",
+                        section)
             continue
         else:
             try:
@@ -361,7 +363,7 @@ def reload_config(filename,
     """Rebuild chains if needed (if the configuration changed) from *filename*.
     """
 
-    LOGGER.debug("New config file detected! " + filename)
+    LOGGER.debug("New config file detected: %s", filename)
 
     new_chains = read_config(filename)
 
@@ -403,16 +405,16 @@ def reload_config(filename,
         old_glob.append((globify(val["origin"]), fun))
 
         if not identical:
-            LOGGER.debug("Updated " + key)
+            LOGGER.debug("Updated %s", key)
         else:
-            LOGGER.debug("Added " + key)
+            LOGGER.debug("Added %s", key)
 
     for key in (set(chains.keys()) - set(new_chains.keys())):
         chains[key]["notifier"].stop()
         del chains[key]
-        LOGGER.debug("Removed " + key)
+        LOGGER.debug("Removed %s", key)
 
-    LOGGER.debug("Reloaded config from " + filename)
+    LOGGER.debug("Reloaded config from %s", filename)
     if old_glob:
         time.sleep(3)
         for pattern, fun in old_glob:
@@ -429,7 +431,7 @@ def check_output(*popenargs, **kwargs):
     """Copy from python 2.7, `subprocess.check_output`."""
     if 'stdout' in kwargs:
         raise ValueError('stdout argument not allowed, it will be overridden.')
-    LOGGER.debug("Calling " + str(popenargs))
+    LOGGER.debug("Calling %s", str(popenargs))
     process = subprocess.Popen(stdout=subprocess.PIPE, *popenargs, **kwargs)
     output, unused_err = process.communicate()
     del unused_err
@@ -451,9 +453,9 @@ def xrit(pathname, destination=None, cmd="./xRITDecompress"):
     if dest_url.scheme in ("", "file"):
         check_output([cmd, pathname], cwd=(destination or opath))
     else:
-        LOGGER.exception("Can not extract file " + pathname + " to " +
-                         destination + ", destination has to be local.")
-    LOGGER.info("Successfully extracted " + pathname + " to " + destination)
+        LOGGER.exception("Can not extract file %s to %s, destination "
+                         "has to be local.", pathname, destination)
+    LOGGER.info("Successfully extracted %s to %s", pathname, destination)
     return expected
 
 # bzip
@@ -476,7 +478,7 @@ def bzip(origin, destination=None):
                 if not block:
                     break
                 dest.write(block)
-            LOGGER.debug("Bunzipped " + origin + " to " + destfile)
+            LOGGER.debug("Bunzipped %s to %s", origin, destfile)
         finally:
             orig.close()
     return destfile
@@ -498,7 +500,7 @@ def unpack(pathname,
             else:
                 new_path = unpack_fun(pathname, working_directory)
         except:
-            LOGGER.exception("Could not decompress " + pathname)
+            LOGGER.exception("Could not decompress %s", pathname)
         else:
             if delete.lower() in ["1", "yes", "true", "on"]:
                 os.remove(pathname)
@@ -518,7 +520,7 @@ def move_it(message, attrs=None, hook=None):
     pathname = uri.path
     fake_dest = clean_url(dest)
 
-    LOGGER.debug("Copying to: " + fake_dest)
+    LOGGER.debug("Copying to: %s", fake_dest)
     dest_url = urlparse(dest)
     try:
         mover = MOVERS[dest_url.scheme]
@@ -538,8 +540,8 @@ def move_it(message, attrs=None, hook=None):
         LOGGER.debug("".join(traceback.format_tb(exc_traceback)))
         raise err
     else:
-        LOGGER.info("Successfully copied " + pathname + " to " + str(
-            fake_dest))
+        LOGGER.info("Successfully copied %s to %s",
+                    pathname, str(fake_dest))
 
 # TODO: implement the creation of missing directories.
 
@@ -697,7 +699,8 @@ class SftpMover(Mover):
             raise IOError("No available keys")
 
         for key in agent_keys:
-            LOGGER.debug('Trying ssh key %s', key.get_fingerprint().encode('hex'))
+            LOGGER.debug('Trying ssh key %s',
+                         key.get_fingerprint().encode('hex'))
             try:
                 transport.auth_publickey(self.destination.username, key)
                 LOGGER.debug('... ssh key success!')
