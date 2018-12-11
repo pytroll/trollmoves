@@ -27,7 +27,6 @@ import logging
 import logging.handlers
 import os
 import time
-import argparse
 import signal
 
 import pyinotify
