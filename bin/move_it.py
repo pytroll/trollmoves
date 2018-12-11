@@ -391,7 +391,7 @@ def move_it(pathname, destinations, hook=None):
         dest_url = urlparse(dest)
         try:
             mover = MOVERS[dest_url.scheme]
-        except KeyError, e:
+        except KeyError as err:
             LOGGER.error("Unsupported protocol '%s'. Could not copy %s to %s",
                          str(dest_url.scheme), pathname, str(dest))
             continue
@@ -585,7 +585,7 @@ def create_notifier(attrs):
             if pathname != new_path:
                 try:
                     os.remove(new_path)
-                except OSError, e__:
+                except OSError as e__:
                     if e__.errno == 2:
                         pass
                     else:
