@@ -50,7 +50,7 @@ cache_lock = Lock()
 
 DEFAULT_REQ_TIMEOUT = 1
 
-HEARTBEAT_TOPIC = "/heartbeat/move_it_client"
+SERVER_HEARTBEAT_TOPIC = "/heartbeat/move_it_server"
 
 
 def get_local_ips():
@@ -320,7 +320,7 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
             if "topic" in val:
                 topics.append(val["topic"])
             if val.get("heartbeat", False):
-                topics.append(HEARTBEAT_TOPIC)
+                topics.append(SERVER_HEARTBEAT_TOPIC)
             for provider in chains[key]["providers"]:
                 chains[key]["listeners"][provider] = Listener(
                     provider,
