@@ -34,12 +34,14 @@ import sys
 import time
 import datetime
 import traceback
+import socket
 import tempfile
 
 from six.moves.configparser import ConfigParser
-from ftplib import FTP, all_errors
+from ftplib import FTP, all_errors, error_perm
 from six.moves.queue import Empty, Queue
 from six.moves.urllib.parse import urlparse, urlunparse
+from six import string_types
 from collections import deque
 from threading import Thread, Event, current_thread, Lock
 
@@ -49,7 +51,11 @@ from zmq import NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
 from posttroll import context
 from posttroll.message import Message
 from posttroll.publisher import get_own_ip
+from posttroll.subscriber import Subscribe
 from trollsift import globify, parse
+
+from trollmoves.utils import get_local_ips
+from trollmoves.utils import gen_dict_extract, gen_dict_contains
 
 LOGGER = logging.getLogger(__name__)
 
@@ -86,7 +92,7 @@ class Deleter(Thread):
                 if the_time <= time.time():
                     try:
                         self.delete(filename)
-                    except:
+                    except Exception:
                         LOGGER.exception(
                             'Something went wrong when deleting %s:', filename)
                     else:
@@ -126,9 +132,13 @@ class RequestManager(Thread):
         self._poller.register(self.in_socket, POLLIN)
         self._attrs = attrs
         try:
-            self._pattern = globify(attrs["origin"])
+            # Checking the validity of the file pattern
+            _pattern = globify(attrs["origin"])
         except ValueError as err:
             raise ConfigError('Invalid file pattern: ' + str(err))
+        except KeyError:
+            if 'listen' not in attrs:
+                raise
         self._deleter = Deleter()
 
         try:
@@ -150,48 +160,61 @@ class RequestManager(Thread):
     def push(self, message):
         """Reply to push request
         """
-        uri = urlparse(message.data["uri"])
-        pathname = uri.path
+        for the_dict in gen_dict_contains(message.data, 'uri'):
+            uri = urlparse(the_dict['uri'])
+            rel_path = the_dict.get('path', '')
+            pathname = uri.path
+            # FIXME: check against file_cache
+            if 'origin' in self._attrs and not fnmatch.fnmatch(
+                    os.path.basename(pathname),
+                    os.path.basename(globify(self._attrs["origin"]))):
+                LOGGER.warning('Client trying to get invalid file: %s', pathname)
+                return Message(message.subject,
+                               "err",
+                               data="{0:s} not reachable".format(pathname))
+            try:
+                move_it(pathname, message.data['destination'], self._attrs, rel_path=rel_path)
+            except Exception as err:
+                return Message(message.subject, "err", data=str(err))
+            else:
+                if (self._attrs.get('compression') or self._attrs.get(
+                        'delete', 'False').lower() in ["1", "yes", "true", "on"]):
+                    self._deleter.add(pathname)
 
-        if not fnmatch.fnmatch(
-                os.path.basename(pathname),
-                os.path.basename(globify(self._attrs["origin"]))):
-            LOGGER.warning('Client trying to get invalid file: %s', pathname)
-            return Message(message.subject,
-                           "err",
-                           data="{0:s} not reachable".format(pathname))
-        try:
-            move_it(message, self._attrs)
-        except Exception as err:
-            return Message(message.subject, "err", data=str(err))
-        else:
-            if (self._attrs.get('compression') or self._attrs.get(
-                    'delete', 'False').lower() in ["1", "yes", "true", "on"]):
-                self._deleter.add(pathname)
-            new_msg = Message(message.subject,
-                              "file",
-                              data=message.data.copy())
-            new_msg.data['destination'] = clean_url(new_msg.data[
-                'destination'])
-            return new_msg
+            if 'dataset' in message.data:
+                mtype = 'dataset'
+            elif 'collection' in message.data:
+                mtype = 'collection'
+            elif 'uid' in message.data:
+                mtype = 'file'
+            else:
+                raise KeyError('No known metadata in message.')
+
+        new_msg = Message(message.subject,
+                          mtype,
+                          data=message.data.copy())
+        new_msg.data['destination'] = clean_url(new_msg.data[
+            'destination'])
+        return new_msg
 
     def ack(self, message):
         """Reply with ack to a publication
         """
-        uri = urlparse(message.data["uri"])
-        pathname = uri.path
+        for url in gen_dict_extract(message.data, 'uri'):
+            uri = urlparse(url)
+            pathname = uri.path
 
-        if not fnmatch.fnmatch(
-                os.path.basename(pathname),
-                os.path.basename(globify(self._attrs["origin"]))):
-            LOGGER.warning('Client trying to get invalid file: %s', pathname)
-            return Message(message.subject,
-                           "err",
-                           data="{0:s} not reacheable".format(pathname))
+            if 'origin' in self._attrs and not fnmatch.fnmatch(
+                    os.path.basename(pathname),
+                    os.path.basename(globify(self._attrs["origin"]))):
+                LOGGER.warning('Client trying to get invalid file: %s', pathname)
+                return Message(message.subject,
+                               "err",
+                               data="{0:s} not reacheable".format(pathname))
 
-        if (self._attrs.get('compression') or self._attrs.get(
-                'delete', 'False').lower() in ["1", "yes", "true", "on"]):
-            self._deleter.add(pathname)
+            if (self._attrs.get('compression') or self._attrs.get(
+                    'delete', 'False').lower() in ["1", "yes", "true", "on"]):
+                self._deleter.add(pathname)
         new_msg = Message(message.subject, "ack", data=message.data.copy())
         try:
             new_msg.data['destination'] = clean_url(new_msg.data[
@@ -220,7 +243,6 @@ class RequestManager(Thread):
     def unknown(self, message):
         """Reply to any unknown request.
         """
-        ### del message
         return Message(message.subject, "unknown")
 
     def reply_and_send(self, fun, address, message):
@@ -230,12 +252,15 @@ class RequestManager(Thread):
         reply = Message(message.subject, "error")
         try:
             reply = fun(message)
-        except:
+        except Exception:
             LOGGER.exception("Something went wrong"
                              " when processing the request: %s", str(message))
         finally:
             LOGGER.debug("Response: " + str(reply))
-            in_socket.send_multipart([address, b'', str(reply)])
+            try:
+                in_socket.send_multipart([address, b'', str(reply)])
+            except TypeError:
+                in_socket.send_multipart([address, b'', bytes(str(reply), 'utf-8')])
 
     def run(self):
         while self._loop:
@@ -289,7 +314,70 @@ class RequestManager(Thread):
         self.in_socket.close(1)
 
 
-def create_notifier(attrs, publisher):
+class Listener(Thread):
+
+    def __init__(self, attrs, publisher):
+        super(Listener, self).__init__()
+        self.attrs = attrs
+        self.publisher = publisher
+        self.loop = True
+
+    def run(self):
+        with Subscribe('', topics=self.attrs['listen'], addr_listener=True) as sub:
+            for msg in sub.recv(1):
+                if msg is None:
+                    if not self.loop:
+                        break
+                    else:
+                        continue
+
+                # check that files are local
+                for uri in gen_dict_extract(msg.data, 'uri'):
+                    urlobj = urlparse(uri)
+                    if(urlobj.scheme not in ['', 'file']
+                       and not socket.gethostbyname(urlobj.netloc) in get_local_ips()):
+                        break
+                else:
+                    LOGGER.debug('We have a match: %s', str(msg))
+
+                    #pathname = unpack(orig_pathname, **attrs)
+
+                    info = self.attrs.get("info", {})
+                    if info:
+                        info = dict((elt.strip().split('=') for elt in info.split(";")))
+                        for infokey, infoval in info.items():
+                            if "," in infoval:
+                                info[infokey] = infoval.split(",")
+
+                    # info.update(parse(attrs["origin"], orig_pathname))
+                    # info['uri'] = pathname
+                    # info['uid'] = os.path.basename(pathname)
+                    info.update(msg.data)
+                    info['request_address'] = self.attrs.get(
+                        "request_address", get_own_ip()) + ":" + self.attrs["request_port"]
+                    old_data = msg.data
+                    msg = Message(self.attrs["topic"], msg.type, info)
+                    self.publisher.send(str(msg))
+                    with file_cache_lock:
+                        for filename in gen_dict_extract(old_data, 'uid'):
+                            file_cache.appendleft(self.attrs["topic"] + '/' + filename)
+                    LOGGER.debug("Message sent: " + str(msg))
+                    if not self.loop:
+                        break
+
+    def stop(self):
+        self.loop = False
+
+
+def create_posttroll_notifier(attrs, publisher):
+    """Create a notifier listening to posttroll messages from *attrs*.
+    """
+    listener = Listener(attrs, publisher)
+
+    return listener, None
+
+
+def create_file_notifier(attrs, publisher):
     """Create a notifier from the specified configuration attributes *attrs*.
     """
 
@@ -337,7 +425,10 @@ def create_notifier(attrs, publisher):
 
 def clean_url(url):
     """Remove login info from *url*."""
-    urlobj = urlparse(url)
+    if isinstance(url, string_types):
+        urlobj = urlparse(url)
+    else:
+        urlobj = url
     return urlunparse((urlobj.scheme, urlobj.hostname,
                        urlobj.path, "", "", ""))
 
@@ -354,10 +445,9 @@ def read_config(filename):
         res[section] = dict(cp_.items(section))
         res[section].setdefault("working_directory", None)
         res[section].setdefault("compression", False)
-
-        if "origin" not in res[section]:
+        if ("origin" not in res[section]) and ('listen' not in res[section]):
             LOGGER.warning("Incomplete section " + section +
-                           ": add an 'origin' item.")
+                           ": add an 'origin' or 'listen' item.")
             LOGGER.info("Ignoring section " + section + ": incomplete.")
             del res[section]
             continue
@@ -386,7 +476,7 @@ def read_config(filename):
 
 def reload_config(filename,
                   chains,
-                  notifier_builder=create_notifier,
+                  notifier_builder=None,
                   manager=RequestManager,
                   publisher=None,
                   disable_backlog=False):
@@ -429,10 +519,18 @@ def reload_config(filename,
             LOGGER.warning('Remove and skip %s', key)
             del chains[key]
             continue
+
+        if notifier_builder is None:
+            if 'origin' in val:
+                notifier_builder = create_file_notifier
+            elif 'listen' in val:
+                notifier_builder = create_posttroll_notifier
+
         chains[key]["notifier"], fun = notifier_builder(val, publisher)
         chains[key]["request_manager"].start()
         chains[key]["notifier"].start()
-        old_glob.append((globify(val["origin"]), fun))
+        if 'origin' in val:
+            old_glob.append((globify(val["origin"]), fun))
 
         if not identical:
             LOGGER.debug("Updated " + key)
@@ -530,7 +628,7 @@ def unpack(pathname,
                 new_path = unpack_fun(pathname, working_directory, prog)
             else:
                 new_path = unpack_fun(pathname, working_directory)
-        except:
+        except Exception:
             LOGGER.exception("Could not decompress " + pathname)
         else:
             if delete.lower() in ["1", "yes", "true", "on"]:
@@ -541,29 +639,26 @@ def unpack(pathname,
 # Mover
 
 
-def move_it(message, attrs=None, hook=None):
+def move_it(pathname, destination, attrs=None, hook=None, rel_path=''):
     """Check if the file pointed by *filename* is in the filelist, and move it
     if it is.
     """
-    uri = urlparse(message.data["uri"])
-    dest = message.data["destination"]
-
-    pathname = uri.path
-    fake_dest = clean_url(dest)
+    dest_url = urlparse(destination)
+    new_dest = dest_url._replace(path=os.path.join(dest_url.path, rel_path))
+    fake_dest = clean_url(new_dest)
 
     LOGGER.debug("Copying to: " + fake_dest)
-    dest_url = urlparse(dest)
     try:
         mover = MOVERS[dest_url.scheme]
     except KeyError:
         LOGGER.error("Unsupported protocol '" + str(dest_url.scheme) +
-                     "'. Could not copy " + pathname + " to " + str(dest))
+                     "'. Could not copy " + pathname + " to " + str(destination))
         raise
 
     try:
-        mover(pathname, dest_url, attrs=attrs).copy()
+        mover(pathname, new_dest, attrs=attrs).copy()
         if hook:
-            hook(pathname, dest_url)
+            hook(pathname, new_dest)
     except Exception as err:
         exc_type, exc_value, exc_traceback = sys.exc_info()
         LOGGER.error("Something went wrong during copy of %s to %s: %s",
@@ -582,7 +677,7 @@ class Mover(object):
     """
 
     def __init__(self, origin, destination, attrs=None):
-        if isinstance(destination, str):
+        if isinstance(destination, string_types):
             self.destination = urlparse(destination)
         else:
             self.destination = destination
@@ -648,6 +743,9 @@ class FileMover(Mover):
     def copy(self):
         """Copy
         """
+        dirname = os.path.dirname(self.destination.path)
+        if not os.path.exists(dirname):
+            os.makedirs(dirname)
         try:
             os.link(self.origin, self.destination.path)
         except OSError:
@@ -737,7 +835,7 @@ class FtpMover(Mover):
             if current_dir != "":
                 try:
                     connection.cwd(current_dir)
-                except IOError:
+                except (IOError, error_perm):
                     cd_tree("/".join(current_dir.split("/")[:-1]))
                     connection.mkd(current_dir)
                     connection.cwd(current_dir)
