@@ -32,12 +32,16 @@ import shutil
 import subprocess
 import sys
 import time
+import datetime
 import traceback
-from ConfigParser import ConfigParser
+import tempfile
+
+from six.moves.configparser import ConfigParser
 from ftplib import FTP, all_errors
-from Queue import Empty, Queue
-from threading import Thread
-from urlparse import urlparse, urlunparse
+from six.moves.queue import Empty, Queue
+from six.moves.urllib.parse import urlparse, urlunparse
+from collections import deque
+from threading import Thread, Event, current_thread, Lock
 
 import pyinotify
 from zmq import NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
@@ -48,6 +52,11 @@ from posttroll.publisher import get_own_ip
 from trollsift import globify, parse
 
 LOGGER = logging.getLogger(__name__)
+
+
+file_cache = deque(maxlen=61000)
+file_cache_lock = Lock()
+START_TIME = datetime.datetime.utcnow()
 
 
 class ConfigError(Exception):
@@ -191,6 +200,23 @@ class RequestManager(Thread):
             pass
         return new_msg
 
+    def info(self, message):
+        topic = message.subject
+        max_count = 2256  # Let's set a (close to arbitrary) limit on messages size.
+        try:
+            max_count = min(message.data.get("max_count", max_count), max_count)
+        except AttributeError:
+            pass
+        uptime = datetime.datetime.utcnow() - START_TIME
+        files = []
+        with file_cache_lock:
+            for i in file_cache:
+                if i.startswith(topic):
+                    files.append(i)
+                    if len(files) == max_count:
+                        break
+        return Message(message.subject, "info", data={"files": files, "max_count": max_count, "uptime": str(uptime)})
+
     def unknown(self, message):
         """Reply to any unknown request.
         """
@@ -208,7 +234,7 @@ class RequestManager(Thread):
             LOGGER.exception("Something went wrong"
                              " when processing the request: %s", str(message))
         finally:
-            LOGGER.debug("Response: " + str(message))
+            LOGGER.debug("Response: " + str(reply))
             in_socket.send_multipart([address, b'', str(reply)])
 
     def run(self):
@@ -242,6 +268,9 @@ class RequestManager(Thread):
                 elif message.type == "ack":
                     Thread(target=self.reply_and_send,
                            args=(self.ack, address, message)).start()
+                elif message.type == "info":
+                    Thread(target=self.reply_and_send,
+                           args=(self.info, address, message)).start()
                 else:  # unknown request
                     Thread(target=self.reply_and_send,
                            args=(self.unknown, address, message)).start()
@@ -295,6 +324,8 @@ def create_notifier(attrs, publisher):
             "request_address", get_own_ip()) + ":" + attrs["request_port"]
         msg = Message(attrs["topic"], 'file', info)
         publisher.send(str(msg))
+        with file_cache_lock:
+            file_cache.appendleft(attrs["topic"] + '/' + info["uid"])
         LOGGER.debug("Message sent: " + str(msg))
 
     tnotifier = pyinotify.ThreadedNotifier(wm_, EventHandler(fun))
@@ -357,7 +388,8 @@ def reload_config(filename,
                   chains,
                   notifier_builder=create_notifier,
                   manager=RequestManager,
-                  publisher=None):
+                  publisher=None,
+                  disable_backlog=False):
     """Rebuild chains if needed (if the configuration changed) from *filename*.
     """
 
@@ -413,7 +445,7 @@ def reload_config(filename,
         LOGGER.debug("Removed " + key)
 
     LOGGER.debug("Reloaded config from " + filename)
-    if old_glob:
+    if old_glob and not disable_backlog:
         time.sleep(3)
         for pattern, fun in old_glob:
             process_old_files(pattern, fun)
@@ -445,7 +477,7 @@ def check_output(*popenargs, **kwargs):
 def xrit(pathname, destination=None, cmd="./xRITDecompress"):
     """Unpacks xrit data."""
     opath, ofile = os.path.split(pathname)
-    destination = destination or "/tmp/"
+    destination = destination or tempfile.gettempdir()
     dest_url = urlparse(destination)
     expected = os.path.join((destination or opath), ofile[:-2] + "__")
     if dest_url.scheme in ("", "file"):
@@ -456,6 +488,7 @@ def xrit(pathname, destination=None, cmd="./xRITDecompress"):
     LOGGER.info("Successfully extracted " + pathname + " to " + destination)
     return expected
 
+
 # bzip
 
 BLOCK_SIZE = 1024
@@ -464,7 +497,7 @@ BLOCK_SIZE = 1024
 def bzip(origin, destination=None):
     """Unzip files."""
     ofile = os.path.split(origin)[1]
-    destfile = os.path.join(destination or "/tmp/", ofile[:-4])
+    destfile = os.path.join(destination or tempfile.gettempdir(), ofile[:-4])
     if os.path.exists(destfile):
         return destfile
     with open(destfile, "wb") as dest:
@@ -571,6 +604,42 @@ class Mover(object):
         raise NotImplementedError("Move for scheme " + self.destination.scheme
                                   + " not implemented (yet).")
 
+    def get_connection(self, hostname, port, username=None):
+        with self.active_connection_lock:
+            LOGGER.debug('Getting connection to %s@%s:%s', self.destination.username, self.destination.hostname, self.destination.port)
+            try:
+                connection, timer = self.active_connections[(hostname, port, username)]
+                if not self.is_connected(connection):
+                    del self.active_connections[(hostname, port, username)]
+                    LOGGER.debug('Resetting connection')
+                    connection = self.open_connection()
+                timer.cancel()
+            except KeyError:
+                connection = self.open_connection()
+
+            timer = CTimer(int(self.attrs.get('connection_uptime', 30)),
+                           self.delete_connection, (connection,))
+            timer.start()
+            self.active_connections[(hostname, port, username)] = connection, timer
+
+            return connection
+
+    def delete_connection(self, connection):
+        with self.active_connection_lock:
+            LOGGER.debug('Closing connection to %s@%s:%s', self.destination.username, self.destination.hostname, self.destination.port)
+            try:
+                if current_thread().finished.is_set():
+                    return
+            except AttributeError:
+                pass
+            try:
+                self.close_connection(connection)
+            finally:
+                for key, val in self.active_connections.items():
+                    if val[0] == connection:
+                        del self.active_connections[key]
+                        break
+
 
 class FileMover(Mover):
     """Move files in the filesystem.
@@ -590,9 +659,68 @@ class FileMover(Mover):
         shutil.move(self.origin, self.destination.path)
 
 
+
+class CTimer(Thread):
+    """Call a function after a specified number of seconds:
+    t = CTimer(30.0, f, args=[], kwargs={})
+    t.start()
+    t.cancel() # stop the timer's action if it's still waiting
+    """
+
+    def __init__(self, interval, function, args=[], kwargs={}):
+        Thread.__init__(self)
+        self.interval = interval
+        self.function = function
+        self.args = args
+        self.kwargs = kwargs
+        self.finished = Event()
+
+    def cancel(self):
+        """Stop the timer if it hasn't finished yet"""
+        self.finished.set()
+
+    def run(self):
+        self.finished.wait(self.interval)
+        if not self.finished.is_set():
+            self.function(*self.args, **self.kwargs)
+        self.finished.set()
+
+
 class FtpMover(Mover):
     """Move files over ftp.
     """
+
+    active_connections = dict()
+    active_connection_lock = Lock()
+
+    def open_connection(self):
+        connection = FTP(timeout=10)
+        connection.connect(self.destination.hostname, self.destination.port or
+                           21)
+        if self.destination.username and self.destination.password:
+            connection.login(self.destination.username,
+                             self.destination.password)
+        else:
+            connection.login()
+
+        return connection
+
+    @staticmethod
+    def is_connected(connection):
+        try:
+            connection.voidcmd("NOOP")
+            return True
+        except (all_errors, IOError):
+            return False
+
+
+    @staticmethod
+    def close_connection(connection):
+        try:
+            connection.quit()
+        except all_errors:
+            connection.close()
+
 
     def move(self):
         """Push it !
@@ -603,14 +731,7 @@ class FtpMover(Mover):
     def copy(self):
         """Push it !
         """
-        connection = FTP(timeout=10)
-        connection.connect(self.destination.hostname, self.destination.port or
-                           21)
-        if self.destination.username and self.destination.password:
-            connection.login(self.destination.username,
-                             self.destination.password)
-        else:
-            connection.login()
+        connection = self.get_connection(self.destination.hostname, self.destination.port, self.destination.username)
 
         def cd_tree(current_dir):
             if current_dir != "":
@@ -627,16 +748,47 @@ class FtpMover(Mover):
             connection.storbinary('STOR ' + os.path.basename(self.origin),
                                   file_obj)
 
-        try:
-            connection.quit()
-        except all_errors:
-            connection.close()
-
 
 class ScpMover(Mover):
 
     """Move files over ssh with scp.
     """
+    active_connections = dict()
+    active_connection_lock = Lock()
+
+    def open_connection(self):
+        from paramiko import SSHClient, SSHException, AutoAddPolicy
+
+        retries = 3
+
+        while retries > 0:
+            retries -= 1
+            try:
+                ssh_connection = SSHClient()
+                ssh_connection.set_missing_host_key_policy(AutoAddPolicy())
+                ssh_connection.load_system_host_keys()
+                ssh_connection.connect(self.destination.hostname, username = self.destination.username)
+                LOGGER.debug("Successfully connected to " + self.destination.hostname + " as " + self.destination.username)
+            except SSHException as sshe:
+                LOGGER.error("Failed to init SSHClient: " + str(sshe))
+            except Exception as e:
+                LOGGER.error("Unknown exception at init SSHClient: " + str(e))
+            else:
+                return ssh_connection
+
+            ssh_connection.close()
+            time.sleep(2)
+            LOGGER.debug("Retrying ssh connect ...")
+        raise IOError("Failed to ssh connect after 3 attempts")
+
+    @staticmethod
+    def is_connected(connection):
+        LOGGER.debug("checking ssh connection ... " + str(connection.get_transport().is_active()))
+        return connection.get_transport().is_active()
+    
+    @staticmethod
+    def close_connection(connection):
+        connection.close()
 
     def move(self):
         """Push it !"""
@@ -645,36 +797,32 @@ class ScpMover(Mover):
 
     def copy(self):
         """Push it !"""
-        from paramiko import SSHClient
         from scp import SCPClient
 
-        try:
-            ssh = SSHClient()
-            ssh.load_system_host_keys()
-            ssh.connect(self.destination.hostname,
-                        username=self.destination.username)
-        except Exception as e:
-            raise
-        
-        LOGGER.debug('hostname %s', self.destination.hostname)
-        LOGGER.debug('dest path %s ', os.path.dirname(self.destination.path))
-        LOGGER.debug('origin %s ', self.origin)
+        ssh_connection = self.get_connection(self.destination.hostname, self.destination.port, self.destination.username)
 
         try:
-            scp = SCPClient(ssh.get_transport())
+            scp = SCPClient(ssh_connection.get_transport())
         except Exception as e:
             LOGGER.error("Failed to initiate SCPClient: " +str(e))
-            ssh.close()
+            ssh_connection.close()
             raise
-
+                                                    
         try:
             scp.put(self.origin, self.destination.path)
+        except OSError as osex:
+            if osex.errno == 2:
+                LOGGER.error("No such file or directory. File not transfered: %s. Original error message: %s", self.origin, str(osex))
+            else:
+                LOGGER.error("OSError in scp.put: " + str(osex))
+                raise
         except Exception as e:
             LOGGER.error("Something went wrong with scp: " + str(e))
+            LOGGER.error("Exception name {}".format(type(e).__name__))
+            LOGGER.error("Exception args {}".format(e.args))
+            raise
         finally:
             scp.close()
-            ssh.close()
-
 
 class SftpMover(Mover):
 
@@ -734,7 +882,7 @@ class SftpMover(Mover):
 
         sftp = transport.open_session()
         sftp = paramiko.SFTPClient.from_transport(transport)
-        ###sftp.get_channel().settimeout(300)
+        # sftp.get_channel().settimeout(300)
 
         try:
             sftp.mkdir(os.path.dirname(self.destination.path))
@@ -743,6 +891,7 @@ class SftpMover(Mover):
             pass
         sftp.put(self.origin, self.destination.path)
         transport.close()
+
 
 MOVERS = {'ftp': FtpMover,
           'file': FileMover,

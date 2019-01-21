@@ -56,7 +56,7 @@ hours=12
 
 """
 
-from ConfigParser import ConfigParser, NoOptionError
+from six.moves.configparser import ConfigParser, NoOptionError
 from datetime import datetime, timedelta
 from glob import glob
 import os

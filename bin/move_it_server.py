@@ -89,11 +89,6 @@ The logging is done on stdout per default. It is however possible to specify a f
 ith the -l or --log option::
 
   move_it_server --log /path/to/mylogfile.log myconfig.ini
-
-I Like To Move It Move It
-I Like To Move It Move It
-I Like To Move It Move It
-Ya Like To (MOVE IT!)
 """
 
 import _strptime
@@ -135,6 +130,9 @@ if __name__ == '__main__':
     parser.add_argument("-p", "--port",
                         help="The port to publish on. 9010 is the default",
                         default=9010)
+    parser.add_argument("--disable-backlog",
+                        help="Disable globing and handeling of backlog of files at start/restart",
+                        action='store_true')
     cmd_args = parser.parse_args()
 
     log_format = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
@@ -168,8 +166,8 @@ if __name__ == '__main__':
             pyinotify.IN_CREATE)
     watchman = pyinotify.WatchManager()
 
-    def reload_cfg_file(filename):
-        return reload_config(filename, chains, publisher=PUB)
+    def reload_cfg_file(filename, disable_backlog=False):
+        return reload_config(filename, chains, publisher=PUB, disable_backlog=disable_backlog)
 
     notifier = pyinotify.ThreadedNotifier(watchman, EventHandler(
         reload_cfg_file, cmd_filename=cmd_args.config_file))
@@ -191,7 +189,7 @@ if __name__ == '__main__':
     notifier.start()
 
     try:
-        reload_cfg_file(cmd_args.config_file)
+        reload_cfg_file(cmd_args.config_file, disable_backlog=cmd_args.disable_backlog)
         main()
     except KeyboardInterrupt:
         LOGGER.debug("Interrupting")

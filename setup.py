@@ -50,6 +50,6 @@ setup(name="trollmoves",
       zip_safe=False,
       install_requires=['pyinotify', 'posttroll',
                         'trollsift', 'netifaces',
-                        'pyzmq',
+                        'pyzmq', 'six',
                         'scp', 'paramiko'],
       )

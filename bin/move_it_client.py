@@ -72,11 +72,6 @@ with the -l or --log option::
 
   move_it_client --log /path/to/mylogfile.log myconfig.ini
 
-I Like To Move It Move It
-I Like To Move It Move It
-I Like To Move It Move It
-Ya Like To (MOVE IT!)
-
 """
 
 # TODO: implement ping and server selection
