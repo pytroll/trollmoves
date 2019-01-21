@@ -24,7 +24,7 @@
 """
 
 from posttroll.message import Message
-from trollmoves.server import gen_dict_extract, translate_dict_value, translate_dict_item, translate_dict
+from trollmoves.utils import gen_dict_extract, translate_dict_value, translate_dict_item, translate_dict
 import unittest
 import os
 import copy
