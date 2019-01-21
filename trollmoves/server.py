@@ -808,7 +808,9 @@ class FtpMover(Mover):
         try:
             connection.voidcmd("NOOP")
             return True
-        except (all_errors, IOError):
+        except all_errors:
+            return False
+        except IOError:
             return False
 
 
