@@ -38,7 +38,7 @@ import socket
 import tempfile
 
 from six.moves.configparser import ConfigParser
-from ftplib import FTP, all_errors
+from ftplib import FTP, all_errors, error_perm
 from six.moves.queue import Empty, Queue
 from six.moves.urllib.parse import urlparse, urlunparse
 from six import string_types
@@ -835,7 +835,7 @@ class FtpMover(Mover):
             if current_dir != "":
                 try:
                     connection.cwd(current_dir)
-                except IOError:
+                except (IOError, error_perm):
                     cd_tree("/".join(current_dir.split("/")[:-1]))
                     connection.mkd(current_dir)
                     connection.cwd(current_dir)
