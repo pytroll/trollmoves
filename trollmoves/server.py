@@ -41,6 +41,7 @@ from six.moves.configparser import ConfigParser
 from ftplib import FTP, all_errors
 from six.moves.queue import Empty, Queue
 from six.moves.urllib.parse import urlparse, urlunparse
+from six import string_types
 from collections import deque
 from threading import Thread, Event, current_thread, Lock
 
@@ -54,7 +55,7 @@ from posttroll.subscriber import Subscribe
 from trollsift import globify, parse
 
 from trollmoves.utils import get_local_ips
-from trollmoves.utils import gen_dict_extract
+from trollmoves.utils import gen_dict_extract, gen_dict_contains
 
 LOGGER = logging.getLogger(__name__)
 
@@ -159,8 +160,9 @@ class RequestManager(Thread):
     def push(self, message):
         """Reply to push request
         """
-        for url in gen_dict_extract(message.data, 'uri'):
-            uri = urlparse(url)
+        for the_dict in gen_dict_contains(message.data, 'uri'):
+            uri = urlparse(the_dict['uri'])
+            rel_path = the_dict.get('path', '')
             pathname = uri.path
             # FIXME: check against file_cache
             if 'origin' in self._attrs and not fnmatch.fnmatch(
@@ -171,7 +173,7 @@ class RequestManager(Thread):
                                "err",
                                data="{0:s} not reachable".format(pathname))
             try:
-                move_it(pathname, message.data['destination'], self._attrs)
+                move_it(pathname, message.data['destination'], self._attrs, rel_path=rel_path)
             except Exception as err:
                 return Message(message.subject, "err", data=str(err))
             else:
@@ -423,7 +425,10 @@ def create_file_notifier(attrs, publisher):
 
 def clean_url(url):
     """Remove login info from *url*."""
-    urlobj = urlparse(url)
+    if isinstance(url, string_types):
+        urlobj = urlparse(url)
+    else:
+        urlobj = url
     return urlunparse((urlobj.scheme, urlobj.hostname,
                        urlobj.path, "", "", ""))
 
@@ -634,14 +639,15 @@ def unpack(pathname,
 # Mover
 
 
-def move_it(pathname, destination, attrs=None, hook=None):
+def move_it(pathname, destination, attrs=None, hook=None, rel_path=''):
     """Check if the file pointed by *filename* is in the filelist, and move it
     if it is.
     """
-    fake_dest = clean_url(destination)
+    dest_url = urlparse(destination)
+    new_dest = dest_url._replace(path=os.path.join(dest_url.path, rel_path))
+    fake_dest = clean_url(new_dest)
 
     LOGGER.debug("Copying to: " + fake_dest)
-    dest_url = urlparse(destination)
     try:
         mover = MOVERS[dest_url.scheme]
     except KeyError:
@@ -650,9 +656,9 @@ def move_it(pathname, destination, attrs=None, hook=None):
         raise
 
     try:
-        mover(pathname, dest_url, attrs=attrs).copy()
+        mover(pathname, new_dest, attrs=attrs).copy()
         if hook:
-            hook(pathname, dest_url)
+            hook(pathname, new_dest)
     except Exception as err:
         exc_type, exc_value, exc_traceback = sys.exc_info()
         LOGGER.error("Something went wrong during copy of %s to %s: %s",
@@ -671,7 +677,7 @@ class Mover(object):
     """
 
     def __init__(self, origin, destination, attrs=None):
-        if isinstance(destination, str):
+        if isinstance(destination, string_types):
             self.destination = urlparse(destination)
         else:
             self.destination = destination
@@ -737,6 +743,9 @@ class FileMover(Mover):
     def copy(self):
         """Copy
         """
+        dirname = os.path.dirname(self.destination.path)
+        if not os.path.exists(dirname):
+            os.makedirs(dirname)
         try:
             os.link(self.origin, self.destination.path)
         except OSError:

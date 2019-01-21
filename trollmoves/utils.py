@@ -33,6 +33,7 @@ def get_local_ips():
                 ips.append(add['addr'])
     return ips
 
+
 def gen_dict_extract(var, key):
     if hasattr(var, 'items'):
         for k, v in var.items():
@@ -44,6 +45,20 @@ def gen_dict_extract(var, key):
             elif isinstance(v, list):
                 for d in v:
                     for result in gen_dict_extract(d, key):
+                        yield result
+
+
+def gen_dict_contains(var, key):
+    if hasattr(var, 'items'):
+        for k, v in var.items():
+            if k == key:
+                yield var
+            if hasattr(v, 'items'):
+                for result in gen_dict_contains(v, key):
+                    yield result
+            elif isinstance(v, list):
+                for d in v:
+                    for result in gen_dict_contains(d, key):
                         yield result
 
 
