@@ -34,11 +34,15 @@ import sys
 import time
 import datetime
 import traceback
+import socket
+import tempfile
 from six.moves.configparser import RawConfigParser
 from ftplib import FTP, all_errors
 from six.moves.queue import Empty, Queue
-from threading import Thread
+from threading import Thread, Event, current_thread, Lock
 from six.moves.urllib.parse import urlparse, urlunparse
+from six import string_types
+from collections import deque
 
 import pyinotify
 from zmq import NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
@@ -251,7 +255,7 @@ class RequestManager(Thread):
             LOGGER.exception("Something went wrong"
                              " when processing the request: %s", str(message))
         finally:
-            LOGGER.debug("Response: " + str(reply))
+            LOGGER.debug("Response: %s", str(reply))
             try:
                 in_socket.send_multipart([address, b'', str(reply)])
             except TypeError:
@@ -357,7 +361,7 @@ class Listener(Thread):
                     with file_cache_lock:
                         for filename in gen_dict_extract(old_data, 'uid'):
                             file_cache.appendleft(self.attrs["topic"] + '/' + filename)
-                    LOGGER.debug("Message sent: " + str(msg))
+                    LOGGER.debug("Message sent: %s", str(msg))
                     if not self.loop:
                         break
 
@@ -763,7 +767,7 @@ class CTimer(Thread):
     t.cancel() # stop the timer's action if it's still waiting
     """
 
-    def __init__(self, interval, function, args=[], kwargs={}):
+    def __init__(self, interval, function, *args, **kwargs):
         Thread.__init__(self)
         self.interval = interval
         self.function = function
@@ -866,11 +870,14 @@ class ScpMover(Mover):
                 ssh_connection.set_missing_host_key_policy(AutoAddPolicy())
                 ssh_connection.load_system_host_keys()
                 ssh_connection.connect(self.destination.hostname, username = self.destination.username)
-                LOGGER.debug("Successfully connected to " + self.destination.hostname + " as " + self.destination.username)
+                LOGGER.debug("Successfully connected to %s as %s",
+                             self.destination.hostname,
+                             self.destination.username)
             except SSHException as sshe:
-                LOGGER.error("Failed to init SSHClient: " + str(sshe))
-            except Exception as e:
-                LOGGER.error("Unknown exception at init SSHClient: " + str(e))
+                LOGGER.error("Failed to init SSHClient: %s", str(sshe))
+            except Exception as err:
+                LOGGER.error("Unknown exception at init SSHClient: %s",
+                             str(err))
             else:
                 return ssh_connection
 
@@ -881,7 +888,8 @@ class ScpMover(Mover):
 
     @staticmethod
     def is_connected(connection):
-        LOGGER.debug("checking ssh connection ... " + str(connection.get_transport().is_active()))
+        LOGGER.debug("checking ssh connection ... %s",
+                     str(connection.get_transport().is_active()))
         return connection.get_transport().is_active()
     
     @staticmethod
@@ -901,8 +909,8 @@ class ScpMover(Mover):
 
         try:
             scp = SCPClient(ssh_connection.get_transport())
-        except Exception as e:
-            LOGGER.error("Failed to initiate SCPClient: " +str(e))
+        except Exception as err:
+            LOGGER.error("Failed to initiate SCPClient: %s", str(err))
             ssh_connection.close()
             raise
                                                     
@@ -910,14 +918,16 @@ class ScpMover(Mover):
             scp.put(self.origin, self.destination.path)
         except OSError as osex:
             if osex.errno == 2:
-                LOGGER.error("No such file or directory. File not transfered: %s. Original error message: %s", self.origin, str(osex))
+                LOGGER.error("No such file or directory. File not transfered: "
+                             "%s. Original error message: %s",
+                             self.origin, str(osex))
             else:
-                LOGGER.error("OSError in scp.put: " + str(osex))
+                LOGGER.error("OSError in scp.put: %s", str(osex))
                 raise
-        except Exception as e:
-            LOGGER.error("Something went wrong with scp: " + str(e))
-            LOGGER.error("Exception name {}".format(type(e).__name__))
-            LOGGER.error("Exception args {}".format(e.args))
+        except Exception as err:
+            LOGGER.error("Something went wrong with scp: %s", str(err))
+            LOGGER.error("Exception name %s", type(err).__name__)
+            LOGGER.error("Exception args %s", str(err.args))
             raise
         finally:
             scp.close()

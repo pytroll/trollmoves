@@ -33,7 +33,6 @@ from threading import Lock, Thread, Event
 import six
 from six.moves.urllib.parse import urlparse, urlunparse
 
-import netifaces
 import pyinotify
 from zmq import LINGER, POLLIN, REQ, Poller
 
@@ -228,7 +227,6 @@ def resend_if_local(msg, publisher):
 
 
 def create_push_req_message(msg, destination, login):
-    hostname, port = msg.data["request_address"].split(":")
     fake_req = Message(msg.subject, 'push', data=msg.data.copy())
     duri = urlparse(destination)
     scheme = duri.scheme or 'file'
@@ -259,8 +257,6 @@ def unpack_and_create_local_message(msg, local_dir, unpack=None, delete=False):
     def unpack_callback(var):
         if not var['uid'].endswith(unpack):
             return var
-        dirname, filename = os.path.split(var.pop('uri'))
-        basename, ext = os.path.splitext(filename)
         packname = var.pop('uid')
         new_names = unpackers[unpack](os.path.join(local_dir, packname), delete)
 
@@ -471,7 +467,6 @@ class PushRequester(object):
     def reset_connection(self):
         """Reset the socket
         """
-        file_cache.append(msg.data["uid"])
         self.stop()
         self.connect()
 
