@@ -89,7 +89,6 @@ The logging is done on stdout per default. It is however possible to specify a f
 ith the -l or --log option::
 
   move_it_server --log /path/to/mylogfile.log myconfig.ini
-
 """
 
 import logging
@@ -122,6 +121,9 @@ def parse_args():
                         default=9010)
     parser.add_argument("-v", "--verbose", default=False, action="store_true",
                         help="Toggle verbose logging")
+    parser.add_argument("--disable-backlog",
+                        help="Disable glob and handling of backlog of files at start/restart",
+                        action='store_true')
 
     return parser.parse_args()
 
@@ -132,7 +134,8 @@ def main():
     server = MoveItServer(cmd_args)
 
     try:
-        server.reload_cfg_file(cmd_args.config_file)
+        server.reload_cfg_file(cmd_args.config_file,
+                               disable_backlog=cmd_args.disable_backlog)
         server.run()
     except KeyboardInterrupt:
         LOGGER.debug("Stopping Trollmoves server")

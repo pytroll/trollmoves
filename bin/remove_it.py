@@ -22,7 +22,7 @@
 
 """Remove files, and send messages about it."""
 
-from six.moves.configparser import RawConfigParser, NoOptionError
+from six.moves.configparser import ConfigParser, NoOptionError
 from datetime import datetime, timedelta
 from glob import glob
 import os

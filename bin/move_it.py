@@ -152,7 +152,7 @@ try:
     from posttroll.publisher import NoisyPublisher
     from posttroll.message import Message
 except ImportError:
-    print("\nNOTICE! Import of posttroll failed, " +
+    print("\nNOTICE! Import of posttroll failed, "
           "messaging will not be used.\n")
 
 
@@ -213,10 +213,10 @@ def reload_config(filename):
 
     old_glob = []
 
-    for key, val in new_chains.iteritems():
+    for key, val in new_chains.items():
         identical = True
         if key in chains:
-            for key2, val2 in new_chains[key].iteritems():
+            for key2, val2 in new_chains[key].items():
                 if ((key2 not in ["notifier", "publisher"]) and
                     ((key2 not in chains[key]) or
                      (chains[key][key2] != val2))):
@@ -482,10 +482,11 @@ class FtpMover(Mover):
         else:
             connection.login()
 
-        file_obj = file(self.origin, 'rb')
+        file_obj = open(self.origin, 'rb')
         connection.cwd(self.destination.path)
         connection.storbinary('STOR ' + os.path.basename(self.origin),
                               file_obj)
+        file_obj.close()
 
         try:
             connection.quit()
