@@ -204,9 +204,6 @@ def read_config(filename):
 def reload_config(filename):
     """Rebuild chains if needed (if the configuration changed) from *filename*.
     """
-    if os.path.abspath(filename) != os.path.abspath(cmd_args.config_file):
-        return
-
     LOGGER.debug("New config file detected! %s", filename)
 
     new_chains = read_config(filename)
