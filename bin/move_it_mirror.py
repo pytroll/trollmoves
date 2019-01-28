@@ -32,7 +32,7 @@ from posttroll.message import Message
 from posttroll.publisher import Publisher, get_own_ip
 from trollmoves.move_it_base import MoveItBase
 from trollmoves.client import Listener, request_push
-from trollmoves.server import (Deleter, RequestManager, reload_config)
+from trollmoves.server import Deleter, RequestManager, reload_config
 
 LOGGER = logging.getLogger("move_it_mirror")
 LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
