@@ -55,6 +55,7 @@ from trollsift import globify, parse
 
 from trollmoves.utils import get_local_ips
 from trollmoves.utils import gen_dict_extract, gen_dict_contains
+from trollmoves.client import DEFAULT_REQ_TIMEOUT
 
 LOGGER = logging.getLogger(__name__)
 
@@ -446,6 +447,8 @@ def read_config(filename):
         res[section] = dict(cp_.items(section))
         res[section].setdefault("working_directory", None)
         res[section].setdefault("compression", False)
+        res[section].setdefault("req_timeout", DEFAULT_REQ_TIMEOUT)
+        res[section].setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
         if ("origin" not in res[section]) and ('listen' not in res[section]):
             LOGGER.warning("Incomplete section %s: add an 'origin' or "
                            "'listen' item.", section)
