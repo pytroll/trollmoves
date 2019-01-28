@@ -888,13 +888,19 @@ class ScpMover(Mover):
 
     @staticmethod
     def is_connected(connection):
-        LOGGER.debug("checking ssh connection ... %s",
-                     str(connection.get_transport().is_active()))
-        return connection.get_transport().is_active()
+        LOGGER.debug("checking ssh connection")
+        try:
+            is_active = connection.get_transport().is_active()
+            return is_active
+        except AttributeError:
+            return False
     
     @staticmethod
     def close_connection(connection):
-        connection.close()
+        if isinstance(connection, tuple):
+            connection[0].close()
+        else:
+            connection.close()
 
     def move(self):
         """Push it !"""
