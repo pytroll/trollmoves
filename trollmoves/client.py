@@ -198,7 +198,7 @@ def unpack_tar(filename, delete=False):
 
     if delete:
         os.remove(filename)
-    return (os.path.join(destdir, member.name) for member in members)
+    return (member.name for member in members)
 
 
 unpackers = {'tar': unpack_tar}
