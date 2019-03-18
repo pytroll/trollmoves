@@ -292,13 +292,13 @@ def make_uris(msg, destination, login=None):
             # Add (only) user to uri.
             host_ = login.split(":")[0] + "@" + host_
 
-    def uri_callback(key, value):
-        uri = urlparse(value)
-        path = os.path.join(duri.path, os.path.basename(uri.path))
-        return urlunparse((scheme_, host_, path, "", "", ""))
+    def uri_callback(var):
+        uid = var['uid']
+        path = os.path.join(duri.path, uid)
+        var['uri'] = urlunparse((scheme_, host_, path, "", "", ""))
+        return var
 
-    msg.data = translate_dict_value(msg.data, 'uri', uri_callback)
-
+    msg.data = translate_dict(msg.data, ('uri', 'uid'), uri_callback)
     return msg
 
 def replace_mda(msg, kwargs):
