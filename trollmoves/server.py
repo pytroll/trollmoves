@@ -48,7 +48,7 @@ from threading import Thread, Event, current_thread, Lock
 import pyinotify
 from zmq import NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
 
-from posttroll import context
+from posttroll import get_context
 from posttroll.message import Message
 from posttroll.publisher import get_own_ip
 from posttroll.subscriber import Subscribe
@@ -121,10 +121,10 @@ class RequestManager(Thread):
         Thread.__init__(self)
 
         self._loop = True
-        self.out_socket = context.socket(ROUTER)
+        self.out_socket = get_context().socket(ROUTER)
         self.out_socket.bind("tcp://*:" + str(port))
         self.port = port
-        self.in_socket = context.socket(PULL)
+        self.in_socket = get_context().socket(PULL)
         self.in_socket.bind("inproc://replies" + str(port))
 
         self._poller = Poller()
@@ -246,7 +246,7 @@ class RequestManager(Thread):
         return Message(message.subject, "unknown")
 
     def reply_and_send(self, fun, address, message):
-        in_socket = context.socket(PUSH)
+        in_socket = get_context().socket(PUSH)
         in_socket.connect("inproc://replies" + str(self.port))
 
         reply = Message(message.subject, "error")
@@ -885,7 +885,7 @@ class ScpMover(Mover):
     def is_connected(connection):
         LOGGER.debug("checking ssh connection ... " + str(connection.get_transport().is_active()))
         return connection.get_transport().is_active()
-    
+
     @staticmethod
     def close_connection(connection):
         connection.close()
@@ -907,7 +907,7 @@ class ScpMover(Mover):
             LOGGER.error("Failed to initiate SCPClient: " +str(e))
             ssh_connection.close()
             raise
-                                                    
+
         try:
             scp.put(self.origin, self.destination.path)
         except OSError as osex:
