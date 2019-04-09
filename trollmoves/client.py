@@ -36,7 +36,7 @@ import netifaces
 import pyinotify
 from zmq import LINGER, POLLIN, REQ, Poller
 
-from posttroll import context
+from posttroll import get_context
 from posttroll.message import Message, MessageError
 from posttroll.publisher import NoisyPublisher
 from posttroll.subscriber import Subscriber
@@ -453,7 +453,7 @@ class PushRequester(object):
     def connect(self):
         """Connect to the server
         """
-        self._socket = context.socket(REQ)
+        self._socket = get_context().socket(REQ)
         self._socket.connect(self._reqaddress)
         self._poller.register(self._socket, POLLIN)
 
