@@ -36,7 +36,7 @@ from six.moves.urllib.parse import urlparse, urlunparse
 import pyinotify
 from zmq import LINGER, POLLIN, REQ, Poller
 
-from posttroll import context
+from posttroll import get_context
 from posttroll.message import Message, MessageError
 from posttroll.publisher import NoisyPublisher
 from posttroll.subscriber import Subscriber
@@ -199,7 +199,7 @@ def unpack_tar(filename, delete=False):
 
     if delete:
         os.remove(filename)
-    return (os.path.join(destdir, member.name) for member in members)
+    return (member.name for member in members)
 
 
 unpackers = {'tar': unpack_tar}
@@ -290,13 +290,13 @@ def make_uris(msg, destination, login=None):
             # Add (only) user to uri.
             host_ = login.split(":")[0] + "@" + host_
 
-    def uri_callback(key, value):
-        uri = urlparse(value)
-        path = os.path.join(duri.path, os.path.basename(uri.path))
-        return urlunparse((scheme_, host_, path, "", "", ""))
+    def uri_callback(var):
+        uid = var['uid']
+        path = os.path.join(duri.path, uid)
+        var['uri'] = urlunparse((scheme_, host_, path, "", "", ""))
+        return var
 
-    msg.data = translate_dict_value(msg.data, 'uri', uri_callback)
-
+    msg.data = translate_dict(msg.data, ('uri', 'uid'), uri_callback)
     return msg
 
 
@@ -452,7 +452,7 @@ class PushRequester(object):
     def connect(self):
         """Connect to the server
         """
-        self._socket = context.socket(REQ)
+        self._socket = get_context().socket(REQ)
         self._socket.connect(self._reqaddress)
         self._poller.register(self._socket, POLLIN)
 

@@ -1,3 +1,14 @@
+## Version v0.1.3 (2019/04/10)
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 26](https://github.com/pytroll/trollmoves/pull/26) - Fix client untaring
+* [PR 25](https://github.com/pytroll/trollmoves/pull/25) - Fix for new posttroll version, replacing context with get_context
+
+In this release 2 pull requests were closed.
+
 ## Version v0.1.2 (2019/01/21)
 
 
