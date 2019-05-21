@@ -765,12 +765,12 @@ class FileMover(Mover):
 
 class CTimer(Thread):
     """Call a function after a specified number of seconds:
-    t = CTimer(30.0, f, args=[], kwargs={})
+    t = CTimer(30.0, f, args=(), kwargs={})
     t.start()
     t.cancel() # stop the timer's action if it's still waiting
     """
 
-    def __init__(self, interval, function, *args, **kwargs):
+    def __init__(self, interval, function, args=(), kwargs={}):
         Thread.__init__(self)
         self.interval = interval
         self.function = function
