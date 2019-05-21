@@ -193,10 +193,12 @@ class Listener(Thread):
 def unpack_tar(filename, delete=False):
     """Unpack tar files."""
     destdir = os.path.dirname(filename)
-    with tarfile.open(filename) as tar:
-        tar.extractall(destdir)
-        members = tar.getmembers()
-
+    try:
+        with tarfile.open(filename) as tar:
+            tar.extractall(destdir)
+            members = tar.getmembers()
+    except tarfile.ReadError as err:
+        raise IOError(str(err))
     if delete:
         os.remove(filename)
     return (member.name for member in members)
@@ -335,7 +337,11 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
             for uid in gen_dict_extract(msg.data, 'uid'):
                 file_cache.append(uid)
 
-        lmsg = unpack_and_create_local_message(response, local_dir, unpack, delete)
+        try:
+            lmsg = unpack_and_create_local_message(response, local_dir, unpack, delete)
+        except IOError:
+            LOGGER.exception("Couldn't unpack %s", str(response))
+            return
         if publisher:
             lmsg = make_uris(lmsg, destination, login)
             lmsg.data['origin'] = response.data['request_address']
