@@ -1,23 +1,23 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
+#
 # Copyright (c) 2012, 2013, 2014, 2015, 2016
-
+#
 # Author(s):
-
+#
 #   Martin Raspaud <martin.raspaud@smhi.se>
 #   Panu Lahtinen <panu.lahtinen@fmi.fi>
-
+#
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-
+#
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
@@ -91,37 +91,26 @@ ith the -l or --log option::
   move_it_server --log /path/to/mylogfile.log myconfig.ini
 """
 
-import _strptime
 import logging
 import logging.handlers
-import os
-import time
-from datetime import datetime
-
-import pyinotify
+import argparse
 
 from posttroll.publisher import Publisher
-from trollmoves.server import EventHandler, reload_config, terminate
+from trollmoves.move_it_base import MoveItBase
 
 LOGGER = logging.getLogger("move_it_server")
-
-chains = {}
-
-PUB = None
+LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
 
 
-running = True
+class MoveItServer(MoveItBase):
+
+    def __init__(self, cmd_args):
+        super(MoveItServer, self).__init__(cmd_args, "server")
+        LOGGER.info("Starting publisher on port %s.", str(cmd_args.port))
+        self.pub = Publisher("tcp://*:" + str(cmd_args.port), "move_it_server")
 
 
-def main():
-    while running:
-        time.sleep(1)
-        PUB.heartbeat(30)
-
-if __name__ == '__main__':
-    import argparse
-    import signal
-
+def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("config_file",
                         help="The configuration file to run on.")
@@ -130,69 +119,30 @@ if __name__ == '__main__':
     parser.add_argument("-p", "--port",
                         help="The port to publish on. 9010 is the default",
                         default=9010)
+    parser.add_argument("-v", "--verbose", default=False, action="store_true",
+                        help="Toggle verbose logging")
     parser.add_argument("--disable-backlog",
-                        help="Disable globing and handeling of backlog of files at start/restart",
+                        help="Disable glob and handling of backlog of files at start/restart",
                         action='store_true')
-    cmd_args = parser.parse_args()
 
-    log_format = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
-    LOGGER = logging.getLogger('')
-    LOGGER.setLevel(logging.DEBUG)
+    return parser.parse_args()
 
-    if cmd_args.log:
-        fh = logging.handlers.TimedRotatingFileHandler(
-            os.path.join(cmd_args.log),
-            "midnight",
-            backupCount=7)
-    else:
-        fh = logging.StreamHandler()
 
-    formatter = logging.Formatter(log_format)
-    fh.setFormatter(formatter)
-
-    LOGGER.addHandler(fh)
-    LOGGER = logging.getLogger('move_it_server')
-
-    pyinotify.log.handlers = [fh]
-
-    LOGGER.info("Starting up.")
-
-    LOGGER.info("Starting publisher on port %s.", str(cmd_args.port))
-
-    PUB = Publisher("tcp://*:" + str(cmd_args.port), "move_it_server")
-
-    mask = (pyinotify.IN_CLOSE_WRITE |
-            pyinotify.IN_MOVED_TO |
-            pyinotify.IN_CREATE)
-    watchman = pyinotify.WatchManager()
-
-    def reload_cfg_file(filename, disable_backlog=False):
-        return reload_config(filename, chains, publisher=PUB, disable_backlog=disable_backlog)
-
-    notifier = pyinotify.ThreadedNotifier(watchman, EventHandler(
-        reload_cfg_file, cmd_filename=cmd_args.config_file))
-    watchman.add_watch(os.path.dirname(cmd_args.config_file), mask)
-
-    def chains_stop(*args):
-        global running
-        running = False
-        notifier.stop()
-        terminate(chains, PUB)
-
-    signal.signal(signal.SIGTERM, chains_stop)
-
-    def signal_reload_cfg_file(*args):
-        reload_cfg_file(cmd_args.config_file)
-
-    signal.signal(signal.SIGHUP, signal_reload_cfg_file)
-
-    notifier.start()
+def main():
+    """Main()"""
+    cmd_args = parse_args()
+    server = MoveItServer(cmd_args)
 
     try:
-        reload_cfg_file(cmd_args.config_file, disable_backlog=cmd_args.disable_backlog)
-        main()
+        server.reload_cfg_file(cmd_args.config_file,
+                               disable_backlog=cmd_args.disable_backlog)
+        server.run()
     except KeyboardInterrupt:
-        LOGGER.debug("Interrupting")
+        LOGGER.debug("Stopping Trollmoves server")
     finally:
-        if running:
-            chains_stop()
+        if server.running:
+            server.chains_stop()
+
+
+if __name__ == '__main__':
+    main()
