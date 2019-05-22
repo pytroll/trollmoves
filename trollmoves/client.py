@@ -260,6 +260,7 @@ def unpack_and_create_local_message(msg, local_dir, unpack=None, delete=False):
         if not var['uid'].endswith(unpack):
             return var
         packname = var.pop('uid')
+        del var['uri']
         new_names = unpackers[unpack](os.path.join(local_dir, packname), delete)
 
         var['dataset'] = [dict(uid=nn, uri=os.path.join(local_dir, nn)) for nn in new_names]
@@ -297,7 +298,6 @@ def make_uris(msg, destination, login=None):
         path = os.path.join(duri.path, uid)
         var['uri'] = urlunparse((scheme_, host_, path, "", "", ""))
         return var
-
     msg.data = translate_dict(msg.data, ('uri', 'uid'), uri_callback)
     return msg
 
@@ -336,7 +336,6 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
         with cache_lock:
             for uid in gen_dict_extract(msg.data, 'uid'):
                 file_cache.append(uid)
-
         try:
             lmsg = unpack_and_create_local_message(response, local_dir, unpack, delete)
         except IOError:
