@@ -27,6 +27,7 @@ import socket
 import sys
 import time
 import tarfile
+import subprocess
 from collections import deque
 from six.moves.configparser import ConfigParser
 from threading import Lock, Thread, Event
@@ -44,6 +45,9 @@ from posttroll.subscriber import Subscriber
 from trollmoves import heartbeat_monitor
 from trollmoves.utils import get_local_ips
 from trollmoves.utils import gen_dict_extract, translate_dict, translate_dict_value
+from trollmoves.utils import xrit, is_epilogue, purge_dir, generate_ref, trigger_ref
+
+from trollsift import globify
 
 LOGGER = logging.getLogger(__name__)
 
@@ -189,7 +193,7 @@ class Listener(Thread):
             self.subscriber = None
 
 
-def unpack_tar(filename, delete=False):
+def unpack_tar(filename, delete=False, unpack_prog=None):
     """Unpack tar files."""
     destdir = os.path.dirname(filename)
     with tarfile.open(filename) as tar:
@@ -200,18 +204,30 @@ def unpack_tar(filename, delete=False):
         os.remove(filename)
     return (member.name for member in members)
 
+def unpack_xrit(filename, delete=False, unpack_prog="./xRITDecompress"):
+    """Unpack xrit files"""
+    destination = os.path.dirname(filename)
+    expected = xrit(filename, destination, cmd=unpack_prog)
+    if delete:
+        os.remove(filename)
+    return expected
 
-unpackers = {'tar': unpack_tar}
+unpackers = {'tar': unpack_tar, 'xrit': unpack_xrit}
 
 
-def already_received(msg):
+def already_received(msg, processedlog=None):
     """Check if the files from msg already are in the local cache."""
     with cache_lock:
         for filename in gen_dict_extract(msg.data, 'uid'):
-            if filename not in file_cache:
-                return False
-        else:
-            return True
+            if processedlog is not None:
+                # check filename in processed file log saved in filesystem
+                if str(filename) in processedlog.log_list:
+                    LOGGER.debug('File already Processed - file found in processed log: %s', str(msg.data["uid"]))
+                    return True
+            # check filename in file_cache
+            if filename in file_cache:
+                return True
+        return False
 
 
 def resend_if_local(msg, publisher):
@@ -228,6 +244,7 @@ def resend_if_local(msg, publisher):
 def create_push_req_message(msg, destination, login):
     hostname, port = msg.data["request_address"].split(":")
     fake_req = Message(msg.subject, 'push', data=msg.data.copy())
+
     duri = urlparse(destination)
     scheme = duri.scheme or 'file'
     dest_hostname = duri.hostname or socket.gethostname()
@@ -241,6 +258,13 @@ def create_push_req_message(msg, destination, login):
     return req, fake_req
 
 
+def create_destination_dir(msg, destination, destination_subdir=None):
+    """Compute destination dir adding the destination subdirectory and applying additional function"""
+    if destination_subdir is not None:
+        new_dest = os.path.join(destination, msg.data['nominal_time'].strftime(destination_subdir))
+    return new_dest
+
+
 def create_local_dir(destination, local_root, mode=0o777):
     """Create the local directory if it doesn't exist and return that path."""
     duri = urlparse(destination)
@@ -252,17 +276,20 @@ def create_local_dir(destination, local_root, mode=0o777):
     return local_dir
 
 
-def unpack_and_create_local_message(msg, local_dir, unpack=None, delete=False):
+def unpack_and_create_local_message(msg, local_dir, unpack=None, delete=False, unpack_prog=None):
 
     def unpack_callback(var):
-        if not var['uid'].endswith(unpack):
+        if not var['uid'].endswith(unpack) and unpack != "xrit":
             return var
         dirname, filename = os.path.split(var.pop('uri'))
         basename, ext = os.path.splitext(filename)
         packname = var.pop('uid')
-        new_names = unpackers[unpack](os.path.join(local_dir, packname), delete)
+        new_names = unpackers[unpack](os.path.join(local_dir, packname), delete, unpack_prog)
 
-        var['dataset'] = [dict(uid=nn, uri=os.path.join(local_dir, nn)) for nn in new_names]
+        if unpack == "xrit":
+            var['file'] = new_names
+        else:
+            var['dataset'] = [dict(uid=nn, uri=os.path.join(local_dir, nn)) for nn in new_names]
         return var
 
     if unpack is not None:
@@ -276,9 +303,19 @@ def unpack_and_create_local_message(msg, local_dir, unpack=None, delete=False):
     else:
         lmsg_data = msg.data.copy()
         lmsg_type = msg.type
-
     return Message(msg.subject, lmsg_type, data=lmsg_data)
 
+def generate_ref_file(msg, destination, ref_file_dir):
+    """ Generate reference file
+    
+        Args:
+            msg (trollmove message)
+            destination (string): destination path of the file in processing
+            ref_file_dir (string): directory in which reference file should be created
+    """
+    ref_file = ref_file_dir + "/" + msg.data['uid']
+    LOGGER.debug("Generating reference file: " + ref_file)
+    generate_ref(destination, msg.data['uid'], ref_file)
 
 def make_uris(msg, destination, login=None):
     duri = urlparse(destination)
@@ -310,8 +347,16 @@ def replace_mda(msg, kwargs):
     return msg
 
 
-def request_push(msg, destination, login, publisher=None, unpack=None, delete=False, **kwargs):
-    if already_received(msg):
+def request_push(msg, destination, login, publisher=None, unpack=None, delete=False, unpack_prog=None, **kwargs):
+    # Check if processed file log stored in filesystem is configured
+    destination_base = None
+    use_procfile_log = kwargs["use_procfile_log"]
+    if use_procfile_log:
+        circular_log = kwargs["circular_log"]
+    else:
+        circular_log = None
+
+    if already_received(msg, processedlog=circular_log):
         resend_if_local(msg, publisher)
         mtype = 'ack'
         req = Message(msg.subject, mtype, data=msg.data)
@@ -319,6 +364,10 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
         timeout = float(kwargs["req_timeout"])
     else:
         mtype = 'push'
+        if 'destination_subdir' in kwargs:
+            # If destination_subdir is defined, update destination
+            destination_base = destination
+            destination = create_destination_dir(msg, destination, kwargs["destination_subdir"])
         req, fake_req = create_push_req_message(msg, destination, login)
         LOGGER.info("Requesting: " + str(fake_req))
         timeout = float(kwargs["transfer_req_timeout"])
@@ -335,8 +384,26 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
         with cache_lock:
             for uid in gen_dict_extract(msg.data, 'uid'):
                 file_cache.append(uid)
+                # Add the segment to the processed log stored in filesystem
+                if use_procfile_log:
+                    circular_log.insert_element(uid)
 
-        lmsg = unpack_and_create_local_message(response, local_dir, unpack, delete)
+        lmsg = unpack_and_create_local_message(response, local_dir, unpack, delete, unpack_prog)
+
+        if is_epilogue(msg.data["uid"]):
+            #It is an epilogue segment
+            if 'destination_subdir' in kwargs:
+                #If destination subdir is defined, purge the older subdirs
+                destination_size = kwargs['destination_size'] if 'destination_size' in kwargs else 20
+                purge_dir(destination_base, int(destination_size))
+            if "use_ref_file" in kwargs:
+                #If ref mode is defined generate the REF file
+                generate_ref_file(msg, destination, kwargs['use_ref_file'])
+        else:
+            if "use_ref_file" in kwargs:
+                #If ref mode is definied and file is not epilogue: retrigger the ref file
+                trigger_ref(destination, kwargs['use_ref_file'])
+
         if publisher:
             lmsg = make_uris(lmsg, destination, login)
             lmsg.data['origin'] = response.data['request_address']
@@ -390,6 +457,25 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
             pass
 
         chains[key].setdefault("listeners", {})
+
+        # Load processed file log configurations
+
+        # Default vaues
+        circular_log_filename = "/tmp/move_client_circular_log.txt"
+        circular_log_size = 11000
+        # Use processed file log if procfile_log is defined or use_procfile_log is True
+        if "procfile_log" in chains[key]:
+            chains[key]["use_procfile_log"] = True
+            circular_log_filename = chains[key]["procfile_log"]
+        if "procfile_log_size" in chains[key]:
+            circular_log_size = chains[key]["procfile_log_size"]
+
+        if "use_procfile_log" in chains[key] and chains[key]["use_procfile_log"]:
+            circular_log = CircularLog(circular_log_filename, circular_log_size)
+            chains[key]["circular_log"] = circular_log
+        else:
+            chains[key]["use_procfile_log"] = False
+
         try:
             topics = []
             if "topic" in val:
@@ -579,3 +665,95 @@ def terminate(chains):
           " See you soon on pytroll.org!")
     time.sleep(1)
     sys.exit(0)
+
+
+class CircularLog(object):
+    """Save and manage segments already processed by move client in a log in filesystem.
+       Using CricularLog, when moves client and server is restarted: old segments are not processed again
+    """
+
+    filename = ""
+    log_list = [] # pos 0 reserved for current position, pos 1 reserved for max size
+    header_len = 2
+
+    def __init__(self, filename, max_size):
+        """
+        :Args:
+            filename (string): Log filename
+            max_size (int): Maximum size of files stored in the log file
+        """
+        self.filename = filename
+        self.max_size = max_size
+        if not os.path.isfile(filename):
+            self.circular_log_init(filename, max_size)
+        self.log_list = self.circular_log_load(max_size)
+
+
+    def circular_log_init(self, log_filename, max_size):
+        """ Initialize circular log file cache
+        """
+        tmp_list = []
+        tmp_pos = self.header_len-1
+        tmp_list.append(str(tmp_pos)) # write the header: it contains the current write position and max size
+        tmp_list.append(str(max_size)) # write the header: it contains the current write position and max size
+        open(log_filename, 'wr').write('\n'.join(tmp_list)) # write the file
+
+    def circular_log_load(self, max_size):
+        """ Load the circular log file cache updating max size
+        """
+        cache_log = open(self.filename).read().split('\n')
+        cache_log = filter(None, cache_log) # remove empty record in list
+        if len(cache_log)<2:
+            #there is a problem with the file, re-initialize it
+            self.circular_log_init(self.filename, max_size)
+            cache_log = open(self.filename).read().split('\n')
+        if int(cache_log[1]) != max_size:
+            return self.circular_log_update_size(cache_log, max_size) # update max size
+        return cache_log
+
+    def circular_log_update_size(self, cache_log, max_size):
+        """ Update max size (line position 1) and write the file
+        """
+        modified = False
+        cache_log[1] = str(max_size)
+        current_pos = int(cache_log[0])
+        current_len = len(cache_log)
+        if current_len > (int(max_size)+self.header_len):
+            # remove elems after current position
+            leftdel = current_pos+1
+            tmpdel = ( (current_len-self.header_len)-int(max_size))+current_pos
+            endright = current_len-1
+            rightdel = min(tmpdel,endright)
+            rightdel += 1
+            del cache_log[leftdel:rightdel]
+            modified = True
+        current_len = len(cache_log)
+        if current_len > (int(max_size) + self.header_len):
+            # remove elems from the beginning
+            rightdel = current_len-int(max_size)
+            del cache_log[self.header_len:rightdel]
+            cache_log[0] = str((int(max_size)-1+self.header_len))
+            modified = True
+        if modified:
+            open(self.filename, 'wr').write('\n'.join(cache_log))
+        return cache_log
+
+    def insert_element(self, uid):
+        """ Insert a new element in cache_log
+
+            Args:
+                uid (string): Unique id of the processed segments to insert in the log
+        """
+        tmp_pos = int(self.log_list[0])
+        maxlen = int(self.log_list[1])
+        next_pos = tmp_pos + 1
+        if next_pos >= maxlen+self.header_len:
+            self.log_list.insert(self.header_len, str(uid))
+            self.log_list[0] = str(self.header_len)
+        else:
+            self.log_list.insert(next_pos, str(uid))
+            self.log_list[0] = str(next_pos)
+        if len(self.log_list)>(maxlen+self.header_len):
+            # Remove the last elem if max length already reached
+            del self.log_list[(maxlen+self.header_len):]
+        open(self.filename, 'wr').write('\n'.join(self.log_list))

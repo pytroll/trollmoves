@@ -36,6 +36,7 @@ import datetime
 import traceback
 import socket
 import tempfile
+import sre_constants
 
 from six.moves.configparser import ConfigParser
 from ftplib import FTP, all_errors, error_perm
@@ -56,6 +57,7 @@ from trollsift import globify, parse
 
 from trollmoves.utils import get_local_ips
 from trollmoves.utils import gen_dict_extract, gen_dict_contains
+from trollmoves.utils import xrit, bzip
 
 LOGGER = logging.getLogger(__name__)
 
@@ -389,6 +391,12 @@ def create_file_notifier(attrs, publisher):
     pattern = globify(attrs["origin"])
     opath = os.path.dirname(pattern)
 
+    # default scan mode is pynotify
+    scan_mode = "pynotify"
+    if attrs["origin_scanmode"] is not None:
+        # read configured scan mode
+        scan_mode = attrs["origin_scanmode"]
+
     def fun(orig_pathname):
         """Publish what we have."""
         if not fnmatch.fnmatch(orig_pathname, pattern):
@@ -416,11 +424,18 @@ def create_file_notifier(attrs, publisher):
             file_cache.appendleft(attrs["topic"] + '/' + info["uid"])
         LOGGER.debug("Message sent: " + str(msg))
 
-    tnotifier = pyinotify.ThreadedNotifier(wm_, EventHandler(fun))
+    if scan_mode == "polling":
+        # polling
+        thread = PollingManager(opath, fun)
 
-    wm_.add_watch(opath, tmask)
+        return thread, scan_mode, fun
+    else:
+        # pynotify
+        tnotifier = pyinotify.ThreadedNotifier(wm_, EventHandler(fun))
+        wm_.add_watch(opath, tmask)
 
-    return tnotifier, fun
+        return tnotifier, scan_mode, fun
+
 
 
 def clean_url(url):
@@ -501,7 +516,11 @@ def reload_config(filename,
             if identical:
                 continue
 
-            chains[key]["notifier"].stop()
+            if chains[key]["notifier_scanmode"] == "polling":
+                chains[key]["notifier"].join()
+            else:
+                chains[key]["notifier"].stop()
+
             if "request_manager" in chains[key]:
                 chains[key]["request_manager"].stop()
                 LOGGER.debug('Stopped reqman')
@@ -526,7 +545,8 @@ def reload_config(filename,
             elif 'listen' in val:
                 notifier_builder = create_posttroll_notifier
 
-        chains[key]["notifier"], fun = notifier_builder(val, publisher)
+        chains[key]["notifier"], chains[key]["notifier_scanmode"], fun = notifier_builder(val, publisher)
+
         chains[key]["request_manager"].start()
         chains[key]["notifier"].start()
         if 'origin' in val:
@@ -570,48 +590,6 @@ def check_output(*popenargs, **kwargs):
             cmd = popenargs[0]
         raise RuntimeError(output)
     return output
-
-
-def xrit(pathname, destination=None, cmd="./xRITDecompress"):
-    """Unpacks xrit data."""
-    opath, ofile = os.path.split(pathname)
-    destination = destination or tempfile.gettempdir()
-    dest_url = urlparse(destination)
-    expected = os.path.join((destination or opath), ofile[:-2] + "__")
-    if dest_url.scheme in ("", "file"):
-        check_output([cmd, pathname], cwd=(destination or opath))
-    else:
-        LOGGER.exception("Can not extract file " + pathname + " to " +
-                         destination + ", destination has to be local.")
-    LOGGER.info("Successfully extracted " + pathname + " to " + destination)
-    return expected
-
-
-# bzip
-
-BLOCK_SIZE = 1024
-
-
-def bzip(origin, destination=None):
-    """Unzip files."""
-    ofile = os.path.split(origin)[1]
-    destfile = os.path.join(destination or tempfile.gettempdir(), ofile[:-4])
-    if os.path.exists(destfile):
-        return destfile
-    with open(destfile, "wb") as dest:
-        try:
-            orig = bz2.BZ2File(origin, "r")
-            while True:
-                block = orig.read(BLOCK_SIZE)
-
-                if not block:
-                    break
-                dest.write(block)
-            LOGGER.debug("Bunzipped " + origin + " to " + destfile)
-        finally:
-            orig.close()
-    return destfile
-
 
 def unpack(pathname,
            compression=None,
@@ -1064,3 +1042,58 @@ def terminate(chains, publisher=None):
           " See you soon on pytroll.org!")
     time.sleep(1)
     sys.exit(0)
+
+
+class PollingManager(Thread):
+    """Manage Polling scan mode thread.
+    """
+
+    def __init__(self, opath, fun):
+        """
+            Args:
+             opath (string): file pattern corresponding to configured 'origin'
+             fun (functio): thread function
+        """
+        Thread.__init__(self)
+
+        self._loop = True
+        self.scan_path = opath
+        self._fun = fun
+        self.timeSleepNoWork = 20
+        self._deleter = Deleter()
+
+    def start(self):
+        self._deleter.start()
+        Thread.start(self)
+
+    def run(self):
+        """ Check for new files
+        """
+        list_before = dict([(f, None) for f in os.listdir(self.scan_path)])
+        timeSleep = self.timeSleepNoWork
+        while self._loop:
+            try:
+                time.sleep(timeSleep)
+                list_after = dict([(f, None) for f in os.listdir(self.scan_path)])
+                list_added = [f for f in list_after if not f in list_before]
+                if list_added.__len__() > 0:
+                    for key in list_added:
+                        self._fun(os.path.join(self.scan_path, key))
+                    timeSleep = 0
+                else:
+                    timeSleep = self.timeSleepNoWork
+
+                list_before = list_after
+            except sre_constants.error as err:
+                # FIXME: occasionally found not blocking sre_constants error 
+                LOGGER.debug('Polling thread sre_constants error: %s', str(err))
+                pass
+            except:
+                print("Polling thread unexpected error:", sys.exc_info()[0])
+                raise
+
+
+    def stop(self):
+        """Stop the polling manager."""
+        self._loop = False
+        self._deleter.stop()
