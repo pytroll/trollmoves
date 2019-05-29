@@ -27,7 +27,6 @@ import socket
 import sys
 import time
 import tarfile
-import subprocess
 from collections import deque
 from six.moves.configparser import ConfigParser
 from threading import Lock, Thread, Event
@@ -46,8 +45,6 @@ from trollmoves import heartbeat_monitor
 from trollmoves.utils import get_local_ips
 from trollmoves.utils import gen_dict_extract, translate_dict, translate_dict_value
 from trollmoves.utils import xrit, is_epilogue, purge_dir, generate_ref, trigger_ref
-
-from trollsift import globify
 
 LOGGER = logging.getLogger(__name__)
 
@@ -244,7 +241,6 @@ def resend_if_local(msg, publisher):
 def create_push_req_message(msg, destination, login):
     hostname, port = msg.data["request_address"].split(":")
     fake_req = Message(msg.subject, 'push', data=msg.data.copy())
-
     duri = urlparse(destination)
     scheme = duri.scheme or 'file'
     dest_hostname = duri.hostname or socket.gethostname()
@@ -349,9 +345,7 @@ def replace_mda(msg, kwargs):
 
 def request_push(msg, destination, login, publisher=None, unpack=None, delete=False, unpack_prog=None, **kwargs):
     # Check if processed file log stored in filesystem is configured
-    destination_base = None
-    use_procfile_log = kwargs["use_procfile_log"]
-    if use_procfile_log:
+    if "circular_log" in kwargs:
         circular_log = kwargs["circular_log"]
     else:
         circular_log = None
@@ -385,7 +379,7 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
             for uid in gen_dict_extract(msg.data, 'uid'):
                 file_cache.append(uid)
                 # Add the segment to the processed log stored in filesystem
-                if use_procfile_log:
+                if circular_log is not None:
                     circular_log.insert_element(uid)
 
         lmsg = unpack_and_create_local_message(response, local_dir, unpack, delete, unpack_prog)
@@ -458,23 +452,13 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
 
         chains[key].setdefault("listeners", {})
 
-        # Load processed file log configurations
-
-        # Default vaues
-        circular_log_filename = "/tmp/move_client_circular_log.txt"
-        circular_log_size = 11000
-        # Use processed file log if procfile_log is defined or use_procfile_log is True
+        # Use processed file log if procfile_log is defined
         if "procfile_log" in chains[key]:
-            chains[key]["use_procfile_log"] = True
             circular_log_filename = chains[key]["procfile_log"]
-        if "procfile_log_size" in chains[key]:
-            circular_log_size = chains[key]["procfile_log_size"]
-
-        if "use_procfile_log" in chains[key] and chains[key]["use_procfile_log"]:
-            circular_log = CircularLog(circular_log_filename, circular_log_size)
-            chains[key]["circular_log"] = circular_log
-        else:
-            chains[key]["use_procfile_log"] = False
+            circular_log_size = 11000
+            if "procfile_log_size" in chains[key]:
+                circular_log_size = chains[key]["procfile_log_size"]
+            chains[key]["circular_log"] = CircularLog(circular_log_filename, int(circular_log_size))
 
         try:
             topics = []
@@ -694,8 +678,10 @@ class CircularLog(object):
         """
         tmp_list = []
         tmp_pos = self.header_len-1
-        tmp_list.append(str(tmp_pos)) # write the header: it contains the current write position and max size
-        tmp_list.append(str(max_size)) # write the header: it contains the current write position and max size
+
+        # write the header: it contains the current write position and max size
+        tmp_list.append(str(tmp_pos))
+        tmp_list.append(str(max_size))
         open(log_filename, 'wr').write('\n'.join(tmp_list)) # write the file
 
     def circular_log_load(self, max_size):
@@ -707,7 +693,7 @@ class CircularLog(object):
             #there is a problem with the file, re-initialize it
             self.circular_log_init(self.filename, max_size)
             cache_log = open(self.filename).read().split('\n')
-        if int(cache_log[1]) != max_size:
+        if int(cache_log[1]) != int(max_size):
             return self.circular_log_update_size(cache_log, max_size) # update max size
         return cache_log
 
@@ -748,12 +734,10 @@ class CircularLog(object):
         maxlen = int(self.log_list[1])
         next_pos = tmp_pos + 1
         if next_pos >= maxlen+self.header_len:
-            self.log_list.insert(self.header_len, str(uid))
-            self.log_list[0] = str(self.header_len)
+            next_pos = self.header_len
+        if next_pos <= (len(self.log_list)-1):
+            self.log_list[next_pos] = str(uid)
         else:
             self.log_list.insert(next_pos, str(uid))
-            self.log_list[0] = str(next_pos)
-        if len(self.log_list)>(maxlen+self.header_len):
-            # Remove the last elem if max length already reached
-            del self.log_list[(maxlen+self.header_len):]
+        self.log_list[0] = str(next_pos)
         open(self.filename, 'wr').write('\n'.join(self.log_list))

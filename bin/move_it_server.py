@@ -59,6 +59,7 @@ For example::
   info=sensor=seviri;sublon=0
   request_port=9092
   working_directory=/tmp/unpacked
+  origin_scanmode=polling
 
 * 'origin' is the directory and pattern of files to watch for. For a description
   of the pattern format, see the trollsift documentation:
@@ -81,6 +82,10 @@ For example::
 
 * 'topic', 'publish_port', and 'info' define the messaging behaviour using posttroll. 'info' being a ';' separated
   list of 'key=value' items that has to be added to the message info.
+
+* 'origin_scanmode' [optional] Available value: "polling".
+                               If defined as "polling" server uses polling to scan directories instead of pynotify
+
 
 Logging
 -------

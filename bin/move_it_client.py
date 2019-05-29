@@ -56,6 +56,14 @@ For example::
   topic=/1b/hrit/zds
   publish_port=0
 
+  destination_subdir=%Y%m%d%H%M
+  destination_size=20
+  unpack=xrit
+  unpack_prog=/path/to/xRITDecompress64
+  procfile_log=/directory/you/want/processed_file_log.log
+  procfile_log_size=22000
+  use_ref_file=/the/directory/you/want/save/reference/file
+
 * 'provider' is the address of the server receiving the data you want.
 
 * 'destinations' is the list of places to put the unpacked data in.
@@ -63,6 +71,43 @@ For example::
 * 'topic' gives the topic to listen to on the provider side.
 
 * 'publish_port' defines on which port to publish incomming files. 0 means random port.
+
+Others configuration values:
+
+* 'destination_subdir' subdirectory inside 'destination' in which you want the unpacked data.
+                       special strftime function is applied to destination_subdir
+
+* 'destination_size' maximum number of destination subdirs can be created under destinations
+
+*  'unpack' is the compression type of files.
+            Add unpack also to move client if you want to perform unpack function on client side
+*  'unpack_prog' program used to unpack data
+
+    .. note:: The 'xrit' unpacking function is dependent on a program that can
+    unpack xRIT files. Such a program is available from the `Eumetsat.int
+    <http://www.eumetsat.int/Home/Main/DataAccess/SupportSoftwareTools/index.htm?l=en>`_
+    website.
+
+* 'procfile_log' [optional] path and name of procfile log.
+                 If defined a log is saved in filesystem, containing all the data processed by the client
+                 in order to avoid client process same files multiple times.
+                 If client and server have been restarded, procfile_log is used to detect data already processed
+
+* 'procfile_log_size' [optional] maximum number of files saved in the 'procfile_log' file
+
+* 'use_ref_file' [optional] Path where generate reference files.
+                 If defined, a reference file is generated in the specified path when an epilogue segment is processed.
+
+                 Reference file means that an epilogue has been processed for the referenced directory,
+                 referenced directory is the directory where unpacked data are stored.
+                 ref_file can be used to retrigger processing or just to monitor completion of received segments.
+
+                 reference file name: name of the epilogue segment
+                 reference file content:
+                                          [REF]
+                                          SourcePath = referenced_directory_contains_unpacked_data
+                                          FileName = name_of_ref_file
+
 
 Logging
 -------
