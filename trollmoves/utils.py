@@ -230,7 +230,7 @@ def trigger_ref(dest_dir, ref_dir):
     dest_epifile = None
     for fname in os.listdir(dest_dir):
         if fname.find("-EPI")>0:
-            dest_epifile = ref_dir + "/" + fname
+            dest_epifile = ref_dir + "/REF-" + fname
             dest_file = fname
             break
     if dest_epifile is not None:
@@ -238,7 +238,7 @@ def trigger_ref(dest_dir, ref_dir):
             #touch the ref file
             LOGGER.debug("Retrigger reference file: " + dest_epifile)
             os.remove(dest_epifile)
-            ref_filename = ref_dir + "/" + dest_file
+            ref_filename = ref_dir + "/REF-" + dest_file
             generate_ref(dest_dir, dest_file, ref_filename)
 
 

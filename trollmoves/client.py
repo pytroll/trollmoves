@@ -41,6 +41,8 @@ from posttroll.message import Message, MessageError
 from posttroll.publisher import NoisyPublisher
 from posttroll.subscriber import Subscriber
 
+from trollsift import globify, parse
+
 from trollmoves import heartbeat_monitor
 from trollmoves.utils import get_local_ips
 from trollmoves.utils import gen_dict_extract, translate_dict, translate_dict_value
@@ -309,7 +311,7 @@ def generate_ref_file(msg, destination, ref_file_dir):
             destination (string): destination path of the file in processing
             ref_file_dir (string): directory in which reference file should be created
     """
-    ref_file = ref_file_dir + "/" + msg.data['uid']
+    ref_file = ref_file_dir + "/REF-" + msg.data['uid']
     LOGGER.debug("Generating reference file: " + ref_file)
     generate_ref(destination, msg.data['uid'], ref_file)
 

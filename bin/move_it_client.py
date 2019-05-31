@@ -106,7 +106,7 @@ Others configuration values:
                  reference file content:
                                           [REF]
                                           SourcePath = referenced_directory_contains_unpacked_data
-                                          FileName = name_of_ref_file
+                                          FileName = file that triggered generation of ref file
 
 
 Logging
