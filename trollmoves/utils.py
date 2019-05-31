@@ -21,30 +21,13 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import netifaces
 import bz2
-import errno
-import fnmatch
-import glob
 import logging
 import logging.handlers
 import os
 import shutil
 import subprocess
-import sys
-import time
 import traceback
-from ConfigParser import ConfigParser
-from ftplib import FTP, all_errors
-from Queue import Empty, Queue
-from threading import Thread
 from urlparse import urlparse, urlunparse
-
-import pyinotify
-from zmq import NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
-
-from posttroll import context
-from posttroll.message import Message
-from posttroll.publisher import get_own_ip
-from trollsift import globify, parse
 
 
 LOGGER = logging.getLogger(__name__)
