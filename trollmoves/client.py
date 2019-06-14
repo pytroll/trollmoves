@@ -41,7 +41,7 @@ from posttroll.message import Message, MessageError
 from posttroll.publisher import NoisyPublisher
 from posttroll.subscriber import Subscriber
 
-from trollsift import globify, parse
+from trollsift import globify, parse, Parser
 
 from trollmoves import heartbeat_monitor
 from trollmoves.utils import get_local_ips
@@ -303,17 +303,55 @@ def unpack_and_create_local_message(msg, local_dir, unpack=None, delete=False, u
         lmsg_type = msg.type
     return Message(msg.subject, lmsg_type, data=lmsg_data)
 
-def generate_ref_file(msg, destination, ref_file_dir):
+def generate_ref_file(msg, destination, ref_file_pattern, ref_segment_pattern):
     """ Generate reference file
     
         Args:
             msg (trollmove message)
             destination (string): destination path of the file in processing
-            ref_file_dir (string): directory in which reference file should be created
+            ref_file_pattern (string): pattern filename of reference file, including directory path
+            ref_segment_pattern (string): segments filename format that trigger ref file generation
     """
-    ref_file = ref_file_dir + "/REF-" + msg.data['uid']
-    LOGGER.debug("Generating reference file: " + ref_file)
-    generate_ref(destination, msg.data['uid'], ref_file)
+    ref_filename = compose_ref_filename(ref_file_pattern, msg.data['uid'], ref_segment_pattern)
+    if ref_filename is not None:
+        LOGGER.debug("Generating reference file: " + ref_filename)
+        generate_ref(destination, msg.data['uid'], ref_filename)
+
+
+def trigger_ref_file(msg, destination, ref_file_pattern, ref_segment_pattern):
+    ref_filename = compose_ref_filename(ref_file_pattern, msg.data['uid'], ref_segment_pattern)
+    if ref_filename is not None:
+        LOGGER.debug("Retriggering reference file, segment received late: " + str(msg.data["uid"]))
+        trigger_ref(destination, ref_filename)
+
+
+def compose_ref_filename(ref_pattern, segment, segment_pattern):
+    """ Compute filename of Reference file
+
+        Args:
+            ref_pattern (string): pattern for ref filename
+            segment (string): segment name that triggered ref file generation
+            segment_pattern (string): pattern of the segment that triggers ref file generation
+                                      used to retrieve information for the ref pattern filename
+
+        Returns:
+            (string): filename of the ref file
+            None: if ref_filename cannot be computed
+    """
+    ref_filename = None
+    if segment_pattern is None:
+        # default segment pattern
+        segment_pattern = "H-000-{series:_<6s}-{platform_name:4s}________-{channel:_<9s}-{segment:_<9s}-{nominal_time:%Y%m%d%H%M}-{compress_flag:_<1s}_"
+    try:
+        ref_parser = Parser(ref_pattern)
+        segment_info = parse(segment_pattern, segment)
+        if "segment" in segment_info:
+            segment_info['segment'] = 'EPI'
+        ref_filename = ref_parser.compose(segment_info)
+    except ValueError:
+        LOGGER.info("File doesn't match ref file pattern")
+    return ref_filename
+
 
 def make_uris(msg, destination, login=None):
     duri = urlparse(destination)
@@ -394,11 +432,13 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
                 purge_dir(destination_base, int(destination_size))
             if "use_ref_file" in kwargs:
                 #If ref mode is defined generate the REF file
-                generate_ref_file(msg, destination, kwargs['use_ref_file'])
+                ref_segment_pattern = kwargs["ref_segment_pattern"] if "ref_segment_pattern" in kwargs else None
+                generate_ref_file(msg, destination, kwargs['use_ref_file'], ref_segment_pattern)
         else:
             if "use_ref_file" in kwargs:
                 #If ref mode is definied and file is not epilogue: retrigger the ref file
-                trigger_ref(destination, kwargs['use_ref_file'])
+                ref_segment_pattern = kwargs["ref_segment_pattern"] if "ref_segment_pattern" in kwargs else None
+                trigger_ref_file(msg, destination, kwargs['use_ref_file'], ref_segment_pattern)
 
         if publisher:
             lmsg = make_uris(lmsg, destination, login)

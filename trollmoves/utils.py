@@ -208,29 +208,29 @@ def generate_ref(dest_dir, filename, ref_file):
             dest_dir: string
                 referenced directory (where satellite data are stored/decompressed)
             filename: string
-                reference file name
+                referenced file name
             ref_file: string
                 reference file full path
     """
     dest_epistr = "[REF]\r\n"
     dest_epistr += "SourcePath = " + dest_dir + "\r\n"
     dest_epistr += "FileName = " + filename + "\r\n"
-    dest_epifilefp = open(ref_file, "w")
+    dest_epifilefp = open(str(ref_file), "w")
     dest_epifilefp.write(dest_epistr)
     dest_epifilefp.close()
     return ref_file
 
-def trigger_ref(dest_dir, ref_dir):
+def trigger_ref(dest_dir, ref_filename):
     """ Trigger reference file: only if epilogue segment is present in data
 
         Args:
             dest_dir (string): referenced directory - where satellite data are stored/decompressed
-            ref_dir (string): directory where reference file is saved
+            ref_filename (string): filename and path of the ref file
     """
     dest_epifile = None
     for fname in os.listdir(dest_dir):
         if fname.find("-EPI")>0:
-            dest_epifile = ref_dir + "/REF-" + fname
+            dest_epifile = ref_filename
             dest_file = fname
             break
     if dest_epifile is not None:
@@ -238,7 +238,6 @@ def trigger_ref(dest_dir, ref_dir):
             #touch the ref file
             LOGGER.debug("Retrigger reference file: " + dest_epifile)
             os.remove(dest_epifile)
-            ref_filename = ref_dir + "/REF-" + dest_file
             generate_ref(dest_dir, dest_file, ref_filename)
 
 
