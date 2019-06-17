@@ -449,6 +449,7 @@ def read_config(filename):
         res[section].setdefault("compression", False)
         res[section].setdefault("req_timeout", DEFAULT_REQ_TIMEOUT)
         res[section].setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
+        res[section].setdefault("ssh_key_filename", None)
         if ("origin" not in res[section]) and ('listen' not in res[section]):
             LOGGER.warning("Incomplete section %s: add an 'origin' or "
                            "'listen' item.", section)
@@ -865,6 +866,7 @@ class ScpMover(Mover):
         from paramiko import SSHClient, SSHException, AutoAddPolicy
 
         retries = 3
+        ssh_key_filename = self.attrs.get("ssh_key_filename", None)
 
         while retries > 0:
             retries -= 1
@@ -872,7 +874,9 @@ class ScpMover(Mover):
                 ssh_connection = SSHClient()
                 ssh_connection.set_missing_host_key_policy(AutoAddPolicy())
                 ssh_connection.load_system_host_keys()
-                ssh_connection.connect(self.destination.hostname, username = self.destination.username)
+                ssh_connection.connect(self.destination.hostname,
+                                       username=self.destination.username,
+                                       key_filename=ssh_key_filename)
                 LOGGER.debug("Successfully connected to %s as %s",
                              self.destination.hostname,
                              self.destination.username)
