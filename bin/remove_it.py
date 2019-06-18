@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2015, 2016 Martin Raspaud
+# Copyright (c) 2015, 2016, 2019 Martin Raspaud
 #
 # Author(s):
 #
@@ -22,7 +22,7 @@
 
 """Remove files, and send messages about it."""
 
-from six.moves.configparser import ConfigParser, NoOptionError
+from six.moves.configparser import RawConfigParser, NoOptionError
 from datetime import datetime, timedelta
 from glob import glob
 import os
