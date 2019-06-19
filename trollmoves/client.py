@@ -74,6 +74,7 @@ def read_config(filename):
         res[section].setdefault("heartbeat", True)
         res[section].setdefault("req_timeout", DEFAULT_REQ_TIMEOUT)
         res[section].setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
+        res[section].setdefault("nameservers", None)
         if res[section]["heartbeat"] in ["", "False", "false", "0", "off"]:
             res[section]["heartbeat"] = False
 
@@ -388,8 +389,13 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
 
         chains[key] = val
         try:
-            chains[key]["publisher"] = NoisyPublisher("move_it_" + key,
-                                                      val["publish_port"])
+            nameservers = val["nameservers"]
+            if nameservers:
+                nameservers = nameservers.split()
+            chains[key]["publisher"] = NoisyPublisher(
+                "move_it_" + key,
+                port=val["publish_port"],
+                nameservers=nameservers)
         except (KeyError, NameError):
             pass
 
