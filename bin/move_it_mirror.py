@@ -90,6 +90,8 @@ class MoveItMirror(MoveItBase):
             LOGGER.debug('Sending %s', str(new_msg))
             send(str(new_msg))
 
+        if "client_topic" not in attrs:
+            attrs["client_topic"] = None
         listeners = Listeners(publish_callback, **attrs)
 
         return listeners, foo
@@ -103,8 +105,16 @@ class Listeners(object):
 
     def __init__(self, callback, client_topic, providers, **attrs):
         self.listeners = []
+        if client_topic is None:
+            topics = []
+        else:
+            topics = [client_topic]
         for provider in providers.split():
-            self.listeners.append(Listener('tcp://' + provider, [client_topic],
+            if '/' in provider:
+                parts = provider.split('/', 1)
+                provider = parts[0]
+                topics.append('/' + parts[1])
+            self.listeners.append(Listener('tcp://' + provider, topics,
                                            callback, **attrs))
 
     def start(self):
