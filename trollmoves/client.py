@@ -87,7 +87,7 @@ def read_config(filename):
             continue
         else:
             res[section]["providers"] = [
-                "tcp://" + item for item in res[section]["providers"].split()
+                "tcp://" + item.split('/', 1)[0] for item in res[section]["providers"].split()
             ]
 
         if "destination" not in res[section]:
