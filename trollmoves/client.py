@@ -407,6 +407,10 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
             if val.get("heartbeat", False):
                 topics.append(SERVER_HEARTBEAT_TOPIC)
             for provider in chains[key]["providers"]:
+                if '/' in provider.split(':')[-1]:
+                    parts = urlparse(provider)
+                    provider = parts.scheme + '://' + parts.netloc
+                    topics.append(parts.path)
                 chains[key]["listeners"][provider] = Listener(
                     provider,
                     topics,
