@@ -1,23 +1,23 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
+#
 # Copyright (c) 2012, 2013, 2014, 2015, 2016
-
+#
 # Author(s):
-
+#
 #   Martin Raspaud <martin.raspaud@smhi.se>
 #   Panu Lahtinen <panu.lahtinen@fmi.fi>
-
+#
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-
+#
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
@@ -28,11 +28,11 @@ import sys
 import time
 import tarfile
 from collections import deque
-from six.moves.configparser import ConfigParser
+from six.moves.configparser import RawConfigParser
 from threading import Lock, Thread, Event
+import six
 from six.moves.urllib.parse import urlparse, urlunparse
 
-import netifaces
 import pyinotify
 from zmq import LINGER, POLLIN, REQ, Poller
 
@@ -55,14 +55,14 @@ cache_lock = Lock()
 
 DEFAULT_REQ_TIMEOUT = 1
 
-HEARTBEAT_TOPIC = "/heartbeat/move_it_server"
+SERVER_HEARTBEAT_TOPIC = "/heartbeat/move_it_server"
 
 
 # Config management
 def read_config(filename):
     """Read the config file called *filename*.
     """
-    cp_ = ConfigParser()
+    cp_ = RawConfigParser()
     cp_.read(filename)
 
     res = {}
@@ -77,13 +77,15 @@ def read_config(filename):
         res[section].setdefault("heartbeat", True)
         res[section].setdefault("req_timeout", DEFAULT_REQ_TIMEOUT)
         res[section].setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
+        res[section].setdefault("nameservers", None)
         if res[section]["heartbeat"] in ["", "False", "false", "0", "off"]:
             res[section]["heartbeat"] = False
 
         if "providers" not in res[section]:
-            LOGGER.warning("Incomplete section " + section +
-                           ": add an 'providers' item.")
-            LOGGER.info("Ignoring section " + section + ": incomplete.")
+            LOGGER.warning("Incomplete section %s: add an 'providers' item.",
+                           section)
+            LOGGER.info("Ignoring section %s: incomplete.",
+                        section)
             del res[section]
             continue
         else:
@@ -92,9 +94,9 @@ def read_config(filename):
             ]
 
         if "destination" not in res[section]:
-            LOGGER.warning("Incomplete section " + section +
-                           ": add an 'destination' item.")
-            LOGGER.info("Ignoring section " + section + ": incomplete.")
+            LOGGER.warning("Incomplete section %s: add an 'destination' item.",
+                           section)
+            LOGGER.info("Ignoring section %s: incomplete.", section)
             del res[section]
             continue
 
@@ -107,9 +109,9 @@ def read_config(filename):
         elif not res[section]["heartbeat"]:
             # We have no topics and therefor no subscriber (if you want to
             # subscribe everything, then explicit specify an empty topic).
-            LOGGER.warning("Incomplete section " + section +
-                           ": add an 'topic' item or enable heartbeat.")
-            LOGGER.info("Ignoring section " + section + ": incomplete.")
+            LOGGER.warning("Incomplete section %s: add an 'topic' "
+                           "item or enable heartbeat.", section)
+            LOGGER.info("Ignoring section %s: incomplete.", section)
             del res[section]
             continue
 
@@ -195,10 +197,12 @@ class Listener(Thread):
 def unpack_tar(filename, delete=False, unpack_prog=None):
     """Unpack tar files."""
     destdir = os.path.dirname(filename)
-    with tarfile.open(filename) as tar:
-        tar.extractall(destdir)
-        members = tar.getmembers()
-
+    try:
+        with tarfile.open(filename) as tar:
+            tar.extractall(destdir)
+            members = tar.getmembers()
+    except tarfile.ReadError as err:
+        raise IOError(str(err))
     if delete:
         os.remove(filename)
     return (member.name for member in members)
@@ -241,7 +245,6 @@ def resend_if_local(msg, publisher):
 
 
 def create_push_req_message(msg, destination, login):
-    hostname, port = msg.data["request_address"].split(":")
     fake_req = Message(msg.subject, 'push', data=msg.data.copy())
     duri = urlparse(destination)
     scheme = duri.scheme or 'file'
@@ -279,10 +282,11 @@ def unpack_and_create_local_message(msg, local_dir, unpack=None, delete=False, u
     def unpack_callback(var):
         if not var['uid'].endswith(unpack) and unpack != "xrit":
             return var
-        dirname, filename = os.path.split(var.pop('uri'))
-        basename, ext = os.path.splitext(filename)
         packname = var.pop('uid')
+
+        del var['uri']
         new_names = unpackers[unpack](os.path.join(local_dir, packname), delete, unpack_prog)
+
 
         if unpack == "xrit":
             var['file'] = new_names
@@ -370,9 +374,9 @@ def make_uris(msg, destination, login=None):
         path = os.path.join(duri.path, uid)
         var['uri'] = urlunparse((scheme_, host_, path, "", "", ""))
         return var
-
     msg.data = translate_dict(msg.data, ('uri', 'uid'), uri_callback)
     return msg
+
 
 def replace_mda(msg, kwargs):
     for key in msg.data:
@@ -394,7 +398,7 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
         resend_if_local(msg, publisher)
         mtype = 'ack'
         req = Message(msg.subject, mtype, data=msg.data)
-        LOGGER.debug("Sending: %s" % str(req))
+        LOGGER.debug("Sending: %s", str(req))
         timeout = float(kwargs["req_timeout"])
     else:
         mtype = 'push'
@@ -403,7 +407,7 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
             destination_base = destination
             destination = create_destination_dir(msg, destination, kwargs["destination_subdir"])
         req, fake_req = create_push_req_message(msg, destination, login)
-        LOGGER.info("Requesting: " + str(fake_req))
+        LOGGER.info("Requesting: %s", str(fake_req))
         timeout = float(kwargs["transfer_req_timeout"])
         local_dir = create_local_dir(destination, kwargs.get('ftp_root', '/'))
 
@@ -418,11 +422,15 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
         with cache_lock:
             for uid in gen_dict_extract(msg.data, 'uid'):
                 file_cache.append(uid)
+
                 # Add the segment to the processed log stored in filesystem
                 if circular_log is not None:
                     circular_log.insert_element(uid)
-
-        lmsg = unpack_and_create_local_message(response, local_dir, unpack, delete, unpack_prog)
+        try:
+            lmsg = unpack_and_create_local_message(response, local_dir, unpack, delete, unpack_prog)
+        except IOError:
+            LOGGER.exception("Couldn't unpack %s", str(response))
+            return
 
         if is_epilogue(msg.data["uid"]):
             #It is an epilogue segment
@@ -461,7 +469,7 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
     """Rebuild chains if needed (if the configuration changed) from *filename*.
     """
 
-    LOGGER.debug("New config file detected! " + filename)
+    LOGGER.debug("New config file detected: %s", filename)
 
     new_chains = read_config(filename)
 
@@ -487,8 +495,13 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
 
         chains[key] = val
         try:
-            chains[key]["publisher"] = NoisyPublisher("move_it_" + key,
-                                                      val["publish_port"])
+            nameservers = val["nameservers"]
+            if nameservers:
+                nameservers = nameservers.split()
+            chains[key]["publisher"] = NoisyPublisher(
+                "move_it_" + key,
+                port=val["publish_port"],
+                nameservers=nameservers)
         except (KeyError, NameError):
             pass
 
@@ -507,7 +520,7 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
             if "topic" in val:
                 topics.append(val["topic"])
             if val.get("heartbeat", False):
-                topics.append(HEARTBEAT_TOPIC)
+                topics.append(SERVER_HEARTBEAT_TOPIC)
             for provider in chains[key]["providers"]:
                 chains[key]["listeners"][provider] = Listener(
                     provider,
@@ -525,9 +538,9 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
             chains[key]["publisher"].start()
 
         if not identical:
-            LOGGER.debug("Updated " + key)
+            LOGGER.debug("Updated %s", key)
         else:
-            LOGGER.debug("Added " + key)
+            LOGGER.debug("Added %s", key)
 
     # disable old chains
 
@@ -540,9 +553,9 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
             chains[key]["publisher"].stop()
 
         del chains[key]
-        LOGGER.debug("Removed " + key)
+        LOGGER.debug("Removed %s", key)
 
-    LOGGER.debug("Reloaded config from " + filename)
+    LOGGER.debug("Reloaded config from %s", filename)
 
 
 class PushRequester(object):
@@ -580,7 +593,6 @@ class PushRequester(object):
     def reset_connection(self):
         """Reset the socket
         """
-        file_cache.append(msg.data["uid"])
         self.stop()
         self.connect()
 
@@ -618,21 +630,21 @@ class PushRequester(object):
                     # During big file transfers, give some time to a friend.
                     time.sleep(0.1)
 
-                LOGGER.warning("Timeout from " + str(self._reqaddress) +
-                               ", retrying...")
+                LOGGER.warning("Timeout from %s, retrying...",
+                               str(self._reqaddress))
                 # Socket is confused. Close and remove it.
                 self.stop()
                 retries_left -= 1
                 if retries_left <= 0:
-                    LOGGER.error("Server doesn't answer, abandoning... " + str(
-                        self._reqaddress))
+                    LOGGER.error("Server %s doesn't answer, abandoning.",
+                                 str(self._reqaddress))
                     self.connect()
                     self.failures += 1
                     if self.failures == 5:
-                        LOGGER.critical("Server jammed ? %s", self._reqaddress)
+                        LOGGER.critical("Server jammed: %s", self._reqaddress)
                         self.jammed = True
                     break
-                LOGGER.info("Reconnecting and resending " + str(msg))
+                LOGGER.info("Reconnecting and resending %s", str(msg))
                 # Create new connection
                 self.connect()
                 self._socket.send_string(request)
@@ -681,7 +693,7 @@ class StatCollector(object):
 
 
 def terminate(chains):
-    for chain in chains.values():
+    for chain in six.itervalues(chains):
         for listener in chain["listeners"].values():
             listener.stop()
         if "publisher" in chain:
