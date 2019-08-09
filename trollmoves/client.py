@@ -262,7 +262,9 @@ def unpack_and_create_local_message(msg, local_dir, unpack=None, delete=False):
             return var
         packname = var.pop('uid')
         del var['uri']
-        new_names = unpackers[unpack](os.path.join(local_dir, packname), delete)
+        archive = os.path.join(local_dir, packname)
+        os.fsync(arch_fd)
+        new_names = unpackers[unpack](archive, delete)
 
         var['dataset'] = [dict(uid=nn, uri=os.path.join(local_dir, nn)) for nn in new_names]
         return var
