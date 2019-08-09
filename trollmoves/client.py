@@ -341,7 +341,6 @@ def send_ack(msg, publisher, timeout):
 def remove_transfer(uid):
     """Remove uid from the ongoing tranfers list."""
     with ongoing_transfers_lock:
-        LOGGER.debug("%d sources left to try.", len(ongoing_transfers[uid]))
         return ongoing_transfers.pop(uid)
 
 
