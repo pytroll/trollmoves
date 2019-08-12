@@ -1,3 +1,25 @@
+## Version v0.2.0 (2019/08/12)
+
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 36](https://github.com/pytroll/trollmoves/pull/36) - Prevent concurrent transfers when multiples sources are available
+* [PR 35](https://github.com/pytroll/trollmoves/pull/35) - Fix move_it function to run with empty relative path
+* [PR 31](https://github.com/pytroll/trollmoves/pull/31) - Bugfix: imports RawConfigParser rather than ConfigParser
+* [PR 28](https://github.com/pytroll/trollmoves/pull/28) - Fix archive URI not being removed when unpacking
+* [PR 27](https://github.com/pytroll/trollmoves/pull/27) - Fix error handling for client unpacking
+
+#### Features added
+
+* [PR 33](https://github.com/pytroll/trollmoves/pull/33) - Adding .stickler.yml configuration file
+* [PR 32](https://github.com/pytroll/trollmoves/pull/32) - Add "nameservers" option to trollmoves client
+* [PR 30](https://github.com/pytroll/trollmoves/pull/30) - Add config option for SSH key file
+* [PR 20](https://github.com/pytroll/trollmoves/pull/20) - Restructure TrollMoves scripts
+
+In this release 9 pull requests were closed.
+
 ## Version v0.1.3 (2019/04/10)
 
 ### Pull Requests Merged
