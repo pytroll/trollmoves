@@ -421,6 +421,7 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
     else:
         LOGGER.warning('Could not get a working source for requesting %s',
                        str(msg))
+        terminate_transfers(huid, float(kwargs["req_timeout"]))
 
 
 def reload_config(filename, chains, callback=request_push, pub_instance=None):
