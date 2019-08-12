@@ -314,6 +314,7 @@ def replace_mda(msg, kwargs):
             msg.data[key] = replacement[msg.data[key]]
     return msg
 
+
 def send_request(msg, req, timeout):
     """Send a request for push."""
     LOGGER.debug("Send and recv timeout is %.2f seconds", timeout)
@@ -323,9 +324,8 @@ def send_request(msg, req, timeout):
     return requester.send_and_recv(req, timeout=timeout), hostname
 
 
-def send_ack(msg, publisher, timeout):
+def send_ack(msg, timeout):
     """Send an ACK (no push required)."""
-    resend_if_local(msg, publisher)
     req = Message(msg.subject, 'ack', data=msg.data)
     LOGGER.debug("Sending: %s", str(req))
 
@@ -338,10 +338,12 @@ def send_ack(msg, publisher, timeout):
                      str(hostname), str(response))
 
 
-def remove_transfer(uid):
-    """Remove uid from the ongoing tranfers list."""
+def terminate_transfers(uid, timeout):
+    """Send ACK to remaining sources for uid and remove from the ongoing tranfers list."""
     with ongoing_transfers_lock:
-        return ongoing_transfers.pop(uid)
+        msgs = ongoing_transfers.pop(uid, [])
+    for msg in msgs:
+        send_ack(msg, timeout)
 
 
 def get_msg_uid(msg):
@@ -351,6 +353,16 @@ def get_msg_uid(msg):
     for filename in filenames:
         m.update(filename.encode('utf-8'))
     return m.hexdigest()
+
+
+def iterate_messages(uid):
+    """Iterate over all messages for a uid."""
+    while True:
+        try:
+            msg = get_next_msg(uid)
+        except IndexError:
+            raise StopIteration
+        yield msg
 
 
 def get_next_msg(uid):
@@ -371,15 +383,10 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
 
     if already_received(msg):
         timeout = float(kwargs["req_timeout"])
-        return send_ack(msg, publisher, timeout)
+        resend_if_local(msg, publisher)
+        return send_ack(msg, timeout)
 
-    while True:
-        try:
-            msg = get_next_msg(huid)
-        except IndexError:
-            LOGGER.warning('Could not get a working source for requesting %s',
-                           str(msg))
-            break
+    for msg in iterate_messages(huid):
         req, fake_req = create_push_req_message(msg, destination, login)
         LOGGER.info("Requesting: %s", str(fake_req))
         timeout = float(kwargs["transfer_req_timeout"])
@@ -396,7 +403,7 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
                 lmsg = unpack_and_create_local_message(response, local_dir, unpack, delete)
             except IOError:
                 LOGGER.exception("Couldn't unpack %s", str(response))
-                return
+                continue
             if publisher:
                 lmsg = make_uris(lmsg, destination, login)
                 lmsg.data['origin'] = response.data['request_address']
@@ -406,11 +413,14 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
 
                 LOGGER.debug("publishing %s", str(lmsg))
                 publisher.send(str(lmsg))
-            remove_transfer(huid)
+            terminate_transfers(huid, float(kwargs["req_timeout"]))
             break
         else:
             LOGGER.error("Failed to get valid response from server %s: %s",
                          str(hostname), str(response))
+    else:
+        LOGGER.warning('Could not get a working source for requesting %s',
+                       str(msg))
 
 
 def reload_config(filename, chains, callback=request_push, pub_instance=None):
@@ -496,8 +506,7 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
 
 
 class PushRequester(object):
-    """Base requester class.
-    """
+    """Base requester class."""
 
     request_retries = 3
 
@@ -513,15 +522,13 @@ class PushRequester(object):
         self.connect()
 
     def connect(self):
-        """Connect to the server
-        """
+        """Connect to the server."""
         self._socket = get_context().socket(REQ)
         self._socket.connect(self._reqaddress)
         self._poller.register(self._socket, POLLIN)
 
     def stop(self):
-        """Close the connection to the server
-        """
+        """Close the connection to the server."""
         self.running = False
         self._socket.setsockopt(LINGER, 0)
         self._socket.close()
