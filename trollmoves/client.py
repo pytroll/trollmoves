@@ -383,7 +383,6 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
 
     if already_received(msg):
         timeout = float(kwargs["req_timeout"])
-        resend_if_local(msg, publisher)
         return send_ack(msg, timeout)
 
     for msg in iterate_messages(huid):
