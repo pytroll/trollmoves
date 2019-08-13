@@ -409,7 +409,8 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
             for provider in chains[key]["providers"]:
                 if '/' in provider.split(':')[-1]:
                     parts = urlparse(provider)
-                    provider = parts.scheme + '://' + parts.netloc
+                    provider = urlunparse((parts.scheme, parts.netloc,
+                                           '', '', '', ''))
                     topics.append(parts.path)
                 chains[key]["listeners"][provider] = Listener(
                     provider,
