@@ -116,7 +116,7 @@ class Listeners(object):
                 parts = provider.split('/', 1)
                 provider = parts[0]
                 topic = ['/' + parts[1]]
-                LOGGER.info("Using provider-specific topic %s for %s"
+                LOGGER.info("Using provider-specific topic %s for %s",
                             topic, provider)
             self.listeners.append(Listener('tcp://' + provider, topic,
                                            callback, **attrs))
