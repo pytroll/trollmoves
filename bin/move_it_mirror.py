@@ -106,15 +106,19 @@ class Listeners(object):
     def __init__(self, callback, client_topic, providers, **attrs):
         self.listeners = []
         if client_topic is None:
-            topics = []
+            client_topic = []
         else:
-            topics = [client_topic]
+            client_topic = [client_topic]
+
         for provider in providers.split():
+            topic = client_topic
             if '/' in provider:
                 parts = provider.split('/', 1)
                 provider = parts[0]
-                topics.append('/' + parts[1])
-            self.listeners.append(Listener('tcp://' + provider, topics,
+                topic = ['/' + parts[1]]
+                LOGGER.info("Using provider-specific topic %s for %s"
+                            topic, provider)
+            self.listeners.append(Listener('tcp://' + provider, topic,
                                            callback, **attrs))
 
     def start(self):
