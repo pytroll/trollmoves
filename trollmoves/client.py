@@ -409,8 +409,14 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
             for provider in chains[key]["providers"]:
                 if '/' in provider.split(':')[-1]:
                     parts = urlparse(provider)
-                    provider = urlunparse((parts.scheme, parts.netloc,
-                                           '', '', '', ''))
+                    if parts.scheme != '':
+                        provider = urlunparse((parts.scheme, parts.netloc,
+                                               '', '', '', ''))
+                    else:
+                        # If there's no scheme, urlparse thinks the
+                        # URI is a local file
+                        provider = urlunparse(('tcp', parts.path,
+                                               '', '', '', ''))
                     topics.append(parts.path)
                 chains[key]["listeners"][provider] = Listener(
                     provider,
