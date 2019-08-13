@@ -162,7 +162,7 @@ class RequestManager(Thread):
         """
         for the_dict in gen_dict_contains(message.data, 'uri'):
             uri = urlparse(the_dict['uri'])
-            rel_path = the_dict.get('path', '')
+            rel_path = the_dict.get('path', None)
             pathname = uri.path
             # FIXME: check against file_cache
             if 'origin' in self._attrs and not fnmatch.fnmatch(
@@ -645,12 +645,20 @@ def unpack(pathname,
 # Mover
 
 
-def move_it(pathname, destination, attrs=None, hook=None, rel_path=''):
-    """Check if the file pointed by *filename* is in the filelist, and move it
+def move_it(pathname, destination, attrs=None, hook=None, rel_path=None):
+    """Check if the file pointed by *pathname* is in the filelist, and move it
     if it is.
+
+    The *destination* provided is used, and if *rel_path* is provided, it will
+    be appended to the destination path.
+
     """
     dest_url = urlparse(destination)
-    new_dest = dest_url._replace(path=os.path.join(dest_url.path, rel_path))
+    if rel_path is not None:
+        new_path = os.path.join(dest_url.path, rel_path)
+    else:
+        new_path = dest_url.path
+    new_dest = dest_url._replace(path=new_path)
     fake_dest = clean_url(new_dest)
 
     LOGGER.debug("Copying to: %s", fake_dest)
