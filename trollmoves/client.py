@@ -30,6 +30,7 @@ import tarfile
 from collections import deque
 from six.moves.configparser import RawConfigParser
 from threading import Lock, Thread, Event
+import hashlib
 import six
 from six.moves.urllib.parse import urlparse, urlunparse
 
@@ -49,6 +50,8 @@ LOGGER = logging.getLogger(__name__)
 
 file_cache = deque(maxlen=11000)
 cache_lock = Lock()
+ongoing_transfers = dict()
+ongoing_transfers_lock = Lock()
 
 DEFAULT_REQ_TIMEOUT = 1
 
@@ -312,57 +315,116 @@ def replace_mda(msg, kwargs):
     return msg
 
 
-def request_push(msg, destination, login, publisher=None, unpack=None, delete=False, **kwargs):
-    if already_received(msg):
-        resend_if_local(msg, publisher)
-        mtype = 'ack'
-        req = Message(msg.subject, mtype, data=msg.data)
-        LOGGER.debug("Sending: %s", str(req))
-        timeout = float(kwargs["req_timeout"])
-    else:
-        mtype = 'push'
-        req, fake_req = create_push_req_message(msg, destination, login)
-        LOGGER.info("Requesting: %s", str(fake_req))
-        timeout = float(kwargs["transfer_req_timeout"])
-        local_dir = create_local_dir(destination, kwargs.get('ftp_root', '/'))
-
+def send_request(msg, req, timeout):
+    """Send a request for push."""
     LOGGER.debug("Send and recv timeout is %.2f seconds", timeout)
 
     hostname, port = msg.data["request_address"].split(":")
     requester = PushRequester(hostname, int(port))
-    response = requester.send_and_recv(req, timeout=timeout)
+    return requester.send_and_recv(req, timeout=timeout), hostname
 
-    if response and response.type in ['file', 'collection', 'dataset']:
-        LOGGER.debug("Server done sending file")
-        with cache_lock:
-            for uid in gen_dict_extract(msg.data, 'uid'):
-                file_cache.append(uid)
-        try:
-            lmsg = unpack_and_create_local_message(response, local_dir, unpack, delete)
-        except IOError:
-            LOGGER.exception("Couldn't unpack %s", str(response))
-            return
-        if publisher:
-            lmsg = make_uris(lmsg, destination, login)
-            lmsg.data['origin'] = response.data['request_address']
-            lmsg.data.pop('request_address', None)
-            lmsg = replace_mda(lmsg, kwargs)
-            lmsg.data.pop('destination', None)
 
-            LOGGER.debug("publishing %s", str(lmsg))
-            publisher.send(str(lmsg))
+def send_ack(msg, timeout):
+    """Send an ACK (no push required)."""
+    req = Message(msg.subject, 'ack', data=msg.data)
+    LOGGER.debug("Sending: %s", str(req))
 
-    elif response and response.type == "ack":
+    response, hostname = send_request(msg, req, timeout)
+
+    if response and response.type == "ack":
         pass
     else:
         LOGGER.error("Failed to get valid response from server %s: %s",
                      str(hostname), str(response))
 
 
-def reload_config(filename, chains, callback=request_push, pub_instance=None):
-    """Rebuild chains if needed (if the configuration changed) from *filename*.
-    """
+def terminate_transfers(uid, timeout):
+    """Send ACK to remaining sources for uid and remove from the ongoing tranfers list."""
+    with ongoing_transfers_lock:
+        msgs = ongoing_transfers.pop(uid, [])
+    for msg in msgs:
+        send_ack(msg, timeout)
 
+
+def get_msg_uid(msg):
+    """Compute the uid of the message."""
+    filenames = sorted(gen_dict_extract(msg.data, 'uid'))
+    m = hashlib.md5()
+    for filename in filenames:
+        m.update(filename.encode('utf-8'))
+    return m.hexdigest()
+
+
+def iterate_messages(uid):
+    """Iterate over all messages for a uid."""
+    while True:
+        try:
+            msg = get_next_msg(uid)
+        except IndexError:
+            raise StopIteration
+        yield msg
+
+
+def get_next_msg(uid):
+    """Get the next message with this *uid* from the available sources."""
+    with ongoing_transfers_lock:
+        return ongoing_transfers[uid].pop(0)
+
+
+def request_push(msg, destination, login, publisher=None, unpack=None, delete=False, **kwargs):
+    """Request a push for data."""
+    huid = get_msg_uid(msg)
+    with ongoing_transfers_lock:
+        if huid in ongoing_transfers:
+            ongoing_transfers[huid].append(msg)
+            return
+        else:
+            ongoing_transfers[huid] = [msg]
+
+    if already_received(msg):
+        timeout = float(kwargs["req_timeout"])
+        return send_ack(msg, timeout)
+
+    for msg in iterate_messages(huid):
+        req, fake_req = create_push_req_message(msg, destination, login)
+        LOGGER.info("Requesting: %s", str(fake_req))
+        timeout = float(kwargs["transfer_req_timeout"])
+        local_dir = create_local_dir(destination, kwargs.get('ftp_root', '/'))
+
+        response, hostname = send_request(msg, req, timeout)
+
+        if response and response.type in ['file', 'collection', 'dataset']:
+            LOGGER.debug("Server done sending file")
+            with cache_lock:
+                for uid in gen_dict_extract(msg.data, 'uid'):
+                    file_cache.append(uid)
+            try:
+                lmsg = unpack_and_create_local_message(response, local_dir, unpack, delete)
+            except IOError:
+                LOGGER.exception("Couldn't unpack %s", str(response))
+                continue
+            if publisher:
+                lmsg = make_uris(lmsg, destination, login)
+                lmsg.data['origin'] = response.data['request_address']
+                lmsg.data.pop('request_address', None)
+                lmsg = replace_mda(lmsg, kwargs)
+                lmsg.data.pop('destination', None)
+
+                LOGGER.debug("publishing %s", str(lmsg))
+                publisher.send(str(lmsg))
+            terminate_transfers(huid, float(kwargs["req_timeout"]))
+            break
+        else:
+            LOGGER.error("Failed to get valid response from server %s: %s",
+                         str(hostname), str(response))
+    else:
+        LOGGER.warning('Could not get a working source for requesting %s',
+                       str(msg))
+        terminate_transfers(huid, float(kwargs["req_timeout"]))
+
+
+def reload_config(filename, chains, callback=request_push, pub_instance=None):
+    """Rebuild chains if needed (if the configuration changed) from *filename*."""
     LOGGER.debug("New config file detected: %s", filename)
 
     new_chains = read_config(filename)
@@ -455,8 +517,7 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
 
 
 class PushRequester(object):
-    """Base requester class.
-    """
+    """Base requester class."""
 
     request_retries = 3
 
@@ -472,15 +533,13 @@ class PushRequester(object):
         self.connect()
 
     def connect(self):
-        """Connect to the server
-        """
+        """Connect to the server."""
         self._socket = get_context().socket(REQ)
         self._socket.connect(self._reqaddress)
         self._poller.register(self._socket, POLLIN)
 
     def stop(self):
-        """Close the connection to the server
-        """
+        """Close the connection to the server."""
         self.running = False
         self._socket.setsockopt(LINGER, 0)
         self._socket.close()
