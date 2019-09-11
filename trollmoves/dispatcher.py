@@ -49,7 +49,6 @@ client1:
       directory: /input/cloud_products
       conditions:
         - area: omerc_bb
-          # ' 122'.strip().isdigit() -> True
           daylight: '<30'
           coverage: '>50'
 """
