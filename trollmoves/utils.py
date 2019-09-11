@@ -20,6 +20,19 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import netifaces
+from six import string_types
+
+from six.moves.urllib.parse import urlparse, urlunparse
+
+
+def clean_url(url):
+    """Remove login info from *url*."""
+    if isinstance(url, string_types):
+        urlobj = urlparse(url)
+    else:
+        urlobj = url
+    return urlunparse((urlobj.scheme, urlobj.hostname,
+                       urlobj.path, "", "", ""))
 
 
 def get_local_ips():
