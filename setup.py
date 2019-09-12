@@ -19,8 +19,7 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 #
 
-"""
-"""
+"""Setup file."""
 
 from setuptools import setup
 import versioneer
@@ -50,6 +49,6 @@ setup(name="trollmoves",
       zip_safe=False,
       install_requires=['pyinotify', 'posttroll>=1.5.1',
                         'trollsift', 'netifaces',
-                        'pyzmq', 'six',
+                        'pyzmq', 'six', 'inotify',
                         'scp', 'paramiko'],
       )
