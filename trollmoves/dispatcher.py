@@ -23,34 +23,109 @@
 
 """Dispatcher dispatches(!) files to some destination.
 
-Example config:
+It listens to posttroll messages to find out what to dispatch.
 
-client1:
-  host: ftp://ftp.client1.com
-  connection_parameters:
-    credential_file: .netrc
-  filepattern: '{platform_name}_{start_time}.{format}'
-  directory: /input_data/{sensor}
-  dispatch:
-    - topics:
-        - /level2/viirs
-        - /level2/avhrr
-      conditions:
-        # key matches metadata items or provides default
-        - product: [green_snow, true_color]
-          sensor: viirs
-        - product: [green_snow, overview]
-          sensor: avhrr
-          # special section "except" for negating
-          except:
-            platform_name: NOAA-15
-    - topics:
-        - /level3/cloudtype
-      directory: /input/cloud_products
-      conditions:
-        - area: omerc_bb
-          daylight: '<30'
-          coverage: '>50'
+
+Format of the configuration file
+================================
+
+.. highlight:: yaml
+
+Example config::
+
+    client1:
+      host: ftp://ftp.client1.com
+      connection_parameters:
+        connection_uptime: 60
+      filepattern: '{platform_name}_{start_time}.{format}'
+      directory: /input_data/{sensor}
+      dispatch:
+        - topics:
+            - /level2/viirs
+            - /level2/avhrr
+          conditions:
+            # key matches metadata items or provides default
+            - product: [green_snow, true_color]
+              sensor: viirs
+            - product: [green_snow, overview]
+              sensor: avhrr
+              # special section "except" for negating
+              except:
+                platform_name: NOAA-15
+        - topics:
+            - /level3/cloudtype
+          directory: /input/cloud_products
+          conditions:
+            - area: omerc_bb
+              daylight: '<30'
+              coverage: '>50'
+
+
+The configuration file is divided in sections for each host receiving data.
+
+Each host section have to contain the following information:
+
+    - `host`: The host to tranfer to. If it's empty (`""`), the files will be
+      dispatched to localhost.
+    - `filepattern`: The file pattern to use. The fields that can be used are
+      the ones that are available in the message metadata.
+      See the trollsift documentation for details on the field formats.
+    - `directory`: The directory to dispatch the data to on the receiving host.
+      Can also make use of the fields from the message metadata.
+    - `dispatch`: the dispatch section describing what files to dispatch. See below.
+    - `connection_parameters` (optional): Some extra connection parameters to
+      pass to the moving function. See the `trollmoves.movers` module documentation.
+
+Note that the `host`, `filepattern`, and `directory` items can be overridden in
+the dispatch section.
+
+The dispatch section contains a list of dispatch items. Each dispatch item have
+to contain the following information:
+
+  - `topics`: the posttroll topics to listen to.
+  - `conditions` (optional): when specified, this will be use to filter out the
+    files to dispatch. More info below.
+  - `host`, `filepattern`, `directory`: same as in the the base host section.
+
+The conditions are to be formatted in the following manner: they are to contain
+a list of conditions set to match. The conditions set will be OR'ed. Each
+conditions set contains conditions that will be AND'ed. For example::
+
+           conditions:
+            # key matches metadata items or provides default
+            - product: [green_snow, true_color]
+              sensor: viirs
+            - product: [green_snow, overview]
+              sensor: avhrr
+
+will match every product `green_snow` or `true_color` from the sensor `viirs` or
+`green_snow` or `overview` from sensor `avhrr`. The items (`product`, `sensor`,
+etc) have correspond to fields in the message metadata.
+
+
+Notice the multiple choices are possible using a list (eg
+`[green_snow, true_color]`).
+For exceptions, you can use the `except` keyword as in the following example::
+
+            - product: [green_snow, overview]
+              sensor: avhrr
+              # special section "except" for negating
+              except:
+                platform_name: NOAA-15
+
+This will match all `green_snow` and `overview` products from sensor `avhrr`,
+except the ones from platform `NOAA-15`.
+
+Also, the conditions can be matched again numerical fields from the message
+metadata::
+
+          conditions:
+            - area: omerc_bb
+              daylight: '<30'
+              coverage: '>50'
+
+The comparison operators that can be used are the ones that can be used in
+python: `==`, `!=`, `<`, `>`, `<=`, `>=`.
 """
 
 # TODO:
@@ -259,6 +334,8 @@ def check_conditions(msg, item):
 
     """
     # Fixme: except !
+    if 'conditions' not in item:
+        return True
     for condition_set in item['conditions']:
         if _check_condition_set(msg, condition_set):
             return True
