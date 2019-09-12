@@ -5,7 +5,7 @@ python:
 
 install:
   - pip install codecov pytest pytest-cov
-  - pip install .
+  - pip install -e .
 
 script:
   - pytest --cov=./
