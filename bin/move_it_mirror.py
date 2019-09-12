@@ -25,7 +25,7 @@ import logging
 import logging.handlers
 import os
 from threading import Lock, Timer
-from six.moves.urllib.parse import urlparse
+from six.moves.urllib.parse import urlparse, urlunparse
 import argparse
 
 from posttroll.message import Message
@@ -118,8 +118,10 @@ class Listeners(object):
                 topic = ['/' + parts[1]]
                 LOGGER.info("Using provider-specific topic %s for %s",
                             topic, provider)
-            self.listeners.append(Listener('tcp://' + provider, topic,
-                                           callback, **attrs))
+            self.listeners.append(Listener(
+                urlunparse(('tcp', provider, '', '', '', '')),
+                topic,
+                callback, **attrs))
 
     def start(self):
         for listener in self.listeners:
