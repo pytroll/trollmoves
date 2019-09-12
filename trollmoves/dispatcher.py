@@ -56,7 +56,6 @@ client1:
 # TODO:
 # - include monitoring
 
-import argparse
 import logging
 import signal
 import os
@@ -75,7 +74,6 @@ from trollmoves.utils import clean_url
 from trollmoves.movers import move_it
 
 logger = logging.getLogger(__name__)
-LOG_FORMAT = "[%(asctime)s %(levelname)-8s] %(message)s"
 
 
 class Notifier(Thread):
@@ -343,49 +341,3 @@ def dispatch(source, destinations, hook=None):
     if not any_error:
         hook.ok("Dispatched all files.")
         logger.info("Dispatched all files.")
-
-
-def setup_logging(cmd_args):
-    global logger
-    logger = logging.getLogger('move_it')
-    logger.setLevel(logging.DEBUG)
-
-    if cmd_args.log:
-        fh_ = logging.handlers.TimedRotatingFileHandler(
-            os.path.join(cmd_args.log),
-            "midnight",
-            backupCount=7)
-    else:
-        fh_ = logging.StreamHandler()
-
-    formatter = logging.Formatter(LOG_FORMAT)
-    fh_.setFormatter(formatter)
-
-    logger.addHandler(fh_)
-
-
-def main():
-    """Start and run the dispatcher."""
-    parser = argparse.ArgumentParser()
-    parser.add_argument("config_file",
-                        help="The configuration file to run on.")
-    parser.add_argument("-l", "--log",
-                        help="The file to log to. stdout otherwise.")
-    cmd_args = parser.parse_args()
-
-    setup_logging(cmd_args)
-
-    logger.info("Starting up.")
-
-    try:
-        dispatcher = Dispatcher(cmd_args.config_file)
-        dispatcher.start()
-        dispatcher.join()
-    except KeyboardInterrupt:
-        logger.debug("Interrupting")
-    finally:
-        dispatcher.close()
-
-
-if __name__ == '__main__':
-    main()
