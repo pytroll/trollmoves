@@ -322,11 +322,11 @@ def check_conditions(msg, item):
           # special section "except" for negating
           except:
             platform_name: NOAA-15
-            product: greensnow
+            product: green_snow
 
     This would allow 'green_snow' and 'true_color' from VIIRS to pass the check,
-    and 'green_snow' and 'overview' from AVHRR, with the exception of 'overview'
-    from NOAA-15. 'true_color' from MODIS will not be dispatched.
+    and 'green_snow' and 'overview' from AVHRR, with the exception of
+    'green_snow' from NOAA-15. 'true_color' from MODIS will not be dispatched.
 
     """
     # Fixme: except !
