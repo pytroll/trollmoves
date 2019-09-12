@@ -33,8 +33,8 @@ from ftplib import FTP, all_errors, error_perm
 from threading import Event, Lock, Thread, current_thread
 
 from six import string_types
-
 from six.moves.urllib.parse import urlparse
+
 from trollmoves.utils import clean_url
 
 LOGGER = logging.getLogger(__name__)

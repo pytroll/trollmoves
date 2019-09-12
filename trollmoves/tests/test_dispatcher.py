@@ -21,17 +21,19 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """Test the dispatcher."""
 
-import yaml
-from tempfile import NamedTemporaryFile, gettempdir
-from trollmoves.dispatcher import YAMLConfig, check_conditions, Dispatcher
-from unittest.mock import patch, Mock
-import signal
 import os
-from threading import get_ident
-from queue import Queue
+import shutil
+import signal
 import time
 from datetime import datetime
-import shutil
+from queue import Queue
+from tempfile import NamedTemporaryFile, gettempdir
+from threading import get_ident
+from unittest.mock import Mock, patch
+
+import yaml
+
+from trollmoves.dispatcher import Dispatcher, YAMLConfig, check_conditions
 
 test_yaml1 = """
 client1:

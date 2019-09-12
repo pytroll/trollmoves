@@ -128,12 +128,9 @@ The comparison operators that can be used are the ones that can be used in
 python: `==`, `!=`, `<`, `>`, `<=`, `>=`.
 """
 
-# TODO:
-# - include monitoring
-
 import logging
-import signal
 import os
+import signal
 from queue import Empty
 from threading import Thread
 
@@ -142,11 +139,10 @@ from six.moves.urllib.parse import urljoin
 
 import inotify.adapters
 from posttroll.listener import ListenerContainer
-from trollsift import compose
-
 from trollmoves.hooks import DummyHook
-from trollmoves.utils import clean_url
 from trollmoves.movers import move_it
+from trollmoves.utils import clean_url
+from trollsift import compose
 
 logger = logging.getLogger(__name__)
 
