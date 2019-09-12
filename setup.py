@@ -50,5 +50,5 @@ setup(name="trollmoves",
       install_requires=['pyinotify', 'posttroll>=1.5.1',
                         'trollsift', 'netifaces',
                         'pyzmq', 'six', 'inotify',
-                        'scp', 'paramiko'],
+                        'scp', 'paramiko', 'yaml'],
       )
