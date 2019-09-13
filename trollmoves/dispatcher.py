@@ -304,7 +304,7 @@ class Dispatcher(Thread):
         """Shutdown the dispatcher."""
         logger.info('Terminating dispatcher.')
         self.loop = False
-        self.listener.close()
+        self.listener.stop()
         self.config_handler.close()
 
 
@@ -405,6 +405,7 @@ def dispatch(source, destinations, hook=None):
     # rename and send file with right protocol
     for url, params in destinations:
         try:
+            logger.info("Dispatching %s to %s", source, str(clean_url(url)))
             move_it(source, url, params)
         except Exception as err:
             message = "Could not dispatch to {}: {}".format(str(clean_url(url)),
@@ -413,4 +414,4 @@ def dispatch(source, destinations, hook=None):
             any_error = True
     if not any_error:
         hook.ok("Dispatched all files.")
-        logger.info("Dispatched all files.")
+        logger.debug("Dispatched all files.")
