@@ -183,6 +183,7 @@ class YAMLConfig():
 
     def __init__(self, filename):
         """Initialize the config handler."""
+        self.err = None
         self.filename = filename
         self.config = None
         self.read_config()
@@ -204,8 +205,11 @@ class YAMLConfig():
 
     def close(self):
         """Close the config handler."""
-        self.notifier.close()
-        self.notifier.join()
+        try:
+            self.notifier.close()
+            self.notifier.join()
+        except AttributeError as err:
+            self.err = err
 
     def __del__(self, *args, **kwargs):
         """Delete the config handler."""
@@ -248,9 +252,10 @@ class Dispatcher(Thread):
             if self.topics != topics:
                 if self.listener is not None:
                     # FIXME: make sure to get the last messages though
-                    self.listener.close()
+                    self.listener.stop()
                 self.config = new_config
                 self.listener = ListenerContainer(topics)
+                self.topics = topics
 
         except KeyError as err:
             logger.warning('Invalid config for %s, keeping the old one running: %s', _client, str(err))
@@ -359,8 +364,10 @@ def _check_condition_set(msg, condition_set, negate=False):
         try:
             if key == 'except':
                 if not _check_condition_set(msg, value, negate=True):
+                    logger.debug('%s does not match %s', str(msg), str(value))
                     return negate
             elif not _check_condition(msg, key, value):
+                logger.debug('%s does not match %s', str(msg), str(value))
                 return negate
         except KeyError as err:
             logger.warning('Missing metadata info to check condition: %s', err)

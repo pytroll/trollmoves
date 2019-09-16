@@ -30,6 +30,7 @@ import argparse
 import logging
 import logging.handlers
 import os
+import sys
 
 from trollmoves.dispatcher import Dispatcher
 
@@ -80,6 +81,10 @@ def main():
 
     try:
         dispatcher = Dispatcher(cmd_args.config_file)
+    except Exception as err:
+        logger.error('Dispatcher crashed: %s', str(err))
+        sys.exit(1)
+    try:
         dispatcher.start()
         dispatcher.join()
     except KeyboardInterrupt:
