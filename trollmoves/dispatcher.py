@@ -374,10 +374,8 @@ def _check_condition_set(msg, condition_set, negate=False):
         try:
             if key == 'except':
                 if not _check_condition_set(msg, value, negate=True):
-                    logger.debug('%s does not match %s', str(msg), str(value))
                     return negate
             elif not _check_condition(msg, key, value):
-                logger.debug('%s does not match %s', str(msg), str(value))
                 return negate
         except KeyError as err:
             logger.warning('Missing metadata info to check condition: %s', err)
