@@ -223,6 +223,68 @@ def test_get_destinations():
             assert len(res) == 2
 
 
+test_yaml_aliases = """
+client1:
+  host: ftp://ftp.client1.com
+  connection_parameters:
+    connection_uptime: 20
+  filepattern: '{platform_name}_{product}_{start_time:%Y%m%d%H%M}.{format}'
+  directory: /input_data/{sensor}
+  aliases:
+    product:
+      green_snow: gs
+    variant:
+      DR: direct_readout
+  dispatch:
+    - topics:
+        - /level2/viirs
+        - /level2/avhrr
+      conditions:
+        # key matches metadata items or provides default
+        - product: [green_snow, true_color]
+          sensor: viirs
+        - product: [green_snow, overview]
+          sensor: avhrr
+          # special section "except" for negating
+          except:
+            platform_name: NOAA-15
+    - topics:
+        - /level3/cloudtype
+      directory: /input/cloud_products
+      conditions:
+        - area: omerc_bb
+          # ' 122'.strip().isdigit() -> True
+          daylight: '<30'
+          coverage: '>50'
+"""
+
+
+def test_get_destinations_with_aliases():
+    """Check getting destination urls."""
+    with patch('trollmoves.dispatcher.DispatchConfig'):
+        from trollmoves.dispatcher import Dispatcher
+        with NamedTemporaryFile('w', delete=False) as the_file:
+            fname = the_file.name
+            dp = Dispatcher(fname)
+            dp.config = yaml.safe_load(test_yaml_aliases)
+            msg = Mock()
+            msg.subject = 'pytroll://level2/viirs'
+            msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
+                        'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif'}
+            expected_url = 'ftp://ftp.client1.com/input_data/viirs/NOAA-20_gs_201909190919.tif'
+            expected_attrs = {'connection_uptime': 20}
+
+            res = dp.get_destinations(msg)
+            assert len(res) == 1
+            url, attrs = res[0]
+            assert url == expected_url
+            assert attrs == expected_attrs
+
+            dp.config = yaml.safe_load(test_yaml2)
+            res = dp.get_destinations(msg)
+            assert len(res) == 2
+
+
 test_local = """
 client3:
   host: ""
