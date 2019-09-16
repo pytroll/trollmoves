@@ -39,6 +39,10 @@ Example config::
         connection_uptime: 60
       filepattern: '{platform_name}_{start_time}.{format}'
       directory: /input_data/{sensor}
+      aliases:
+        product:
+          natural_color: dnc
+          overview: ovw
       dispatch:
         - topics:
             - /level2/viirs
@@ -75,6 +79,8 @@ Each host section have to contain the following information:
     - `dispatch`: the dispatch section describing what files to dispatch. See below.
     - `connection_parameters` (optional): Some extra connection parameters to
       pass to the moving function. See the `trollmoves.movers` module documentation.
+    - `aliases` (optional): A dictionary of metadata items to change for the
+      final filename. These are not taken into account for checking the conditions.
 
 Note that the `host`, `filepattern`, and `directory` items can be overridden in
 the dispatch section.
@@ -302,7 +308,11 @@ class Dispatcher(Thread):
                                          defaults.get('connection_parameters'))
         host = info_dict['host']
         path = os.path.join(info_dict['directory'], info_dict['filepattern'])
-        path = compose(path, msg.data)
+        mda = msg.data.copy()
+        for key, aliases in defaults.get('aliases', {}).items():
+            if key in mda:
+                mda[key] = aliases.get(mda[key], mda[key])
+        path = compose(path, mda)
         return urljoin(host, path), connection_parameters
 
     def close(self):
