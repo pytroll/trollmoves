@@ -25,7 +25,7 @@ import logging
 import logging.handlers
 import os
 from threading import Lock, Timer
-from six.moves.urllib.parse import urlparse
+from six.moves.urllib.parse import urlparse, urlunparse
 import argparse
 
 from posttroll.message import Message
@@ -90,6 +90,8 @@ class MoveItMirror(MoveItBase):
             LOGGER.debug('Sending %s', str(new_msg))
             send(str(new_msg))
 
+        if "client_topic" not in attrs:
+            attrs["client_topic"] = None
         listeners = Listeners(publish_callback, **attrs)
 
         return listeners, foo
@@ -103,9 +105,23 @@ class Listeners(object):
 
     def __init__(self, callback, client_topic, providers, **attrs):
         self.listeners = []
+        if client_topic is None:
+            client_topic = []
+        else:
+            client_topic = [client_topic]
+
         for provider in providers.split():
-            self.listeners.append(Listener('tcp://' + provider, [client_topic],
-                                           callback, **attrs))
+            topic = client_topic
+            if '/' in provider:
+                parts = provider.split('/', 1)
+                provider = parts[0]
+                topic = ['/' + parts[1]]
+                LOGGER.info("Using provider-specific topic %s for %s",
+                            topic, provider)
+            self.listeners.append(Listener(
+                urlunparse(('tcp', provider, '', '', '', '')),
+                topic,
+                callback, **attrs))
 
     def start(self):
         for listener in self.listeners:

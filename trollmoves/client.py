@@ -90,7 +90,7 @@ def read_config(filename):
             continue
         else:
             res[section]["providers"] = [
-                "tcp://" + item for item in res[section]["providers"].split()
+                "tcp://" + item.split('/', 1)[0] for item in res[section]["providers"].split()
             ]
 
         if "destination" not in res[section]:
@@ -469,6 +469,17 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
             if val.get("heartbeat", False):
                 topics.append(SERVER_HEARTBEAT_TOPIC)
             for provider in chains[key]["providers"]:
+                if '/' in provider.split(':')[-1]:
+                    parts = urlparse(provider)
+                    if parts.scheme != '':
+                        provider = urlunparse((parts.scheme, parts.netloc,
+                                               '', '', '', ''))
+                    else:
+                        # If there's no scheme, urlparse thinks the
+                        # URI is a local file
+                        provider = urlunparse(('tcp', parts.path,
+                                               '', '', '', ''))
+                    topics.append(parts.path)
                 chains[key]["listeners"][provider] = Listener(
                     provider,
                     topics,
