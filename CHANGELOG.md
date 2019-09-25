@@ -1,4 +1,20 @@
-## Version v0.2.0 (2019/08/12)
+## Version 0.3.0 (2019/09/25)
+
+### Issues Closed
+
+* [Issue 38](https://github.com/pytroll/trollmoves/issues/38) - Add a decompressor for tar files
+
+In this release 1 issue was closed.
+
+### Pull Requests Merged
+
+#### Features added
+
+* [PR 37](https://github.com/pytroll/trollmoves/pull/37) - Add dispatcher utility
+
+In this release 1 pull request was closed.
+
+## Version 0.2.0 (2019/08/12)
 
 
 ### Pull Requests Merged
@@ -20,7 +36,7 @@
 
 In this release 9 pull requests were closed.
 
-## Version v0.1.3 (2019/04/10)
+## Version 0.1.3 (2019/04/10)
 
 ### Pull Requests Merged
 
@@ -31,7 +47,7 @@ In this release 9 pull requests were closed.
 
 In this release 2 pull requests were closed.
 
-## Version v0.1.2 (2019/01/21)
+## Version 0.1.2 (2019/01/21)
 
 
 ### Pull Requests Merged
