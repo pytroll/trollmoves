@@ -33,8 +33,8 @@ Format of the configuration file
 
 Example config::
 
-    client1:
-      host: ftp://ftp.client1.com
+    target1:
+      host: ftp://ftp.target1.com
       connection_parameters:
         connection_uptime: 60
       filepattern: '{platform_name}_{start_time}.{format}'
@@ -43,7 +43,7 @@ Example config::
         product:
           natural_color: dnc
           overview: ovw
-      dispatch:
+      dispatch_configs:
         - topics:
             - /level2/viirs
             - /level2/avhrr
@@ -76,16 +76,16 @@ Each host section have to contain the following information:
       See the trollsift documentation for details on the field formats.
     - `directory`: The directory to dispatch the data to on the receiving host.
       Can also make use of the fields from the message metadata.
-    - `dispatch`: the dispatch section describing what files to dispatch. See below.
+    - `dispatch_configs`: the dispatch_configs section describing what files to dispatch. See below.
     - `connection_parameters` (optional): Some extra connection parameters to
       pass to the moving function. See the `trollmoves.movers` module documentation.
     - `aliases` (optional): A dictionary of metadata items to change for the
       final filename. These are not taken into account for checking the conditions.
 
 Note that the `host`, `filepattern`, and `directory` items can be overridden in
-the dispatch section.
+the dispatch_configs section.
 
-The dispatch section contains a list of dispatch items. Each dispatch item have
+The dispatch_configs section contains a list of dispatch items. Each dispatch item have
 to contain the following information:
 
   - `topics`: the posttroll topics to listen to.
@@ -254,7 +254,7 @@ class Dispatcher(Thread):
         topics = set()
         try:
             for _client, client_config in new_config.items():
-                topics |= set(sum([item['topics'] for item in client_config['dispatch']], []))
+                topics |= set(sum([item['topics'] for item in client_config['dispatch_configs']], []))
             if self.topics != topics:
                 if self.listener is not None:
                     # FIXME: make sure to get the last messages though
@@ -284,7 +284,7 @@ class Dispatcher(Thread):
         """Get the destinations for this message."""
         destinations = []
         for client, config in self.config.items():
-            for item in config['dispatch']:
+            for item in config['dispatch_configs']:
                 # remove 'pytroll:/'
                 for topic in item['topics']:
                     msg.subject[9:].startswith(topic)

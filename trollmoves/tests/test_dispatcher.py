@@ -36,13 +36,13 @@ import yaml
 from trollmoves.dispatcher import Dispatcher, YAMLConfig, check_conditions
 
 test_yaml1 = """
-client1:
-  host: ftp://ftp.client1.com
+target1:
+  host: ftp://ftp.target1.com
   connection_parameters:
     connection_uptime: 20
   filepattern: '{platform_name}_{start_time:%Y%m%d%H%M}.{format}'
   directory: /input_data/{sensor}
-  dispatch:
+  dispatch_configs:
     - topics:
         - /level2/viirs
         - /level2/avhrr
@@ -66,13 +66,13 @@ client1:
 """
 
 test_yaml2 = test_yaml1 + """
-client2:
-  host: ssh://server.client2.com
+target2:
+  host: ssh://server.target2.com
   connection_parameters:
     ssh_key_filename: ~/.ssh/rsa_id.pub
   filepattern: 'sat_{start_time:%Y%m%d%H%M}_{platform_name}.{format}'
   directory: /satellite/{sensor}
-  dispatch:
+  dispatch_configs:
     - topics:
         - /level2/viirs
         - /level2/avhrr
@@ -209,7 +209,7 @@ def test_get_destinations():
             msg.subject = 'pytroll://level2/viirs'
             msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
                         'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif'}
-            expected_url = 'ftp://ftp.client1.com/input_data/viirs/NOAA-20_201909190919.tif'
+            expected_url = 'ftp://ftp.target1.com/input_data/viirs/NOAA-20_201909190919.tif'
             expected_attrs = {'connection_uptime': 20}
 
             res = dp.get_destinations(msg)
@@ -224,8 +224,8 @@ def test_get_destinations():
 
 
 test_yaml_aliases = """
-client1:
-  host: ftp://ftp.client1.com
+target1:
+  host: ftp://ftp.target1.com
   connection_parameters:
     connection_uptime: 20
   filepattern: '{platform_name}_{product}_{start_time:%Y%m%d%H%M}.{format}'
@@ -235,7 +235,7 @@ client1:
       green_snow: gs
     variant:
       DR: direct_readout
-  dispatch:
+  dispatch_configs:
     - topics:
         - /level2/viirs
         - /level2/avhrr
@@ -271,7 +271,7 @@ def test_get_destinations_with_aliases():
             msg.subject = 'pytroll://level2/viirs'
             msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
                         'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif'}
-            expected_url = 'ftp://ftp.client1.com/input_data/viirs/NOAA-20_gs_201909190919.tif'
+            expected_url = 'ftp://ftp.target1.com/input_data/viirs/NOAA-20_gs_201909190919.tif'
             expected_attrs = {'connection_uptime': 20}
 
             res = dp.get_destinations(msg)
@@ -286,11 +286,11 @@ def test_get_destinations_with_aliases():
 
 
 test_local = """
-client3:
+target3:
   host: ""
   filepattern: '{platform_name}_{start_time:%Y%m%d%H%M}.{format}'
   directory: """ + os.path.join(gettempdir(), 'dptest') + """
-  dispatch:
+  dispatch_configs:
     - topics:
         - /level2/viirs
         - /level2/avhrr
