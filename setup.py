@@ -19,8 +19,7 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 #
 
-"""
-"""
+"""Setup file."""
 
 from setuptools import setup
 import versioneer
@@ -38,18 +37,19 @@ setup(name="trollmoves",
                    "Operating System :: OS Independent",
                    "Programming Language :: Python",
                    "Topic :: Scientific/Engineering"],
-      url="https://github.com/pytroll/pytroll-file-utils",
+      url="https://github.com/pytroll/trollmoves",
       scripts=['bin/move_it.py',
                'bin/move_it_server.py',
                'bin/move_it_client.py',
                'bin/move_it_mirror.py',
                'bin/remove_it.py',
+               'bin/dispatcher.py',
                ],
       data_files=[],
       packages=['trollmoves'],
       zip_safe=False,
       install_requires=['pyinotify', 'posttroll>=1.5.1',
                         'trollsift', 'netifaces',
-                        'pyzmq', 'six',
-                        'scp', 'paramiko'],
+                        'pyzmq', 'six', 'inotify',
+                        'scp', 'paramiko', 'pyyaml'],
       )

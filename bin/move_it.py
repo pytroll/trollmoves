@@ -455,7 +455,6 @@ class FileMover(Mover):
         shutil.move(self.origin, self.destination.path)
 
 
-
 class FtpMover(Mover):
 
     """Move files over ftp.
@@ -489,6 +488,7 @@ class FtpMover(Mover):
             connection.quit()
         except all_errors:
             connection.close()
+
 
 MOVERS = {'ftp': FtpMover,
           'file': FileMover,

@@ -1,0 +1,30 @@
+target1:
+  host: ftp://ftp.target1.com
+  connection_parameters:
+    connection_uptime: 60
+  filepattern: '{platform_name}_{start_time}.{format}'
+  directory: /input_data/{sensor}
+  aliases:
+    product:
+      natural_color: dnc
+      overview: ovw
+  dispatch_configs:
+    - topics:
+        - /level2/viirs
+        - /level2/avhrr
+      conditions:
+        # key matches metadata items or provides default
+        - product: [green_snow, true_color]
+          sensor: viirs
+        - product: [green_snow, overview]
+          sensor: avhrr
+          # special section "except" for negating
+          except:
+            platform_name: NOAA-15
+    - topics:
+        - /level3/cloudtype
+      directory: /input/cloud_products
+      conditions:
+        - area: omerc_bb
+          daylight: '<30'
+          coverage: '>50'
