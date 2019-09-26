@@ -176,6 +176,9 @@ class Listener(Thread):
                         continue
                     if msg.type == "push":
                         add_to_ongoing(msg)
+                    if msg.type == "ack":
+                        _ = add_to_file_cache(msg)
+                        _ = clean_transfer_cache(get_msg_uid(msg))
 
                     # If this is a hot spare client, wait for a while
                     # for a public "push" message which will update
@@ -192,6 +195,13 @@ class Listener(Thread):
         if self.subscriber is not None:
             self.subscriber.close()
             self.subscriber = None
+
+
+def clean_transfer_cache(uid):
+    """Clear transfer for the given UID from the cache."""
+    with ongoing_transfers_lock:
+        msgs = ongoing_transfers.pop(uid, [])
+    return msgs
 
 
 def unpack_tar(filename, delete=False):
@@ -343,8 +353,7 @@ def send_ack(msg, timeout):
 
 def terminate_transfers(uid, timeout):
     """Send ACK to remaining sources for uid and remove from the ongoing tranfers list."""
-    with ongoing_transfers_lock:
-        msgs = ongoing_transfers.pop(uid, [])
+    msgs = clean_transfer_cache(uid)
     for msg in msgs:
         send_ack(msg, timeout)
 
