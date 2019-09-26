@@ -21,6 +21,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+"""Trollmoves client."""
+
 import logging
 import os
 import socket
@@ -44,7 +46,7 @@ from posttroll.subscriber import Subscriber
 
 from trollmoves import heartbeat_monitor
 from trollmoves.utils import get_local_ips
-from trollmoves.utils import gen_dict_extract, translate_dict, translate_dict_value
+from trollmoves.utils import gen_dict_extract, translate_dict
 
 LOGGER = logging.getLogger(__name__)
 
@@ -60,8 +62,7 @@ SERVER_HEARTBEAT_TOPIC = "/heartbeat/move_it_server"
 
 # Config management
 def read_config(filename):
-    """Read the config file called *filename*.
-    """
+    """Read the config file called *filename*."""
     cp_ = RawConfigParser()
     cp_.read(filename)
 
@@ -119,12 +120,10 @@ def read_config(filename):
 
 
 class Listener(Thread):
-    '''PyTroll listener class for reading messages for Trollduction
-    '''
+    """PyTroll listener class for reading messages for Trollduction."""
 
     def __init__(self, address, topics, callback, *args, **kwargs):
-        '''Init Listener object
-        '''
+        """Init Listener object."""
         super(Listener, self).__init__()
 
         self.topics = topics
@@ -137,9 +136,7 @@ class Listener(Thread):
         self.restart_event = Event()
 
     def create_subscriber(self):
-        '''Create a subscriber instance using specified addresses and
-        message types.
-        '''
+        """Create a subscriber using specified addresses and message types."""
         if self.subscriber is None:
             if self.topics:
                 LOGGER.info("Subscribing to %s with topics %s",
@@ -148,9 +145,7 @@ class Listener(Thread):
                 LOGGER.debug("Subscriber %s", str(self.subscriber))
 
     def run(self):
-        '''Run listener
-        '''
-
+        """Run listener."""
         with heartbeat_monitor.Monitor(self.restart_event, **self.ckwargs) as beat_monitor:
 
             self.running = True
@@ -185,8 +180,7 @@ class Listener(Thread):
                 LOGGER.debug("Exiting listener %s", str(self.address))
 
     def stop(self):
-        '''Stop subscriber and delete the instance
-        '''
+        """Stop subscriber and delete the instance."""
         self.running = False
         time.sleep(1)
         if self.subscriber is not None:
@@ -233,6 +227,7 @@ def resend_if_local(msg, publisher):
 
 
 def create_push_req_message(msg, destination, login):
+    """Create a message for push request."""
     fake_req = Message(msg.subject, 'push', data=msg.data.copy())
     duri = urlparse(destination)
     scheme = duri.scheme or 'file'
@@ -259,7 +254,7 @@ def create_local_dir(destination, local_root, mode=0o777):
 
 
 def unpack_and_create_local_message(msg, local_dir, unpack=None, delete=False):
-
+    """Unpack files and send a message of with the extracted files."""
     def unpack_callback(var):
         if not var['uid'].endswith(unpack):
             return var
@@ -286,6 +281,7 @@ def unpack_and_create_local_message(msg, local_dir, unpack=None, delete=False):
 
 
 def make_uris(msg, destination, login=None):
+    """Create local URIs for the received files."""
     duri = urlparse(destination)
     scheme = duri.scheme or 'ssh'
     dest_hostname = duri.hostname or socket.gethostname()
@@ -307,6 +303,7 @@ def make_uris(msg, destination, login=None):
 
 
 def replace_mda(msg, kwargs):
+    """Replace messate metadata with itmes in kwargs dict."""
     for key in msg.data:
         if key in kwargs:
             replacement = dict(item.split(':')
@@ -522,6 +519,7 @@ class PushRequester(object):
     request_retries = 3
 
     def __init__(self, host, port):
+        """Initialize pish request."""
         self._socket = None
         self._reqaddress = "tcp://" + host + ":" + str(port)
         self._poller = Poller()
@@ -546,16 +544,16 @@ class PushRequester(object):
         self._poller.unregister(self._socket)
 
     def reset_connection(self):
-        """Reset the socket
-        """
+        """Reset the socket."""
         self.stop()
         self.connect()
 
     def __del__(self, *args, **kwargs):
+        """Stop the push requester when deleted."""
         self.stop()
 
     def send_and_recv(self, msg, timeout=DEFAULT_REQ_TIMEOUT):
-
+        """Send a message end receive a response."""
         with self._lock:
             retries_left = self.request_retries
             request = str(msg)
@@ -610,21 +608,19 @@ class PushRequester(object):
 
 
 class EventHandler(pyinotify.ProcessEvent):
-    """Handle events with a generic *fun* function.
-    """
+    """Handle events with a generic *fun* function."""
 
     def __init__(self, fun, *args, **kwargs):
+        """Initialize handler."""
         pyinotify.ProcessEvent.__init__(self, *args, **kwargs)
         self._fun = fun
 
     def process_IN_CLOSE_WRITE(self, event):
-        """On closing after writing.
-        """
+        """Process on closing after writing."""
         self._fun(event.pathname)
 
     def process_IN_CREATE(self, event):
-        """On closing after linking.
-        """
+        """Process on closing after linking."""
         try:
             if os.stat(event.pathname).st_nlink > 1:
                 self._fun(event.pathname)
@@ -632,22 +628,25 @@ class EventHandler(pyinotify.ProcessEvent):
             return
 
     def process_IN_MOVED_TO(self, event):
-        """On closing after moving.
-        """
+        """Process on closing after moving."""
         self._fun(event.pathname)
 
 
 class StatCollector(object):
+    """StatCollector class."""
 
     def __init__(self, statfile):
+        """Initialize collector."""
         self.statfile = statfile
 
     def collect(self, msg, *args, **kwargs):
+        """Collect."""
         with open(self.statfile, 'a') as fd:
             fd.write(time.asctime() + " - " + str(msg) + "\n")
 
 
 def terminate(chains):
+    """Terminate client chains."""
     for chain in six.itervalues(chains):
         for listener in chain["listeners"].values():
             listener.stop()
