@@ -174,7 +174,13 @@ class Listener(Thread):
                     beat_monitor(msg)
                     if msg.type == "beat":
                         continue
+                    if msg.type == "push":
+                        add_to_ongoing(msg)
 
+                    # If this is a hot spare client, wait for a while
+                    # for a public "push" message which will update
+                    # the ongoing transfers before starting processing here
+                    time.sleep(float(self.ckwargs.get("processing_delay", 0.0)))
                     self.callback(msg, *self.cargs, **self.ckwargs)
 
                 LOGGER.debug("Exiting listener %s", str(self.address))
@@ -368,15 +374,33 @@ def get_next_msg(uid):
         return ongoing_transfers[uid].pop(0)
 
 
-def request_push(msg, destination, login, publisher=None, unpack=None, delete=False, **kwargs):
-    """Request a push for data."""
+def add_to_ongoing(msg):
+    """Add message to ongoing transfers.
+
+    Return True if similar message was already received, False otherwise.
+    """
     huid = get_msg_uid(msg)
     with ongoing_transfers_lock:
         if huid in ongoing_transfers:
             ongoing_transfers[huid].append(msg)
-            return
+            return None
         else:
             ongoing_transfers[huid] = [msg]
+            return huid
+
+
+def add_to_file_cache(msg):
+    """Add files in the message to received file cache."""
+    with cache_lock:
+        for uid in gen_dict_extract(msg.data, 'uid'):
+            file_cache.append(uid)
+
+
+def request_push(msg, destination, login, publisher=None, unpack=None, delete=False, **kwargs):
+    """Request a push for data."""
+    huid = add_to_ongoing(msg)
+    if huid is None:
+        return
 
     if already_received(msg):
         timeout = float(kwargs["req_timeout"])
@@ -393,9 +417,8 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
 
         if response and response.type in ['file', 'collection', 'dataset']:
             LOGGER.debug("Server done sending file")
-            with cache_lock:
-                for uid in gen_dict_extract(msg.data, 'uid'):
-                    file_cache.append(uid)
+            add_to_file_cache(msg)
+            publisher.send(str(msg))
             try:
                 lmsg = unpack_and_create_local_message(response, local_dir, unpack, delete)
             except IOError:
