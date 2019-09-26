@@ -380,7 +380,8 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
 
     if already_received(msg):
         timeout = float(kwargs["req_timeout"])
-        return send_ack(msg, timeout)
+        send_ack(msg, timeout)
+        return
 
     for msg in iterate_messages(huid):
         req, fake_req = create_push_req_message(msg, destination, login)
