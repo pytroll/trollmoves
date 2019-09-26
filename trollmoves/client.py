@@ -174,8 +174,13 @@ class Listener(Thread):
                     beat_monitor(msg)
                     if msg.type == "beat":
                         continue
+                    # Handle public "push" messages as a hot spare client
                     if msg.type == "push":
+                        # TODO: these need to be checked and acted if
+                        # the transfers are not finished on primary
+                        # client and are not cleared
                         add_to_ongoing(msg)
+                    # Handle public "ack" messages as a hot spare client
                     if msg.type == "ack":
                         _ = add_to_file_cache(msg)
                         _ = clean_transfer_cache(get_msg_uid(msg))
@@ -427,6 +432,7 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
         if response and response.type in ['file', 'collection', 'dataset']:
             LOGGER.debug("Server done sending file")
             add_to_file_cache(msg)
+            # TODO: replace msg.type to "ack" IF hot spares are configured
             publisher.send(str(msg))
             try:
                 lmsg = unpack_and_create_local_message(response, local_dir, unpack, delete)
