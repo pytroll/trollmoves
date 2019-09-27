@@ -28,9 +28,12 @@ configuration file can be triggered with a `kill -10 <dispatcher pid>`.
 
 import argparse
 import logging
+import logging.config
 import logging.handlers
 import os
 import sys
+
+import yaml
 
 from trollmoves.dispatcher import Dispatcher
 
@@ -46,6 +49,12 @@ log_levels = {
 
 def setup_logging(cmd_args):
     """Set up logging."""
+    if cmd_args.log_config is not None:
+        with open(cmd_args.log_config) as fd:
+            log_dict = yaml.load(fd.read())
+            logging.config.dictConfig(log_dict)
+            return
+
     root = logging.getLogger('')
     root.setLevel(log_levels[cmd_args.verbosity])
 
@@ -70,10 +79,12 @@ def main():
                         help="The configuration file to run on.")
     parser.add_argument("-l", "--log",
                         help="The file to log to. stdout otherwise.")
+    parser.add_argument("-c", "--log-config",
+                        help="Log config file to use instead of the standard logging.")
     parser.add_argument("-v", "--verbose", dest="verbosity", action="count", default=0,
                         help="Verbosity (between 1 and 2 occurrences with more leading to more "
                         "verbose logging). WARN=0, INFO=1, "
-                        "DEBUG=2")
+                        "DEBUG=2. This is overridden by the log config file if specified.")
     cmd_args = parser.parse_args()
 
     setup_logging(cmd_args)
@@ -91,7 +102,6 @@ def main():
         logger.debug("Interrupting")
     finally:
         dispatcher.close()
-
 
 if __name__ == '__main__':
     main()
