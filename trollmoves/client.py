@@ -183,7 +183,7 @@ class Listener(Thread):
                     # Handle public "ack" messages as a hot spare client
                     if msg.type == "ack":
                         _ = add_to_file_cache(msg)
-                        _ = clean_transfer_cache(get_msg_uid(msg))
+                        _ = clean_ongoing_transfer(get_msg_uid(msg))
 
                     # If this is a hot spare client, wait for a while
                     # for a public "push" message which will update
@@ -202,7 +202,7 @@ class Listener(Thread):
             self.subscriber = None
 
 
-def clean_transfer_cache(uid):
+def clean_ongoing_transfer(uid):
     """Clear transfer for the given UID from the cache."""
     with ongoing_transfers_lock:
         msgs = ongoing_transfers.pop(uid, [])
@@ -358,7 +358,7 @@ def send_ack(msg, timeout):
 
 def terminate_transfers(uid, timeout):
     """Send ACK to remaining sources for uid and remove from the ongoing tranfers list."""
-    msgs = clean_transfer_cache(uid)
+    msgs = clean_ongoing_transfer(uid)
     for msg in msgs:
         send_ack(msg, timeout)
 
