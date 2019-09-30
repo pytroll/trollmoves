@@ -9,12 +9,6 @@ handlers:
     level: DEBUG
     formatter: pytroll
     stream: ext://sys.stdout
-  monitor:
-    (): pytroll_monitor.op5_logger.AsyncOP5Handler
-    auth: ['mylogin', 'securepassword']
-    service: that_stuff_we_should_monitor
-    server: monitoring_server.myworkplace.com
-    host: server_we_run_stuff_on
 root:
   level: DEBUG
   handlers: [console, monitor]
