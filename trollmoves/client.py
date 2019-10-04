@@ -179,9 +179,12 @@ class Listener(Thread):
                         # TODO: these need to be checked and acted if
                         # the transfers are not finished on primary
                         # client and are not cleared
+                        LOGGER.debug("Primary client published 'push'")
                         add_to_ongoing(msg)
+
                     # Handle public "ack" messages as a hot spare client
                     if msg.type == "ack":
+                        LOGGER.debug("Primary client finished transfer")
                         _ = add_to_file_cache(msg)
                         _ = clean_ongoing_transfer(get_msg_uid(msg))
 
@@ -206,6 +209,7 @@ def clean_ongoing_transfer(uid):
     """Clear transfer for the given UID from the cache."""
     with ongoing_transfers_lock:
         msgs = ongoing_transfers.pop(uid, [])
+        LOGGER.debug("Remove uid %s: %s", uid, str(msgs))
     return msgs
 
 
@@ -407,6 +411,7 @@ def add_to_file_cache(msg):
     """Add files in the message to received file cache."""
     with cache_lock:
         for uid in gen_dict_extract(msg.data, 'uid'):
+            LOGGER.debug("Add %s to file cache", str(uid))
             file_cache.append(uid)
 
 
@@ -427,6 +432,7 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
         timeout = float(kwargs["transfer_req_timeout"])
         local_dir = create_local_dir(destination, kwargs.get('ftp_root', '/'))
 
+        publisher.send(str(fake_req))
         response, hostname = send_request(msg, req, timeout)
 
         if response and response.type in ['file', 'collection', 'dataset']:
@@ -434,7 +440,7 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
             add_to_file_cache(msg)
             # Send an 'ack' message so that possible hot spares know
             # the primary has completed the request
-            msg = Message(msg.topic, 'ack', msg.data)
+            msg = Message(msg.subject, 'ack', msg.data)
             LOGGER.debug("Sending a public 'ack' of completed transfer: %s",
                          str(msg))
             publisher.send(str(msg))
@@ -520,6 +526,8 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
                         provider = urlunparse(('tcp', parts.path,
                                                '', '', '', ''))
                     topics.append(parts.path)
+                LOGGER.debug("Add listener for %s with topic %s",
+                             provider, str(topics))
                 chains[key]["listeners"][provider] = Listener(
                     provider,
                     topics,
