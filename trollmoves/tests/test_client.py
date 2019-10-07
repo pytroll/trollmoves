@@ -32,7 +32,9 @@ MSG_PUSH = Message('/topic', 'push', data={'uid': 'file1'})
 MSG_ACK = Message('/topic', 'ack', data={'uid': 'file1'})
 MSG_FILE1 = Message('/topic', 'file', data={'uid': 'file1'})
 UID_FILE1 = "826e8142e6baabe8af779f5f490cf5f5"
-MSG_FILE2 = Message('/topic', 'file', data={'uid': 'file2'})
+MSG_FILE2 = Message('/topic', 'file', data={'uid': 'file2',
+                                            'request_address': '127.0.0.1:0'})
+UID_FILE2 = '1c1c96fd2cf8330db0bfa936ce82f3b9'
 MSG_BEAT = Message('/topic', 'beat', data={'uid': 'file1'})
 
 
@@ -176,3 +178,41 @@ def test_add_to_file_cache(lock):
     assert len(lock_cm.mock_calls) == 3
     assert len(file_cache) == 2
     assert MSG_FILE2.data['uid'] in file_cache
+
+
+@patch('trollmoves.client.add_to_ongoing')
+@patch('trollmoves.client.ongoing_transfers')
+@patch('trollmoves.client.terminate_transfers')
+@patch('trollmoves.client.send_request')
+@patch('trollmoves.client.send_ack')
+def test_request_push(send_ack, send_request, terminate_transfers,
+                      ongoing_transfers, add_to_ongoing):
+    """Test trollmoves.client.request_push()."""
+    from trollmoves.client import request_push, file_cache
+    from tempfile import gettempdir
+
+    ongoing_transfers[UID_FILE2].pop.return_value = MSG_FILE2
+    send_request.return_value = [MSG_FILE2, 'localhost']
+    publisher = MagicMock()
+    kwargs = {'transfer_req_timeout': 1.0, 'req_timeout': 1.0}
+
+    request_push(MSG_FILE2, gettempdir(), 'login', publisher=publisher,
+                 **kwargs)
+
+    send_request.assert_called_once()
+    send_ack.assert_not_called()
+    # The file should be added to ongoing transfers
+    add_to_ongoing.assert_called_once()
+    # And removed
+    ongoing_transfers[UID_FILE2].pop.assert_called_once()
+    # The transferred file should be in the cache
+    assert MSG_FILE2.data['uid'] in file_cache
+    assert len(file_cache) == 1
+
+    # Request the same file again. Now the transfer should not be
+    # started again, and `send_ack()` should be called.
+    request_push(MSG_FILE2, gettempdir(), 'login', publisher=publisher,
+                 **kwargs)
+
+    send_ack.assert_called_once()
+    send_request.assert_called_once()
