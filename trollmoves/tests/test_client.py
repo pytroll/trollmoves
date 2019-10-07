@@ -35,9 +35,9 @@ MSG_FILE2 = Message('/topic', 'file', data={'uid': 'file2'})
 MSG_BEAT = Message('/topic', 'beat', data={'uid': 'file1'})
 
 
-@patch('trollmoves.heartbeat_monitor')
+@patch('trollmoves.heartbeat_monitor.Monitor')
 @patch('trollmoves.client.Subscriber')
-def test_listener(Subscriber, heartbeat_monitor):
+def test_listener(Subscriber, Monitor):
     """Test listener."""
     from trollmoves.client import Listener, ongoing_transfers, file_cache
 
@@ -47,6 +47,7 @@ def test_listener(Subscriber, heartbeat_monitor):
 
     # Mock heartbeat monitor
     beat_monitor = MagicMock()
+    Monitor.return_value.__enter__.return_value = beat_monitor
     # Mock callback
     callback = MagicMock()
 
@@ -70,7 +71,7 @@ def test_listener(Subscriber, heartbeat_monitor):
     # "Receive" no message, and a 'push' message
     subscriber.return_value = [None, MSG_PUSH]
     # Raise something to stop listener
-    callback.side_effect = [None, StopIteration]
+    callback.side_effect = [StopIteration]
     try:
         listener.run()
     except StopIteration:
@@ -80,7 +81,7 @@ def test_listener(Subscriber, heartbeat_monitor):
     assert len(callback.mock_calls) == 1
     assert listener.subscriber is subscriber
     assert listener.running
-    heartbeat_monitor.assert_called()
+    beat_monitor.assert_called()
 
     # Reset
     ongoing_transfers = {}
@@ -99,7 +100,7 @@ def test_listener(Subscriber, heartbeat_monitor):
 
     # Receive also a 'file' and 'beat' messages
     subscriber.return_value = [MSG_PUSH, MSG_ACK, MSG_BEAT, MSG_FILE1]
-    callback.side_effect = [None, None, None, StopIteration]
+    callback.side_effect = [None, None, StopIteration]
     try:
         listener.run()
     except StopIteration:
@@ -107,7 +108,7 @@ def test_listener(Subscriber, heartbeat_monitor):
     assert len(file_cache) == 1
     assert len(ongoing_transfers) == 0
     # Messages with type 'beat' don't increment callback call-count
-    assert len(callback.mock_calls) == 7
+    assert len(callback.mock_calls) == 6
 
     # Test listener.stop()
     listener.stop()
