@@ -433,7 +433,8 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
         timeout = float(kwargs["transfer_req_timeout"])
         local_dir = create_local_dir(destination, kwargs.get('ftp_root', '/'))
 
-        publisher.send(str(fake_req))
+        if publisher:
+            publisher.send(str(fake_req))
         response, hostname = send_request(msg, req, timeout)
 
         if response and response.type in ['file', 'collection', 'dataset']:
