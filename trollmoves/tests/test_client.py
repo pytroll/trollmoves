@@ -147,3 +147,32 @@ def test_add_to_ongoing(lock):
     assert len(lock_cm.mock_calls) == 3
     assert res is not None
     assert len(ongoing_transfers) == 2
+
+
+@patch('trollmoves.client.cache_lock')
+def test_add_to_file_cache(lock):
+    """Test trollmoves.client.add_to_file_cache()."""
+    from trollmoves.client import add_to_file_cache, file_cache
+
+    # Mock the lock context manager
+    lock_cm = MagicMock()
+    lock.__enter__ = lock_cm
+
+    # Add a file to cache
+    add_to_file_cache(MSG_FILE1)
+    lock_cm.assert_called_once()
+    assert len(file_cache) == 1
+    assert MSG_FILE1.data['uid'] in file_cache
+
+    # Add the same file again
+    add_to_file_cache(MSG_FILE1)
+    assert len(lock_cm.mock_calls) == 2
+    # The file should be there only once
+    assert len(file_cache) == 1
+    assert MSG_FILE1.data['uid'] in file_cache
+
+    # Add another file
+    add_to_file_cache(MSG_FILE2)
+    assert len(lock_cm.mock_calls) == 3
+    assert len(file_cache) == 2
+    assert MSG_FILE2.data['uid'] in file_cache
