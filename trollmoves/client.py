@@ -411,8 +411,9 @@ def add_to_file_cache(msg):
     """Add files in the message to received file cache."""
     with cache_lock:
         for uid in gen_dict_extract(msg.data, 'uid'):
-            LOGGER.debug("Add %s to file cache", str(uid))
-            file_cache.append(uid)
+            if uid not in file_cache:
+                LOGGER.debug("Add %s to file cache", str(uid))
+                file_cache.append(uid)
 
 
 def request_push(msg, destination, login, publisher=None, unpack=None, delete=False, **kwargs):
