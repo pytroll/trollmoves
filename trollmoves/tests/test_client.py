@@ -87,7 +87,7 @@ def test_listener(Subscriber, Monitor):
     beat_monitor.assert_called()
 
     # Reset
-    ongoing_transfers = {}
+    ongoing_transfers = dict()
 
     # "Receive" 'push' and 'ack' messages
     subscriber.return_value = [MSG_PUSH, MSG_ACK]
@@ -156,6 +156,9 @@ def test_add_to_file_cache(lock):
     """Test trollmoves.client.add_to_file_cache()."""
     from trollmoves.client import add_to_file_cache, file_cache
 
+    # Clear file cache, the other tests have added stuff in it
+    file_cache.clear()
+
     # Mock the lock context manager
     lock_cm = MagicMock()
     lock.__enter__ = lock_cm
@@ -190,6 +193,9 @@ def test_request_push(send_ack, send_request, terminate_transfers,
     """Test trollmoves.client.request_push()."""
     from trollmoves.client import request_push, file_cache
     from tempfile import gettempdir
+
+    # Clear file cache, the other tests have added stuff in it
+    file_cache.clear()
 
     ongoing_transfers[UID_FILE2].pop.return_value = MSG_FILE2
     send_request.return_value = [MSG_FILE2, 'localhost']
