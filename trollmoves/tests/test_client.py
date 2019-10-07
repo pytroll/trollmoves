@@ -31,6 +31,7 @@ from posttroll.message import Message
 MSG_PUSH = Message('/topic', 'push', data={'uid': 'file1'})
 MSG_ACK = Message('/topic', 'ack', data={'uid': 'file1'})
 MSG_FILE1 = Message('/topic', 'file', data={'uid': 'file1'})
+UID_FILE1 = "826e8142e6baabe8af779f5f490cf5f5"
 MSG_FILE2 = Message('/topic', 'file', data={'uid': 'file2'})
 MSG_BEAT = Message('/topic', 'beat', data={'uid': 'file1'})
 
@@ -115,3 +116,34 @@ def test_listener(Subscriber, Monitor):
     assert listener.running is False
     subscriber.close.assert_called_once()
     assert listener.subscriber is None
+
+
+@patch('trollmoves.client.ongoing_transfers_lock')
+def test_add_to_ongoing(lock):
+    """Test add_to_ongoing()."""
+    from trollmoves.client import add_to_ongoing, ongoing_transfers
+
+    # Mock the lock context manager
+    lock_cm = MagicMock()
+    lock.__enter__ = lock_cm
+
+    # Add a message to ongoing transfers
+    res = add_to_ongoing(MSG_FILE1)
+    lock_cm.assert_called_once()
+    assert res is not None
+    assert len(ongoing_transfers) == 1
+    assert isinstance(ongoing_transfers[UID_FILE1], list)
+    assert len(ongoing_transfers[UID_FILE1]) == 1
+
+    # Add the same message again
+    res = add_to_ongoing(MSG_FILE1)
+    assert len(lock_cm.mock_calls) == 2
+    assert res is None
+    assert len(ongoing_transfers) == 1
+    assert len(ongoing_transfers[UID_FILE1]) == 2
+
+    # Another message, a new ongoing transfer is added
+    res = add_to_ongoing(MSG_FILE2)
+    assert len(lock_cm.mock_calls) == 3
+    assert res is not None
+    assert len(ongoing_transfers) == 2
