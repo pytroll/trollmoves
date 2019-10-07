@@ -439,12 +439,13 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
         if response and response.type in ['file', 'collection', 'dataset']:
             LOGGER.debug("Server done sending file")
             add_to_file_cache(msg)
-            # Send an 'ack' message so that possible hot spares know
-            # the primary has completed the request
-            msg = Message(msg.subject, 'ack', msg.data)
-            LOGGER.debug("Sending a public 'ack' of completed transfer: %s",
-                         str(msg))
-            publisher.send(str(msg))
+            if publisher:
+                # Send an 'ack' message so that possible hot spares know
+                # the primary has completed the request
+                msg = Message(msg.subject, 'ack', msg.data)
+                LOGGER.debug("Sending a public 'ack' of completed transfer: %s",
+                             str(msg))
+                publisher.send(str(msg))
             try:
                 lmsg = unpack_and_create_local_message(response, local_dir, unpack, delete)
             except IOError:
