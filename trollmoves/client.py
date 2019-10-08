@@ -554,9 +554,10 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
     # disable old chains
 
     for key in (set(chains.keys()) - set(new_chains.keys())):
-        for provider, listener in chains[key]["providers"].items():
+        for provider in chains[key]["providers"]:
+            listener = chains[key]["listeners"][provider]
             listener.stop()
-            del chains[key]["providers"][provider]
+            del chains[key]["listeners"][provider]
 
         if "publisher" in chains[key]:
             chains[key]["publisher"].stop()
