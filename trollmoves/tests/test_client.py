@@ -23,7 +23,7 @@
 """Test the trollmoves client."""
 
 from unittest.mock import MagicMock, patch
-from tempfile import NamedTemporaryFile, gettempdir
+from tempfile import NamedTemporaryFile
 import os
 
 from posttroll.message import Message
