@@ -23,6 +23,8 @@
 """Test the trollmoves client."""
 
 from unittest.mock import MagicMock, patch
+from tempfile import NamedTemporaryFile, gettempdir
+import os
 
 from posttroll.message import Message
 
@@ -36,6 +38,17 @@ MSG_FILE2 = Message('/topic', 'file', data={'uid': 'file2',
                                             'request_address': '127.0.0.1:0'})
 UID_FILE2 = '1c1c96fd2cf8330db0bfa936ce82f3b9'
 MSG_BEAT = Message('/topic', 'beat', data={'uid': 'file1'})
+
+CLIENT_CONFIG = """
+# Example acting as a hot spare
+[eumetcast_hrit_0deg_scp_hot_spare]
+providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
+destination = scp:///tmp/foo
+login = user
+topic = /1b/hrit-segment/0deg
+publish_port = 0
+processing_delay = 0.02
+"""
 
 
 @patch('trollmoves.heartbeat_monitor.Monitor')
@@ -222,3 +235,25 @@ def test_request_push(send_ack, send_request, terminate_transfers,
 
     send_ack.assert_called_once()
     send_request.assert_called_once()
+
+
+def test_read_config():
+    """Test config handling."""
+    from trollmoves.client import read_config
+    with NamedTemporaryFile('w', delete=False) as fid:
+        config_fname = fid.name
+        fid.write(CLIENT_CONFIG)
+    try:
+        conf = read_config(config_fname)
+    finally:
+        os.remove(config_fname)
+
+    # Test that required things are present
+    section_name = "eumetcast_hrit_0deg_scp_hot_spare"
+    assert section_name in conf
+    section_keys = conf[section_name].keys()
+    for key in ["delete", "working_directory", "compression",
+                "heartbeat", "req_timeout", "transfer_req_timeout",
+                "nameservers", "providers", "topic", "publish_port", ]:
+        assert key in section_keys
+    assert isinstance(conf[section_name]["providers"], list)
