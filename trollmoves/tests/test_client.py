@@ -39,7 +39,7 @@ MSG_FILE2 = Message('/topic', 'file', data={'uid': 'file2',
 UID_FILE2 = '1c1c96fd2cf8330db0bfa936ce82f3b9'
 MSG_BEAT = Message('/topic', 'beat', data={'uid': 'file1'})
 
-CLIENT_CONFIG = """
+CLIENT_CONFIG_1_ITEM = """
 # Example acting as a hot spare
 [eumetcast_hrit_0deg_scp_hot_spare]
 providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
@@ -48,6 +48,24 @@ login = user
 topic = /1b/hrit-segment/0deg
 publish_port = 0
 processing_delay = 0.02
+"""
+
+CLIENT_CONFIG_2_ITEMS = """
+# Example acting as a hot spare
+[eumetcast_hrit_0deg_scp_hot_spare]
+providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
+destination = scp:///tmp/foo
+login = user
+topic = /1b/hrit-segment/0deg
+publish_port = 0
+processing_delay = 0.02
+
+[foo]
+providers = bar
+destination = scp:///tmp/foo
+login = user
+topic = /1b/hrit-segment/0deg
+publish_port = 0
 """
 
 
@@ -242,7 +260,7 @@ def test_read_config():
     from trollmoves.client import read_config
     with NamedTemporaryFile('w', delete=False) as fid:
         config_fname = fid.name
-        fid.write(CLIENT_CONFIG)
+        fid.write(CLIENT_CONFIG_1_ITEM)
     try:
         conf = read_config(config_fname)
     finally:
@@ -257,3 +275,62 @@ def test_read_config():
                 "nameservers", "providers", "topic", "publish_port", ]:
         assert key in section_keys
     assert isinstance(conf[section_name]["providers"], list)
+
+
+@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.Listener')
+def test_reload_config(Listener, NoisyPublisher):
+    """Test trollmoves.client.reload_config(), which also builds the chains."""
+    from trollmoves.client import reload_config
+
+    with NamedTemporaryFile('w', delete=False) as fid:
+        config_fname_1 = fid.name
+        fid.write(CLIENT_CONFIG_1_ITEM)
+    with NamedTemporaryFile('w', delete=False) as fid:
+        config_fname_2 = fid.name
+        fid.write(CLIENT_CONFIG_2_ITEMS)
+
+    chains = {}
+    callback = MagicMock()
+
+    try:
+        reload_config(config_fname_1, chains, callback=callback,
+                      pub_instance='pub')
+        section_name = "eumetcast_hrit_0deg_scp_hot_spare"
+        assert section_name in chains
+        listeners = chains[section_name]['listeners']
+        assert len(listeners) == 4
+        # The same listener was used for all, so it should have been
+        # started four times
+        for key in listeners:
+            assert listeners[key].start.call_count == 4
+        NoisyPublisher.assert_called_once()
+        chains[section_name]['publisher'].start.assert_called_once()
+
+        # Reload the same config again, nothing should happen
+        reload_config(config_fname_1, chains, callback=callback,
+                      pub_instance='pub')
+        for key in listeners:
+            assert listeners[key].start.call_count == 4
+        NoisyPublisher.assert_called_once()
+        chains[section_name]['publisher'].start.assert_called_once()
+
+        # Load a new config with one new item
+        reload_config(config_fname_2, chains, callback=callback,
+                      pub_instance='pub')
+        assert len(chains) == 2
+        assert "foo" in chains
+        # One additional call to publisher and listener
+        assert NoisyPublisher.call_count == 2
+        assert Listener.call_count == 5
+
+        # Load the first config again, the other chain should have been removed
+        reload_config(config_fname_1, chains, callback=callback,
+                      pub_instance='pub')
+        assert "foo" not in chains
+        # No new calls to publisher nor listener
+        assert NoisyPublisher.call_count == 2
+        assert Listener.call_count == 5
+    finally:
+        os.remove(config_fname_1)
+        os.remove(config_fname_2)
