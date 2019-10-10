@@ -51,7 +51,7 @@ def setup_logging(cmd_args):
     """Set up logging."""
     if cmd_args.log_config is not None:
         with open(cmd_args.log_config) as fd:
-            log_dict = yaml.load(fd.read())
+            log_dict = yaml.safe_load(fd.read())
             logging.config.dictConfig(log_dict)
             return
 
