@@ -145,7 +145,6 @@ from six.moves.urllib.parse import urljoin
 
 import inotify.adapters
 from posttroll.listener import ListenerContainer
-from trollmoves.hooks import DummyHook
 from trollmoves.movers import move_it
 from trollmoves.utils import clean_url
 from trollsift import compose
@@ -403,30 +402,23 @@ def _check_condition(msg, key, value):
     return True
 
 
-def dispatch(source, destinations, hook=None):
-    """Dispatch source file to destinations.
-
-    *hook* is a monitoring hook.
-    """
-    if hook is None:
-        hook = DummyHook()
+def dispatch(source, destinations):
+    """Dispatch source file to destinations."""
     any_error = False
     # check that file actually exists
     if not os.path.exists(source):
         message = "Source file for dispatching does not exist:{}".format(str(source))
         logger.error(message)
-        hook.error(message)
         any_error = True
     # rename and send file with right protocol
     for url, params in destinations:
         try:
-            logger.info("Dispatching %s to %s", source, str(clean_url(url)))
+            logger.debug("Dispatching %s to %s", source, str(clean_url(url)))
             move_it(source, url, params)
         except Exception as err:
             message = "Could not dispatch to {}: {}".format(str(clean_url(url)),
                                                             str(err))
-            hook.error(message)
+            logger.error(message)
             any_error = True
     if not any_error:
-        hook.ok("Dispatched all files.")
-        logger.debug("Dispatched all files.")
+        logger.info("Dispatched all files.")
