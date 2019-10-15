@@ -47,6 +47,7 @@ from posttroll.subscriber import Subscriber
 from trollmoves import heartbeat_monitor
 from trollmoves.utils import get_local_ips
 from trollmoves.utils import gen_dict_extract, translate_dict
+from trollmoves.movers import CTimer
 
 LOGGER = logging.getLogger(__name__)
 
@@ -54,6 +55,8 @@ file_cache = deque(maxlen=11000)
 cache_lock = Lock()
 ongoing_transfers = dict()
 ongoing_transfers_lock = Lock()
+hot_spare_timer_lock = Lock()
+ongoing_hot_spare_timers = dict()
 
 DEFAULT_REQ_TIMEOUT = 1
 
@@ -191,8 +194,12 @@ class Listener(Thread):
                     # If this is a hot spare client, wait for a while
                     # for a public "push" message which will update
                     # the ongoing transfers before starting processing here
-                    time.sleep(float(self.ckwargs.get("processing_delay", 0.0)))
-                    self.callback(msg, *self.cargs, **self.ckwargs)
+                    delay = self.ckwargs.get("processing_delay", False)
+                    if delay:
+                        add_timer(float(delay), self.callback, msg, *self.cargs,
+                                  **self.ckwargs)
+                    else:
+                        self.callback(msg, *self.cargs, **self.ckwargs)
 
                 LOGGER.debug("Exiting listener %s", str(self.address))
 
@@ -392,12 +399,27 @@ def get_next_msg(uid):
         return ongoing_transfers[uid].pop(0)
 
 
+def add_timer(timeout, callback, msg, *args, **kwargs):
+    """Add a timer for hot spare."""
+    huid = get_msg_uid(msg)
+    cargs = [msg] + list(args)
+    with hot_spare_timer_lock:
+        timer = CTimer(timeout, callback, args=cargs, kwargs=kwargs)
+        ongoing_hot_spare_timers[huid] = timer
+        ongoing_hot_spare_timers[huid].start()
+    LOGGER.debug("Added timer for UID %s.", huid)
+
 def add_to_ongoing(msg):
     """Add message to ongoing transfers.
 
     Return True if similar message was already received, False otherwise.
     """
     huid = get_msg_uid(msg)
+    with hot_spare_timer_lock:
+        timer = ongoing_hot_spare_timers.pop(huid, None)
+        if timer is not None:
+            timer.cancel()
+            LOGGER.debug("Cleared timer for UID %s.", huid)
     with ongoing_transfers_lock:
         if huid in ongoing_transfers:
             ongoing_transfers[huid].append(msg)
