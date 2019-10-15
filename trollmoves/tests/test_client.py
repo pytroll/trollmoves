@@ -223,6 +223,7 @@ def test_add_to_ongoing(lock):
     timer.cancel.assert_called_once()
     assert len(ongoing_hot_spare_timers) == 0
 
+
 @patch('trollmoves.client.cache_lock')
 def test_add_to_file_cache(lock):
     """Test trollmoves.client.add_to_file_cache()."""
@@ -375,6 +376,7 @@ def test_reload_config(Listener, NoisyPublisher):
     finally:
         os.remove(config_fname_1)
         os.remove(config_fname_2)
+
 
 @patch('trollmoves.client.hot_spare_timer_lock')
 @patch('trollmoves.client.CTimer')
