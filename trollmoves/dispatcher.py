@@ -39,6 +39,12 @@ Example config::
         connection_uptime: 60
       filepattern: '{platform_name}_{start_time}.{format}'
       directory: /input_data/{sensor}
+      subscribe_addresses:
+        - tcp://127.0.0.1:40000
+      nameserver: 127.0.0.1
+      subscribe_services:
+        - service_name_1
+        - service_name_2
       aliases:
         product:
           natural_color: dnc
@@ -81,6 +87,9 @@ Each host section have to contain the following information:
       pass to the moving function. See the `trollmoves.movers` module documentation.
     - `aliases` (optional): A dictionary of metadata items to change for the
       final filename. These are not taken into account for checking the conditions.
+    - `nameserver` (optional): Address of a nameserver to connect to.  Default: 'localhost'.
+    - `addresses` (optional): List of TCP connections to listen for messages.
+    - `services` (optional): List of service names to subscribe to.  Default: connect to all services.
 
 Note that the `host`, `filepattern`, and `directory` items can be overridden in
 the dispatch_configs section.
@@ -259,7 +268,13 @@ class Dispatcher(Thread):
                     # FIXME: make sure to get the last messages though
                     self.listener.stop()
                 self.config = new_config
-                self.listener = ListenerContainer(topics)
+                addresses = client_config.get('subscribe_addresses', None)
+                nameserver = client_config.get('nameserver', 'localhost')
+                services = client_config.get('subscribe_services', '')
+                self.listener = ListenerContainer(topics=topics,
+                                                  addresses=addresses,
+                                                  nameserver=nameserver,
+                                                  services=services)
                 self.topics = topics
 
         except KeyError as err:

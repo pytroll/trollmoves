@@ -4,6 +4,12 @@ target1:
     connection_uptime: 60
   filepattern: '{platform_name}_{start_time}.{format}'
   directory: /input_data/{sensor}
+  subscribe_addresses:
+    - tcp://127.0.0.1:40000
+  nameserver: 127.0.0.1
+  subscribe_services:
+    - service_name_1
+    - service_name_2
   aliases:
     product:
       natural_color: dnc
