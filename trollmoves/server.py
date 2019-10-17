@@ -67,15 +67,17 @@ class ConfigError(Exception):
 
 class Deleter(Thread):
 
-    def __init__(self):
+    def __init__(self, attrs):
         Thread.__init__(self)
         self.queue = Queue()
         self.timer = None
         self.loop = True
+        self._attrs = attrs
 
     def add(self, filename):
         LOGGER.debug('Scheduling %s for removal', filename)
-        self.queue.put((filename, time.time() + 30))
+        remove_delay = int(self._attrs.get['remove_delay'], 1)
+        self.queue.put((filename, time.time() + 30 * remove_delay))
 
     def run(self):
         while self.loop:
@@ -135,7 +137,7 @@ class RequestManager(Thread):
         except KeyError:
             if 'listen' not in attrs:
                 raise
-        self._deleter = Deleter()
+        self._deleter = Deleter(attrs)
 
         try:
             self._station = self._attrs["station"]
