@@ -41,6 +41,7 @@ from posttroll import get_context
 from posttroll.message import Message, MessageError
 from posttroll.publisher import NoisyPublisher
 from posttroll.subscriber import Subscriber
+from trollsift.parser import compose
 
 from trollmoves import heartbeat_monitor
 from trollmoves.utils import get_local_ips
@@ -234,7 +235,11 @@ def resend_if_local(msg, publisher):
 
 def create_push_req_message(msg, destination, login):
     fake_req = Message(msg.subject, 'push', data=msg.data.copy())
-    duri = urlparse(destination)
+    try:
+        _destination = compose(destination, msg.data)
+    except:
+        _destination = destination
+    duri = urlparse(_destination)
     scheme = duri.scheme or 'file'
     dest_hostname = duri.hostname or socket.gethostname()
     fake_req.data["destination"] = urlunparse((scheme, dest_hostname, duri.path, "", "", ""))
@@ -286,7 +291,11 @@ def unpack_and_create_local_message(msg, local_dir, unpack=None, delete=False):
 
 
 def make_uris(msg, destination, login=None):
-    duri = urlparse(destination)
+    try:
+        _destination = compose(destination, msg.data)
+    except:
+        _destination = destination
+    duri = urlparse(_destination)
     scheme = duri.scheme or 'ssh'
     dest_hostname = duri.hostname or socket.gethostname()
     if socket.gethostbyname(dest_hostname) in get_local_ips():
