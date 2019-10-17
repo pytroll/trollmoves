@@ -76,7 +76,7 @@ class Deleter(Thread):
 
     def add(self, filename):
         LOGGER.debug('Scheduling %s for removal', filename)
-        remove_delay = int(self._attrs.get['remove_delay'], 1)
+        remove_delay = int(self._attrs.get('remove_delay', 1))
         self.queue.put((filename, time.time() + 30 * remove_delay))
 
     def run(self):
