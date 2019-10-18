@@ -237,7 +237,7 @@ def create_push_req_message(msg, destination, login):
     fake_req = Message(msg.subject, 'push', data=msg.data.copy())
     try:
         _destination = compose(destination, msg.data)
-    except:
+    except Exception as exp:
         _destination = destination
     duri = urlparse(_destination)
     scheme = duri.scheme or 'file'
@@ -293,7 +293,7 @@ def unpack_and_create_local_message(msg, local_dir, unpack=None, delete=False):
 def make_uris(msg, destination, login=None):
     try:
         _destination = compose(destination, msg.data)
-    except:
+    except Exception as exp:
         _destination = destination
     duri = urlparse(_destination)
     scheme = duri.scheme or 'ssh'
