@@ -266,8 +266,6 @@ class ScpMover(Mover):
 
         retries = 3
         ssh_key_filename = self.attrs.get("ssh_key_filename", None)
-        ssh_port = int(self.attrs.get("ssh_port", 22))
-
         while retries > 0:
             retries -= 1
             try:
@@ -276,10 +274,11 @@ class ScpMover(Mover):
                 ssh_connection.load_system_host_keys()
                 ssh_connection.connect(self.destination.hostname,
                                        username=self.destination.username,
-                                       port=ssh_port,
+                                       port=self.destination.port,
                                        key_filename=ssh_key_filename)
-                LOGGER.debug("Successfully connected to %s as %s",
+                LOGGER.debug("Successfully connected to %s:%s as %s",
                              self.destination.hostname,
+                             self.destination.port,
                              self.destination.username)
             except SSHException as sshe:
                 LOGGER.error("Failed to init SSHClient: %s", str(sshe))
