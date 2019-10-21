@@ -278,7 +278,7 @@ class ScpMover(Mover):
                                        key_filename=ssh_key_filename)
                 LOGGER.debug("Successfully connected to %s:%s as %s",
                              self.destination.hostname,
-                             self.destination.port,
+                             self.destination.port or 22,
                              self.destination.username)
             except SSHException as sshe:
                 LOGGER.error("Failed to init SSHClient: %s", str(sshe))
@@ -397,7 +397,8 @@ class SftpMover(Mover):
         """Push it !"""
         import paramiko
 
-        transport = paramiko.Transport((self.destination.hostname, 22))
+        transport = paramiko.Transport((self.destination.hostname,
+                                        self.destination.port or 22))
         transport.start_client()
 
         self._agent_auth(transport)
