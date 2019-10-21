@@ -104,7 +104,7 @@ class Mover(object):
     def get_connection(self, hostname, port, username=None):
         with self.active_connection_lock:
             LOGGER.debug('Getting connection to %s@%s:%s',
-                         self.destination.username, self.destination.hostname, self.destination.port)
+                         self.destination.username, self.destination.hostname, port)
             try:
                 connection, timer = self.active_connections[(hostname, port, username)]
                 if not self.is_connected(connection):
@@ -274,7 +274,7 @@ class ScpMover(Mover):
                 ssh_connection.load_system_host_keys()
                 ssh_connection.connect(self.destination.hostname,
                                        username=self.destination.username,
-                                       port=self.destination.port,
+                                       port=self.destination.port or 22,
                                        key_filename=ssh_key_filename)
                 LOGGER.debug("Successfully connected to %s:%s as %s",
                              self.destination.hostname,
@@ -320,7 +320,8 @@ class ScpMover(Mover):
         """Push it !"""
         from scp import SCPClient
 
-        ssh_connection = self.get_connection(self.destination.hostname, self.destination.port,
+        ssh_connection = self.get_connection(self.destination.hostname,
+                                             self.destination.port or 22,
                                              self.destination.username)
 
         try:

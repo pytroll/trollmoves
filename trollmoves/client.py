@@ -232,19 +232,18 @@ def resend_if_local(msg, publisher):
         publisher.send(str(msg))
 
 
-def create_push_req_message(msg, destination, login, ssh_port):
+def create_push_req_message(msg, destination, login):
     fake_req = Message(msg.subject, 'push', data=msg.data.copy())
     duri = urlparse(destination)
     scheme = duri.scheme or 'file'
     dest_hostname = duri.hostname or socket.gethostname()
+    if duri.port:
+        dest_hostname += ":{}".format(duri.port)
     fake_req.data["destination"] = urlunparse((scheme, dest_hostname, duri.path, "", "", ""))
-    _ssh_port = ""
-    if 'scp' in scheme:
-        _ssh_port = ":{}".format(ssh_port)
     if login:
         # if necessary add the credentials for the real request
         req = Message(msg.subject, 'push', data=msg.data.copy())
-        req.data["destination"] = urlunparse((scheme, login + "@" + dest_hostname + _ssh_port, duri.path, "", "", ""))
+        req.data["destination"] = urlunparse((scheme, login + "@" + dest_hostname, duri.path, "", "", ""))
     else:
         req = fake_req
     return req, fake_req
@@ -389,9 +388,7 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
         return send_ack(msg, timeout)
 
     for msg in iterate_messages(huid):
-        # Default to ssh port 22
-        ssh_port = kwargs.get('ssh_port', 22)
-        req, fake_req = create_push_req_message(msg, destination, login, ssh_port)
+        req, fake_req = create_push_req_message(msg, destination, login)
         LOGGER.info("Requesting: %s", str(fake_req))
         timeout = float(kwargs["transfer_req_timeout"])
         local_dir = create_local_dir(destination, kwargs.get('ftp_root', '/'))
