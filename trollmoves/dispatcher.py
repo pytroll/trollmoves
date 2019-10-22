@@ -39,12 +39,15 @@ Example config::
         connection_uptime: 60
       filepattern: '{platform_name}_{start_time}.{format}'
       directory: /input_data/{sensor}
-      subscribe_addresses:
-        - tcp://127.0.0.1:40000
-      nameserver: 127.0.0.1
-      subscribe_services:
-        - service_name_1
-        - service_name_2
+      # Optional direct subscriptions
+      # subscribe_addresses:
+      #   - tcp://127.0.0.1:40000
+      # Nameserver to connect to. Optional. Defaults to localhost
+      # nameserver: 127.0.0.1
+      # Subscribe to specific services. Optional. Default: connect to all services
+      # subscribe_services:
+      #   - service_name_1
+      #   - service_name_2
       aliases:
         product:
           natural_color: dnc
