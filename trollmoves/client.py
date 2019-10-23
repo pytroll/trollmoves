@@ -74,6 +74,7 @@ def read_config(filename):
             res[section]["delete"] = False
         res[section].setdefault("working_directory", None)
         res[section].setdefault("compression", False)
+        res[section].setdefault("xritdecompressor", None)
         res[section].setdefault("heartbeat", True)
         res[section].setdefault("req_timeout", DEFAULT_REQ_TIMEOUT)
         res[section].setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
@@ -194,7 +195,7 @@ class Listener(Thread):
             self.subscriber = None
 
 
-def unpack_tar(filename, delete=False):
+def unpack_tar(filename, **kwargs):
     """Unpack tar files."""
     destdir = os.path.dirname(filename)
     try:
@@ -203,12 +204,47 @@ def unpack_tar(filename, delete=False):
             members = tar.getmembers()
     except tarfile.ReadError as err:
         raise IOError(str(err))
-    if delete:
+    if kwargs.get("delete"):
         os.remove(filename)
     return (member.name for member in members)
 
 
-unpackers = {'tar': unpack_tar}
+def unpack_xrit(filename, **kwargs):
+    """Unpack XRIT files."""
+    if filename.endswith('__'):
+        return filename
+    delete = kwargs.get('delete')
+    cmd = kwargs.get('xritdecompressor')
+    if cmd is None:
+        raise OSError("Path to 'xRITDecompress' utility not defined. "
+                      "Set it with 'xritdecompressor' config option.")
+    destdir = os.path.dirname(filename)
+    out_fname = os.path.join(destdir, os.path.basename(filename)[:-2] + "__")
+    check_output([cmd, filename], cwd=(destdir))
+    if delete:
+        os.remove(filename)
+    return out_fname
+
+
+def check_output(*popenargs, **kwargs):
+    """Copy from python 2.7, `subprocess.check_output`."""
+    if 'stdout' in kwargs:
+        raise ValueError('stdout argument not allowed, it will be overridden.')
+    LOGGER.debug("Calling %s", str(popenargs))
+    process = subprocess.Popen(stdout=subprocess.PIPE, *popenargs, **kwargs)
+    output, unused_err = process.communicate()
+    del unused_err
+    retcode = process.poll()
+    if retcode:
+        cmd = kwargs.get("args")
+        if cmd is None:
+            cmd = popenargs[0]
+        raise RuntimeError(output)
+    return output
+
+
+unpackers = {'tar': unpack_tar,
+             'xrit': unpack_xrit}
 
 
 def already_received(msg):
@@ -258,14 +294,15 @@ def create_local_dir(destination, local_root, mode=0o777):
     return local_dir
 
 
-def unpack_and_create_local_message(msg, local_dir, unpack=None, delete=False):
+def unpack_and_create_local_message(msg, local_dir, **kwargs):
 
     def unpack_callback(var):
         if not var['uid'].endswith(unpack):
             return var
         packname = var.pop('uid')
         del var['uri']
-        new_names = unpackers[unpack](os.path.join(local_dir, packname), delete)
+        new_names = unpackers[unpack](os.path.join(local_dir, packname),
+                                      **kwargs)
 
         var['dataset'] = [dict(uid=nn, uri=os.path.join(local_dir, nn)) for nn in new_names]
         return var
@@ -371,7 +408,7 @@ def get_next_msg(uid):
         return ongoing_transfers[uid].pop(0)
 
 
-def request_push(msg, destination, login, publisher=None, unpack=None, delete=False, **kwargs):
+def request_push(msg, destination, login, publisher=None, **kwargs):
     """Request a push for data."""
     huid = get_msg_uid(msg)
     with ongoing_transfers_lock:
@@ -399,7 +436,8 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
                 for uid in gen_dict_extract(msg.data, 'uid'):
                     file_cache.append(uid)
             try:
-                lmsg = unpack_and_create_local_message(response, local_dir, unpack, delete)
+                lmsg = unpack_and_create_local_message(response, local_dir,
+                                                       **kwargs)
             except IOError:
                 LOGGER.exception("Couldn't unpack %s", str(response))
                 continue
