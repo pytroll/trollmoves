@@ -408,19 +408,13 @@ def create_file_notifier(attrs, publisher):
 
     def fun(orig_pathname):
         """Publish what we have."""
-        if os.path.exists(orig_pathname):
-            if not fnmatch.fnmatch(orig_pathname, pattern):
-                return
-            elif (os.stat(orig_pathname).st_size == 0):
-                # Want to avoid files with size 0.
-                return
-            else:
-                LOGGER.debug('We have a match: %s', orig_pathname)
-        else:
-            # Some systems create temporary file which is then deleted shortly after.
-            # Want to skip these files
-            LOGGER.debug('orig_pathname: {} has disapeared. skipping this.'.format(orig_pathname))
+        if not fnmatch.fnmatch(orig_pathname, pattern):
             return
+        elif (os.stat(orig_pathname).st_size == 0):
+            # Want to avoid files with size 0.
+            return
+        else:
+            LOGGER.debug('We have a match: %s', orig_pathname)
 
         pathname = unpack(orig_pathname, **attrs)
 
