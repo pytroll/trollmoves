@@ -82,7 +82,7 @@ def test_unpack_xrit(check_output, remove):
     assert check_output.called_once_with(
         ['/path/to/xRITDecompress', fname_in], cwd=('/tmp'))
     remove.assert_not_called()
-    
+
     # Define also delete
     kwargs = {'delete': True, 'xritdecompressor': '/path/to/xRITDecompress'}
 
