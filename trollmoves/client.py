@@ -235,18 +235,7 @@ def resend_if_local(msg, publisher):
 
 def create_push_req_message(msg, destination, login):
     fake_req = Message(msg.subject, 'push', data=msg.data.copy())
-    try:
-        _destination = compose(destination, msg.data)
-    except KeyError as ke:
-        LOGGER.error("Format identifier is missing from the msg.data: %s", str(ke))
-        raise
-    except ValueError as ve:
-        LOGGER.error("Type of format identifier doesn't match the type in m msg.data: %s", str(ve))
-        raise
-    except AttributeError as ae:
-        LOGGER.error("msg or msg.data is None: %s", str(ae))
-        raise
-    duri = urlparse(_destination)
+    duri = urlparse(destination)
     scheme = duri.scheme or 'file'
     dest_hostname = duri.hostname or socket.gethostname()
     fake_req.data["destination"] = urlunparse((scheme, dest_hostname, duri.path, "", "", ""))
@@ -298,18 +287,7 @@ def unpack_and_create_local_message(msg, local_dir, unpack=None, delete=False):
 
 
 def make_uris(msg, destination, login=None):
-    try:
-        _destination = compose(destination, msg.data)
-    except KeyError as ke:
-        LOGGER.error("Format identifier is missing from the msg.data: %s", str(ke))
-        raise
-    except ValueError as ve:
-        LOGGER.error("Type of format identifier doesn't match the type in m msg.data: %s", str(ve))
-        raise
-    except AttributeError as ae:
-        LOGGER.error("msg or msg.data is None: %s", str(ae))
-        raise
-    duri = urlparse(_destination)
+    duri = urlparse(destination)
     scheme = duri.scheme or 'ssh'
     dest_hostname = duri.hostname or socket.gethostname()
     if socket.gethostbyname(dest_hostname) in get_local_ips():
@@ -409,10 +387,21 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
         return send_ack(msg, timeout)
 
     for msg in iterate_messages(huid):
-        req, fake_req = create_push_req_message(msg, destination, login)
+        try:
+            _destination = compose(destination, msg.data)
+        except KeyError as ke:
+            LOGGER.error("Format identifier is missing from the msg.data: %s", str(ke))
+            raise
+        except ValueError as ve:
+            LOGGER.error("Type of format identifier doesn't match the type in m msg.data: %s", str(ve))
+            raise
+        except AttributeError as ae:
+            LOGGER.error("msg or msg.data is None: %s", str(ae))
+            raise
+        req, fake_req = create_push_req_message(msg, _destination, login)
         LOGGER.info("Requesting: %s", str(fake_req))
         timeout = float(kwargs["transfer_req_timeout"])
-        local_dir = create_local_dir(destination, kwargs.get('ftp_root', '/'))
+        local_dir = create_local_dir(_destination, kwargs.get('ftp_root', '/'))
 
         response, hostname = send_request(msg, req, timeout)
 
@@ -427,7 +416,7 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
                 LOGGER.exception("Couldn't unpack %s", str(response))
                 continue
             if publisher:
-                lmsg = make_uris(lmsg, destination, login)
+                lmsg = make_uris(lmsg, _destination, login)
                 lmsg.data['origin'] = response.data['request_address']
                 lmsg.data.pop('request_address', None)
                 lmsg = replace_mda(lmsg, kwargs)
