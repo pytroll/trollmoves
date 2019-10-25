@@ -290,6 +290,13 @@ target3:
   host: ""
   filepattern: '{platform_name}_{start_time:%Y%m%d%H%M}.{format}'
   directory: """ + os.path.join(gettempdir(), 'dptest') + """
+  subscribe_addresses:
+    - tcp://127.0.0.1:40000
+  nameserver: 127.0.0.1
+  subscribe_services:
+    - service_name_1
+    - service_name_2
+
   dispatch_configs:
     - topics:
         - /level2/viirs
@@ -345,6 +352,12 @@ def test_dispatcher():
                     queue.put(msg)
                     time.sleep(.1)
                     assert os.path.exists(expected_file)
+            # Check that the listener config items are passed correctly
+            lc.assert_called_once_with(
+                addresses=['tcp://127.0.0.1:40000'],
+                nameserver='127.0.0.1',
+                services=['service_name_1', 'service_name_2'],
+                topics={'/level3/cloudtype', '/level2/viirs', '/level2/avhrr'})
     finally:
         if dp is not None:
             dp.close()
