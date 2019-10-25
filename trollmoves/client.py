@@ -54,8 +54,12 @@ ongoing_transfers = dict()
 ongoing_transfers_lock = Lock()
 
 DEFAULT_REQ_TIMEOUT = 1
-
 SERVER_HEARTBEAT_TOPIC = "/heartbeat/move_it_server"
+
+COMPRESSED_ENDINGS = {'xrit': ['C_'],
+                      'tar': ['.tar', '.tar.gz', '.tgz', '.tar.bz2'],
+                      'bz2': ['.bz2'],
+                     }
 
 
 # Config management
@@ -295,19 +299,26 @@ def create_local_dir(destination, local_root, mode=0o777):
 
 
 def unpack_and_create_local_message(msg, local_dir, **kwargs):
-
+    """Unpack the file given in the message, and update the message."""
     def unpack_callback(var):
-        if not var['uid'].endswith(unpack):
+        unpack = kwargs.get('compression')
+        endings = COMPRESSED_ENDINGS[unpack]
+        is_compressed = any([var['uid'].endswith(ending) for ending in endings])
+        if not is_compressed:
             return var
         packname = var.pop('uid')
         del var['uri']
         new_names = unpackers[unpack](os.path.join(local_dir, packname),
                                       **kwargs)
-
-        var['dataset'] = [dict(uid=nn, uri=os.path.join(local_dir, nn)) for nn in new_names]
+        if isinstance(new_names, tuple):
+            var['dataset'] = [dict(uid=nn, uri=os.path.join(local_dir, nn))
+                              for nn in new_names]
+        else:
+            var['uid'] = new_names
+            var['uri'] = os.path.join(local_dir, new_names)
         return var
 
-    if unpack is not None:
+    if kwargs.get('compression') is not None:
         lmsg_data = translate_dict(msg.data, ('uri', 'uid'), unpack_callback)
         if 'dataset' in lmsg_data:
             lmsg_type = 'dataset'
