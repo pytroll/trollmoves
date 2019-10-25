@@ -106,7 +106,11 @@ def translate_dict_item(var, key, callback):
 
 
 def translate_dict(var, keys, callback):
-    newvar = var.copy()
+    try:
+        newvar = var.copy()
+    except AttributeError:
+        import copy
+        newvar = copy.copy(var)
     if hasattr(var, 'items'):
         if set(var.keys()) & set(keys):
             newvar = callback(var)
