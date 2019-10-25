@@ -23,7 +23,7 @@
 """Test the trollmoves client."""
 
 import os
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import patch, call
 import copy
 
 from posttroll.message import Message
@@ -36,7 +36,7 @@ MSG_FILE_TAR = Message('/topic', 'file', {'uid': 'file1.tar',
 MSG_FILE_BZ2 = Message('/topic', 'file', {'uid': 'file1.bz2',
                                           'uri': '/tmp/file1.bz2'})
 MSG_FILE_XRIT = Message('/topic', 'file', {'uid': 'file1-C_',
-                                          'uri': '/tmp/file1-C_'})
+                                           'uri': '/tmp/file1-C_'})
 MSG_DATASET_TAR = Message('/topic', 'dataset',
                           {'dataset': [{'uid': 'file1.tgz',
                                         'uri': '/tmp/file1.tgz'},

@@ -33,6 +33,7 @@ from threading import Lock, Thread, Event
 import hashlib
 import six
 from six.moves.urllib.parse import urlparse, urlunparse
+import subprocess
 
 import pyinotify
 from zmq import LINGER, POLLIN, REQ, Poller
@@ -44,7 +45,7 @@ from posttroll.subscriber import Subscriber
 
 from trollmoves import heartbeat_monitor
 from trollmoves.utils import get_local_ips
-from trollmoves.utils import gen_dict_extract, translate_dict, translate_dict_value
+from trollmoves.utils import gen_dict_extract, translate_dict
 
 LOGGER = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ SERVER_HEARTBEAT_TOPIC = "/heartbeat/move_it_server"
 COMPRESSED_ENDINGS = {'xrit': ['C_'],
                       'tar': ['.tar', '.tar.gz', '.tgz', '.tar.bz2'],
                       'bz2': ['.bz2'],
-                     }
+                      }
 
 
 # Config management
