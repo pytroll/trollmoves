@@ -226,7 +226,7 @@ def clean_ongoing_transfer(uid):
     return msgs
 
 
-def unpack_tar(filename, delete=False):
+def unpack_tar(filename, **kwargs):
     """Unpack tar files."""
     destdir = os.path.dirname(filename)
     try:
