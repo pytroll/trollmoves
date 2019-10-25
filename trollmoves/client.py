@@ -35,6 +35,7 @@ from threading import Lock, Thread, Event
 import hashlib
 import six
 from six.moves.urllib.parse import urlparse, urlunparse
+import subprocess
 
 import pyinotify
 from zmq import LINGER, POLLIN, REQ, Poller
@@ -59,8 +60,12 @@ hot_spare_timer_lock = Lock()
 ongoing_hot_spare_timers = dict()
 
 DEFAULT_REQ_TIMEOUT = 1
-
 SERVER_HEARTBEAT_TOPIC = "/heartbeat/move_it_server"
+
+COMPRESSED_ENDINGS = {'xrit': ['C_'],
+                      'tar': ['.tar', '.tar.gz', '.tgz', '.tar.bz2'],
+                      'bz2': ['.bz2'],
+                      }
 
 
 # Config management
@@ -78,6 +83,7 @@ def read_config(filename):
             res[section]["delete"] = False
         res[section].setdefault("working_directory", None)
         res[section].setdefault("compression", False)
+        res[section].setdefault("xritdecompressor", None)
         res[section].setdefault("heartbeat", True)
         res[section].setdefault("req_timeout", DEFAULT_REQ_TIMEOUT)
         res[section].setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
@@ -220,7 +226,7 @@ def clean_ongoing_transfer(uid):
     return msgs
 
 
-def unpack_tar(filename, delete=False):
+def unpack_tar(filename, **kwargs):
     """Unpack tar files."""
     destdir = os.path.dirname(filename)
     try:
@@ -229,12 +235,47 @@ def unpack_tar(filename, delete=False):
             members = tar.getmembers()
     except tarfile.ReadError as err:
         raise IOError(str(err))
-    if delete:
+    if kwargs.get("delete"):
         os.remove(filename)
     return (member.name for member in members)
 
 
-unpackers = {'tar': unpack_tar}
+def unpack_xrit(filename, **kwargs):
+    """Unpack XRIT files."""
+    if filename.endswith('__'):
+        return filename
+    delete = kwargs.get('delete')
+    cmd = kwargs.get('xritdecompressor')
+    if cmd is None:
+        raise OSError("Path to 'xRITDecompress' utility not defined. "
+                      "Set it with 'xritdecompressor' config option.")
+    destdir = os.path.dirname(filename)
+    out_fname = os.path.join(destdir, os.path.basename(filename)[:-2] + "__")
+    check_output([cmd, filename], cwd=(destdir))
+    if delete:
+        os.remove(filename)
+    return out_fname
+
+
+def check_output(*popenargs, **kwargs):
+    """Copy from python 2.7, `subprocess.check_output`."""
+    if 'stdout' in kwargs:
+        raise ValueError('stdout argument not allowed, it will be overridden.')
+    LOGGER.debug("Calling %s", str(popenargs))
+    process = subprocess.Popen(stdout=subprocess.PIPE, *popenargs, **kwargs)
+    output, unused_err = process.communicate()
+    del unused_err
+    retcode = process.poll()
+    if retcode:
+        cmd = kwargs.get("args")
+        if cmd is None:
+            cmd = popenargs[0]
+        raise RuntimeError(output)
+    return output
+
+
+unpackers = {'tar': unpack_tar,
+             'xrit': unpack_xrit}
 
 
 def already_received(msg):
@@ -285,19 +326,27 @@ def create_local_dir(destination, local_root, mode=0o777):
     return local_dir
 
 
-def unpack_and_create_local_message(msg, local_dir, unpack=None, delete=False):
-    """Unpack files and send a message of with the extracted files."""
+def unpack_and_create_local_message(msg, local_dir, **kwargs):
+    """Unpack the file(s) given in the message, and return an updated message."""
     def unpack_callback(var):
-        if not var['uid'].endswith(unpack):
+        unpack = kwargs.get('compression')
+        endings = COMPRESSED_ENDINGS[unpack]
+        is_compressed = any([var['uid'].endswith(ending) for ending in endings])
+        if not is_compressed:
             return var
         packname = var.pop('uid')
         del var['uri']
-        new_names = unpackers[unpack](os.path.join(local_dir, packname), delete)
-
-        var['dataset'] = [dict(uid=nn, uri=os.path.join(local_dir, nn)) for nn in new_names]
+        new_names = unpackers[unpack](os.path.join(local_dir, packname),
+                                      **kwargs)
+        if isinstance(new_names, tuple):
+            var['dataset'] = [dict(uid=nn, uri=os.path.join(local_dir, nn))
+                              for nn in new_names]
+        else:
+            var['uid'] = new_names
+            var['uri'] = os.path.join(local_dir, new_names)
         return var
 
-    if unpack is not None:
+    if kwargs.get('compression') is not None:
         lmsg_data = translate_dict(msg.data, ('uri', 'uid'), unpack_callback)
         if 'dataset' in lmsg_data:
             lmsg_type = 'dataset'
@@ -471,7 +520,8 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
                              str(msg))
                 publisher.send(str(msg))
             try:
-                lmsg = unpack_and_create_local_message(response, local_dir, unpack, delete)
+                lmsg = unpack_and_create_local_message(response, local_dir,
+                                                       **kwargs)
             except IOError:
                 LOGGER.exception("Couldn't unpack %s", str(response))
                 continue
