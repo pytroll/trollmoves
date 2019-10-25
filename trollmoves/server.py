@@ -420,6 +420,7 @@ def create_file_notifier(attrs, publisher):
             # Some systems create temporary file which is then deleted shortly after.
             # Want to skip these files
             LOGGER.debug('orig_pathname: {} has disapeared. skipping this.'.format(orig_pathname))
+            return
 
         pathname = unpack(orig_pathname, **attrs)
 
