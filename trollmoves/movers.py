@@ -329,11 +329,11 @@ class ScpMover(Mover):
             ssh_connection.close()
             raise
 
-        try:
-            ssh_connection.exec_command("mkdir -pv {}".format(self.destination.path))
-        except Exception as err:
-            LOGGER.error("Failed to create destination dir: %s", str(err))
-            raise
+        #try:
+        #    ssh_connection.exec_command("mkdir -pv {}".format(self.destination.path))
+        #except Exception as err:
+        #    LOGGER.error("Failed to create destination dir: %s", str(err))
+        #    raise
 
         try:
             scp.put(self.origin, self.destination.path)
