@@ -75,9 +75,9 @@ class Deleter(Thread):
         self._attrs = attrs
 
     def add(self, filename):
-        LOGGER.debug('Scheduling %s for removal', filename)
-        remove_delay = int(self._attrs.get('remove_delay', 1))
-        self.queue.put((filename, time.time() + 30 * remove_delay))
+        remove_delay = int(self._attrs.get('remove_delay', 30))
+        LOGGER.debug('Scheduling %s for removal in %ds', filename, remove_delay)
+        self.queue.put((filename, time.time() + remove_delay))
 
     def run(self):
         while self.loop:
@@ -391,6 +391,16 @@ def create_file_notifier(attrs, publisher):
     opath = os.path.dirname(pattern)
 
     if 'origin_inotify_base_dir_skip_levels' in attrs:
+        """If you need to inotify monitor for new directories within the origin
+        this attribute tells the server how many levels to skip from the origin
+        before staring to inorify monitor a directory
+
+        Eg. origin=/tmp/{platform_name_dir}_{start_time_dir:%Y%m%d_%H%M}_{orbit_number_dir:05d}/
+                   {sensor}_{platform_name}_{start_time:%Y%m%d_%H%M}_{orbit_number:05d}.{data_processing_level:3s}
+
+        and origin_inotify_base_dir_skip_levels=-2
+
+        this means the inotify monitor will use opath=/tmp"""
         pattern_list = pattern.split('/')
         pattern_join = os.path.join(*pattern_list[:int(attrs['origin_inotify_base_dir_skip_levels'])])
         opath = os.path.join("/", pattern_join)
