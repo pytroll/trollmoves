@@ -237,8 +237,15 @@ def create_push_req_message(msg, destination, login):
     fake_req = Message(msg.subject, 'push', data=msg.data.copy())
     try:
         _destination = compose(destination, msg.data)
-    except Exception:
-        _destination = destination
+    except KeyError as ke:
+        LOGGER.error("Format identifier is missing from the msg.data: %s", str(ke))
+        raise
+    except ValueError as ve:
+        LOGGER.error("Type of format identifier doesn't match the type in m msg.data: %s", str(ve))
+        raise
+    except AttributeError as ae:
+        LOGGER.error("msg or msg.data is None: %s", str(ae))
+        raise
     duri = urlparse(_destination)
     scheme = duri.scheme or 'file'
     dest_hostname = duri.hostname or socket.gethostname()
@@ -293,8 +300,15 @@ def unpack_and_create_local_message(msg, local_dir, unpack=None, delete=False):
 def make_uris(msg, destination, login=None):
     try:
         _destination = compose(destination, msg.data)
-    except Exception:
-        _destination = destination
+    except KeyError as ke:
+        LOGGER.error("Format identifier is missing from the msg.data: %s", str(ke))
+        raise
+    except ValueError as ve:
+        LOGGER.error("Type of format identifier doesn't match the type in m msg.data: %s", str(ve))
+        raise
+    except AttributeError as ae:
+        LOGGER.error("msg or msg.data is None: %s", str(ae))
+        raise
     duri = urlparse(_destination)
     scheme = duri.scheme or 'ssh'
     dest_hostname = duri.hostname or socket.gethostname()
