@@ -145,6 +145,7 @@ def test_unpack_bzip():
         os.remove(fname)
         os.remove(fname_bz2)
 
+
 @patch('trollmoves.client.unpackers')
 def test_unpack_and_create_local_message(unpackers):
     """Test unpacking and updating the message with new filenames."""
