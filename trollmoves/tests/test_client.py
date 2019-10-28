@@ -34,8 +34,8 @@ MSG_FILE = Message('/topic', 'file', {'uid': 'file1.png',
                                       'uri': '/tmp/file1.png'})
 MSG_FILE_TAR = Message('/topic', 'file', {'uid': 'file1.tar',
                                           'uri': '/tmp/file1.tar'})
-MSG_FILE_BZ2 = Message('/topic', 'file', {'uid': 'file1.bz2',
-                                          'uri': '/tmp/file1.bz2'})
+MSG_FILE_BZ2 = Message('/topic', 'file', {'uid': 'file1.png.bz2',
+                                          'uri': '/tmp/file1.png.bz2'})
 MSG_FILE_XRIT = Message('/topic', 'file', {'uid': 'file1-C_',
                                            'uri': '/tmp/file1-C_'})
 MSG_DATASET_TAR = Message('/topic', 'dataset',
@@ -104,6 +104,47 @@ def test_unpack_xrit(check_output, remove):
     assert remove.called_once_with(fname_in)
 
 
+def test_unpack_bzip():
+    """Test unpacking of bzip2 files."""
+    from trollmoves.client import unpack_bzip
+    from tempfile import gettempdir
+    import bz2
+
+    try:
+        # Write a bz2 file
+        fname = os.path.join(gettempdir(), 'asdasdasdasd')
+        fname_bz2 = fname + '.bz2'
+        with bz2.open(fname_bz2, 'wt') as fid:
+            fid.write(100 * '123asddb')
+
+        # No configured options
+        kwargs = {}
+        res = unpack_bzip(fname_bz2, **kwargs)
+        assert res == fname
+        assert os.path.exists(fname)
+
+        # Mock things so we know what has been called
+
+        # When the file exists, don't run decompression
+        with patch('trollmoves.client.open') as opn:
+            res = unpack_bzip(fname_bz2, **kwargs)
+        opn.assert_not_called()
+
+        # Custom block size is as a string in the config
+        kwargs['block_size'] = '2048'
+        with patch('os.path.exists') as exists:
+            exists.return_value = False
+            with patch('trollmoves.client.open') as opn:
+                mock_bz2_fid = MagicMock()
+                mock_bz2_fid.read.return_value = False
+                with patch('trollmoves.client.bz2.BZ2File') as bz2file:
+                    bz2file.return_value = mock_bz2_fid
+                    res = unpack_bzip(fname_bz2, **kwargs)
+        mock_bz2_fid.read.assert_called_with(2048)
+    finally:
+        os.remove(fname)
+        os.remove(fname_bz2)
+
 @patch('trollmoves.client.unpackers')
 def test_unpack_and_create_local_message(unpackers):
     """Test unpacking and updating the message with new filenames."""
@@ -132,14 +173,14 @@ def test_unpack_and_create_local_message(unpackers):
     unpackers['tar'].assert_called_with('/local/file1.tar', **kwargs)
 
     # One file with 'bz2' compression
-    kwargs['compression'] = 'bz2'
-    unpackers['bz2'].return_value = 'new_file1.png'
+    kwargs['compression'] = 'bzip'
+    unpackers['bzip'].return_value = 'file1.png'
     res = unp(copy.copy(MSG_FILE_BZ2), local_dir, **kwargs)
-    assert res.data['uri'] == os.path.join(local_dir, 'new_file1.png')
-    assert res.data['uid'] == 'new_file1.png'
+    assert res.data['uri'] == os.path.join(local_dir, 'file1.png')
+    assert res.data['uid'] == 'file1.png'
     assert res.subject == MSG_FILE_BZ2.subject
     assert res.type == MSG_FILE_BZ2.type
-    unpackers['bz2'].assert_called_with('/local/file1.bz2', **kwargs)
+    unpackers['bzip'].assert_called_with('/local/file1.png.bz2', **kwargs)
 
     # One file with 'xrit' compression
     kwargs['compression'] = 'xrit'
