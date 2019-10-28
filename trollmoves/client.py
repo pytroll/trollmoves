@@ -261,15 +261,15 @@ def unpack_xrit(filename, **kwargs):
 
 def unpack_bzip(filename, **kwargs):
     """Unzip .bz2 files."""
-    destdir = os.path.dirname(filename)
-    out_fname = os.path.join(destdir, os.path.basename(filename)[:-4])
+    block_size = int(kwargs.get('block_size', BUNZIP_BLOCK_SIZE))
+    out_fname = filename[:-4]
     if os.path.exists(out_fname):
         return out_fname
     with open(out_fname, "wb") as dest:
         try:
             orig = bz2.BZ2File(filename, "r")
             while True:
-                block = orig.read(BUNZIP_BLOCK_SIZE)
+                block = orig.read(block_size)
 
                 if not block:
                     break
