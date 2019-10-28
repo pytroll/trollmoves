@@ -47,6 +47,17 @@ MSG_COLLECTION_TAR = Message('/topic', 'collection',
                              {'collection':
                               [{'dataset': [{'uid': 'file1.tar.bz2',
                                              'uri': '/tmp/file1.tar.bz2'}]}]})
+COMPRESSION_CONFIG = """
+[DEFAULT]
+providers = 127.0.0.1:40000
+destination = ftp://127.0.0.1:/tmp
+topic = /topic
+
+[empty_decompression]
+
+[xrit_decompression]
+compression = xrit
+"""
 
 
 @patch('os.remove')
@@ -132,7 +143,7 @@ def test_unpack_and_create_local_message(unpackers):
 
     # One file with 'xrit' compression
     kwargs['compression'] = 'xrit'
-    unpackers['tar'].return_value = 'new_file1.png'
+    unpackers['xrit'].return_value = 'new_file1.png'
     res = unp(copy.copy(MSG_FILE_XRIT), local_dir, **kwargs)
     assert res.data['uri'] == os.path.join(local_dir, 'new_file1.png')
     assert res.data['uid'] == 'new_file1.png'
@@ -177,6 +188,36 @@ def test_unpack_and_create_local_message(unpackers):
     assert res.subject == MSG_COLLECTION_TAR.subject
     assert res.type == MSG_COLLECTION_TAR.type
     assert call('/local/file1.tar.bz2', **kwargs) in unpackers['tar'].mock_calls
+
+    # Test with config file
+    with NamedTemporaryFile('w', delete=False) as fid:
+        config_fname = fid.name
+        fid.write(COMPRESSION_CONFIG)
+
+    try:
+        from trollmoves.client import read_config
+        config = read_config(config_fname)
+
+        # No compression
+        kwargs = config['empty_decompression']
+        res = unp(copy.copy(MSG_FILE), local_dir, **kwargs)
+        assert res.subject == MSG_FILE.subject
+        assert res.data == MSG_FILE.data
+        assert res.type == MSG_FILE.type
+        # A new message is returned
+        assert res is not MSG_FILE
+
+        # One file with 'xrit' compression
+        kwargs = config['xrit_decompression']
+        unpackers['xrit'].side_effect = None
+        unpackers['xrit'].return_value = 'new_file1.png'
+        res = unp(copy.copy(MSG_FILE_XRIT), local_dir, **kwargs)
+        assert res.data['uri'] == os.path.join(local_dir, 'new_file1.png')
+        assert res.data['uid'] == 'new_file1.png'
+        assert res.subject == MSG_FILE_XRIT.subject
+        assert res.type == MSG_FILE_XRIT.type
+    finally:
+        os.remove(config_fname)
 
 
 # The different messages that are handled.  For further tests `data`

@@ -346,7 +346,7 @@ def unpack_and_create_local_message(msg, local_dir, **kwargs):
             var['uri'] = os.path.join(local_dir, new_names)
         return var
 
-    if kwargs.get('compression') is not None:
+    if kwargs.get('compression') in COMPRESSED_ENDINGS:
         lmsg_data = translate_dict(msg.data, ('uri', 'uid'), unpack_callback)
         if 'dataset' in lmsg_data:
             lmsg_type = 'dataset'
