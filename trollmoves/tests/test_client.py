@@ -186,12 +186,23 @@ def test_unpack_and_create_local_message(unpackers):
     # One file with 'xrit' compression
     kwargs['compression'] = 'xrit'
     unpackers['xrit'].return_value = 'new_file1.png'
-    res = unp(copy.copy(MSG_FILE_XRIT), local_dir, **kwargs)
+    with patch('os.remove') as remove:
+        res = unp(copy.copy(MSG_FILE_XRIT), local_dir, **kwargs)
+    # Delete has not been setup, so it shouldn't been done
+    remove.assert_not_called()
     assert res.data['uri'] == os.path.join(local_dir, 'new_file1.png')
     assert res.data['uid'] == 'new_file1.png'
     assert res.subject == MSG_FILE_XRIT.subject
     assert res.type == MSG_FILE_XRIT.type
     unpackers['xrit'].assert_called_with('/local/file1-C_', **kwargs)
+
+    # One file with 'xrit' compression, delete the compressed file
+    kwargs['delete'] = True
+    unpackers['xrit'].return_value = 'new_file1.png'
+    with patch('os.remove') as remove:
+        res = unp(copy.copy(MSG_FILE_XRIT), local_dir, **kwargs)
+    assert remove.called_once_with('/local/file1-C_')
+    del kwargs['delete']
 
     # Multiple files returned when decompression is applied. 'tar'
     # compression, 'file' message
