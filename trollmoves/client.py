@@ -81,6 +81,8 @@ def read_config(filename):
         res[section].setdefault("delete", False)
         if res[section]["delete"] in ["", "False", "false", "0", "off"]:
             res[section]["delete"] = False
+        if res[section]["delete"] in ["True", "true", "on", "1"]:
+            res[section]["delete"] = True
         res[section].setdefault("working_directory", None)
         res[section].setdefault("compression", False)
         res[section].setdefault("xritdecompressor", None)
@@ -235,8 +237,6 @@ def unpack_tar(filename, **kwargs):
             members = tar.getmembers()
     except tarfile.ReadError as err:
         raise IOError(str(err))
-    if kwargs.get("delete"):
-        os.remove(filename)
     return (member.name for member in members)
 
 
@@ -244,7 +244,6 @@ def unpack_xrit(filename, **kwargs):
     """Unpack XRIT files."""
     if filename.endswith('__'):
         return filename
-    delete = kwargs.get('delete')
     cmd = kwargs.get('xritdecompressor')
     if cmd is None:
         raise OSError("Path to 'xRITDecompress' utility not defined. "
@@ -252,8 +251,6 @@ def unpack_xrit(filename, **kwargs):
     destdir = os.path.dirname(filename)
     out_fname = os.path.join(destdir, os.path.basename(filename)[:-2] + "__")
     check_output([cmd, filename], cwd=(destdir))
-    if delete:
-        os.remove(filename)
     return out_fname
 
 
@@ -328,7 +325,7 @@ def create_local_dir(destination, local_root, mode=0o777):
 
 def unpack_and_create_local_message(msg, local_dir, **kwargs):
     """Unpack the file(s) given in the message, and return an updated message."""
-    def unpack_callback(var):
+    def unpack_callback(var, **kwargs):
         unpack = kwargs.get('compression')
         endings = COMPRESSED_ENDINGS[unpack]
         is_compressed = any([var['uid'].endswith(ending) for ending in endings])
@@ -338,6 +335,9 @@ def unpack_and_create_local_message(msg, local_dir, **kwargs):
         del var['uri']
         new_names = unpackers[unpack](os.path.join(local_dir, packname),
                                       **kwargs)
+        if kwargs.get("delete"):
+            LOGGER.debug("Deleting %s", os.path.join(local_dir, packname))
+            os.remove(os.path.join(local_dir, packname))
         if isinstance(new_names, tuple):
             var['dataset'] = [dict(uid=nn, uri=os.path.join(local_dir, nn))
                               for nn in new_names]
@@ -347,7 +347,8 @@ def unpack_and_create_local_message(msg, local_dir, **kwargs):
         return var
 
     if kwargs.get('compression') in COMPRESSED_ENDINGS:
-        lmsg_data = translate_dict(msg.data, ('uri', 'uid'), unpack_callback)
+        lmsg_data = translate_dict(msg.data, ('uri', 'uid'), unpack_callback,
+                                   **kwargs)
         if 'dataset' in lmsg_data:
             lmsg_type = 'dataset'
         elif 'collection' in lmsg_data:
@@ -488,7 +489,7 @@ def add_to_file_cache(msg):
                 file_cache.append(uid)
 
 
-def request_push(msg, destination, login, publisher=None, unpack=None, delete=False, **kwargs):
+def request_push(msg, destination, login, publisher=None, **kwargs):
     """Request a push for data."""
     huid = add_to_ongoing(msg)
     if huid is None:

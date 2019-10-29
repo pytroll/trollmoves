@@ -105,16 +105,17 @@ def translate_dict_item(var, key, callback):
         return var
 
 
-def translate_dict(var, keys, callback):
+def translate_dict(var, keys, callback, **kwargs):
     newvar = var.copy()
     if hasattr(var, 'items'):
         if set(var.keys()) & set(keys):
-            newvar = callback(var)
+            newvar = callback(var, **kwargs)
         for k, v in newvar.items():
             if hasattr(v, 'items'):
-                newvar[k] = translate_dict(v, keys, callback)
+                newvar[k] = translate_dict(v, keys, callback, **kwargs)
             elif isinstance(v, list):
-                newvar[k] = [translate_dict(d, keys, callback) for d in v]
+                newvar[k] = [translate_dict(d, keys, callback, **kwargs)
+                             for d in v]
         return newvar
     else:
         return var
