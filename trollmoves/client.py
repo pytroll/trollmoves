@@ -265,6 +265,7 @@ def unpack_bzip(filename, **kwargs):
     out_fname = filename[:-4]
     if os.path.exists(out_fname):
         return out_fname
+    delete = kwargs.get("delete")
     with open(out_fname, "wb") as dest:
         try:
             orig = bz2.BZ2File(filename, "r")
@@ -277,6 +278,8 @@ def unpack_bzip(filename, **kwargs):
             LOGGER.debug("Bunzipped %s to %s", filename, out_fname)
         finally:
             orig.close()
+    if delete:
+        os.remove(filename)
     return out_fname
 
 
@@ -512,7 +515,7 @@ def add_to_file_cache(msg):
                 file_cache.append(uid)
 
 
-def request_push(msg, destination, login, publisher=None, unpack=None, delete=False, **kwargs):
+def request_push(msg, destination, login, publisher=None, **kwargs):
     """Request a push for data."""
     huid = add_to_ongoing(msg)
     if huid is None:
