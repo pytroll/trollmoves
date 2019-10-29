@@ -262,7 +262,6 @@ def unpack_bzip(filename, **kwargs):
     out_fname = filename[:-4]
     if os.path.exists(out_fname):
         return out_fname
-    delete = kwargs.get("delete")
     with open(out_fname, "wb") as dest:
         try:
             orig = bz2.BZ2File(filename, "r")
@@ -275,8 +274,6 @@ def unpack_bzip(filename, **kwargs):
             LOGGER.debug("Bunzipped %s to %s", filename, out_fname)
         finally:
             orig.close()
-    if delete:
-        os.remove(filename)
     return out_fname
 
 
