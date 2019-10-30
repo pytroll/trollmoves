@@ -24,7 +24,7 @@
 import shutil
 from unittest.mock import patch
 import unittest
-
+from tempfile import NamedTemporaryFile, mkdtemp
 
 import trollmoves
 
