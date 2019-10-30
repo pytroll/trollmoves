@@ -39,6 +39,7 @@ import subprocess
 
 import pyinotify
 from zmq import LINGER, POLLIN, REQ, Poller
+import bz2
 
 from posttroll import get_context
 from posttroll.message import Message, MessageError
@@ -64,8 +65,9 @@ SERVER_HEARTBEAT_TOPIC = "/heartbeat/move_it_server"
 
 COMPRESSED_ENDINGS = {'xrit': ['C_'],
                       'tar': ['.tar', '.tar.gz', '.tgz', '.tar.bz2'],
-                      'bz2': ['.bz2'],
+                      'bzip': ['.bz2'],
                       }
+BUNZIP_BLOCK_SIZE = 1024
 
 
 # Config management
@@ -254,6 +256,27 @@ def unpack_xrit(filename, **kwargs):
     return out_fname
 
 
+def unpack_bzip(filename, **kwargs):
+    """Unzip .bz2 files."""
+    block_size = int(kwargs.get('block_size', BUNZIP_BLOCK_SIZE))
+    out_fname = filename[:-4]
+    if os.path.exists(out_fname):
+        return out_fname
+    with open(out_fname, "wb") as dest:
+        try:
+            orig = bz2.BZ2File(filename, "r")
+            while True:
+                block = orig.read(block_size)
+
+                if not block:
+                    break
+                dest.write(block)
+            LOGGER.debug("Bunzipped %s to %s", filename, out_fname)
+        finally:
+            orig.close()
+    return out_fname
+
+
 def check_output(*popenargs, **kwargs):
     """Copy from python 2.7, `subprocess.check_output`."""
     if 'stdout' in kwargs:
@@ -272,7 +295,8 @@ def check_output(*popenargs, **kwargs):
 
 
 unpackers = {'tar': unpack_tar,
-             'xrit': unpack_xrit}
+             'xrit': unpack_xrit,
+             'bzip': unpack_bzip}
 
 
 def already_received(msg):
