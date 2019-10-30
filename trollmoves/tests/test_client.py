@@ -146,6 +146,52 @@ def test_unpack_bzip():
         os.remove(fname_bz2)
 
 
+def test_unpack_tar():
+    """Test unpacking of bzip2 files."""
+    from trollmoves.client import unpack_tar
+    from tempfile import gettempdir
+    import tarfile
+
+    try:
+        # Write two test files
+        test_txt_file_1 = os.path.join(gettempdir(), "unpack_test_1.txt")
+        with open(test_txt_file_1, 'w') as fid:
+            fid.write('test 1\n')
+        test_txt_file_2 = os.path.join(gettempdir(), "unpack_test_2.txt")
+        with open(test_txt_file_2, 'w') as fid:
+            fid.write('test 2\n')
+        # Write a test .tar file with single file
+        test_tar_file = os.path.join(gettempdir(), "unpack_test.tar")
+        with tarfile.open(test_tar_file, 'w') as fid:
+            fid.add(test_txt_file_1, arcname=os.path.basename(test_txt_file_1))
+        os.remove(test_txt_file_1)
+
+        new_files = unpack_tar(test_tar_file)
+        assert new_files == test_txt_file_1
+        assert os.path.exists(test_txt_file_1)
+        os.remove(test_txt_file_1)
+
+        # Add another file to the .tar
+        with tarfile.open(test_tar_file, 'a') as fid:
+            fid.add(test_txt_file_2, arcname=os.path.basename(test_txt_file_2))
+        os.remove(test_txt_file_2)
+
+        new_files = unpack_tar(test_tar_file)
+        assert isinstance(new_files, tuple)
+        assert test_txt_file_1 in new_files
+        assert test_txt_file_2 in new_files
+        assert os.path.exists(test_txt_file_1)
+        assert os.path.exists(test_txt_file_2)
+
+    finally:
+        if os.path.exists(test_txt_file_1):
+            os.remove(test_txt_file_1)
+        if os.path.exists(test_txt_file_2):
+            os.remove(test_txt_file_2)
+        if os.path.exists(test_tar_file):
+            os.remove(test_tar_file)
+
+
 @patch('trollmoves.client.unpackers')
 def test_unpack_and_create_local_message(unpackers):
     """Test unpacking and updating the message with new filenames."""

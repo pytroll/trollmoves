@@ -239,7 +239,11 @@ def unpack_tar(filename, **kwargs):
             members = tar.getmembers()
     except tarfile.ReadError as err:
         raise IOError(str(err))
-    return (member.name for member in members)
+    fnames = tuple(os.path.join(destdir, member.name) for member in members)
+    if len(fnames) == 1:
+        return fnames[0]
+    else:
+        return fnames
 
 
 def unpack_xrit(filename, **kwargs):
