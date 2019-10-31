@@ -219,6 +219,12 @@ def test_unpack_and_create_local_message(unpackers):
     assert res.type == MSG_FILE_TAR.type
     unpackers['tar'].assert_called_with('/local/file1.tar', **kwargs)
 
+    # The unpacker returns a full path for some reason
+    unpackers['tar'].return_value = os.path.join(local_dir, 'new_file1.png')
+    res = unp(copy.copy(MSG_FILE_TAR), local_dir, **kwargs)
+    assert res.data['uri'] == os.path.join(local_dir, 'new_file1.png')
+    assert res.data['uid'] == 'new_file1.png'
+
     # One file with 'bz2' compression
     kwargs['compression'] = 'bzip'
     unpackers['bzip'].return_value = 'file1.png'
