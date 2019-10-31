@@ -50,7 +50,7 @@ class TestSSHMovers(unittest.TestCase):
             pass
 
     def test_scp(self):
-        """Check getting destination urls."""
+        """Check ScpMover init."""
         with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
             origin = the_file.name
         print(origin)
@@ -66,6 +66,20 @@ class TestSSHMovers(unittest.TestCase):
             scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
             print(scp_mover)
             sm.assert_called_once_with(origin, destination, attrs=_attrs)
+
+    def test_scp_get_connection(self):
+        """Check scp get_connection."""
+        with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
+            origin = the_file.name
+        print(origin)
+        destination = 'scp://' + self.hostname + ':' + str(self.port) + '/' + self.dest_dir
+        _attrs = {}
+
+        with patch('trollmoves.movers.ScpMover') as smgc:
+            print(smgc)
+            smgc.return_value.get_connection.return_value = 'testing'
+            scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
+            self.assertEqual(scp_mover.get_connection(self.hostname, self.port, self.login), 'testing')
 
 
 if __name__ == '__main__':
