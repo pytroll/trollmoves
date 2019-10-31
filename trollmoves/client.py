@@ -239,7 +239,11 @@ def unpack_tar(filename, **kwargs):
             members = tar.getmembers()
     except tarfile.ReadError as err:
         raise IOError(str(err))
-    return (member.name for member in members)
+    fnames = tuple(os.path.join(destdir, member.name) for member in members)
+    if len(fnames) == 1:
+        return fnames[0]
+    else:
+        return fnames
 
 
 def unpack_xrit(filename, **kwargs):
@@ -363,10 +367,11 @@ def unpack_and_create_local_message(msg, local_dir, **kwargs):
             LOGGER.debug("Deleting %s", os.path.join(local_dir, packname))
             os.remove(os.path.join(local_dir, packname))
         if isinstance(new_names, tuple):
-            var['dataset'] = [dict(uid=nn, uri=os.path.join(local_dir, nn))
+            var['dataset'] = [dict(uid=os.path.basename(nn),
+                                   uri=os.path.join(local_dir, nn))
                               for nn in new_names]
         else:
-            var['uid'] = new_names
+            var['uid'] = os.path.basename(new_names)
             var['uri'] = os.path.join(local_dir, new_names)
         return var
 
