@@ -22,11 +22,15 @@
 """Test the ssh server."""
 
 import shutil
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import unittest
 from tempfile import NamedTemporaryFile, mkdtemp
 
 import trollmoves
+# from paramiko import SSHClient
+# from paramiko import SSHException
+
+# from trollmoves.movers import ScpMover
 
 
 class TestSSHMovers(unittest.TestCase):
@@ -67,6 +71,20 @@ class TestSSHMovers(unittest.TestCase):
             print(scp_mover)
             sm.assert_called_once_with(origin, destination, attrs=_attrs)
 
+    def test_scp_open_connection(self):
+        """Check scp open_connection."""
+        with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
+            origin = the_file.name
+        print(origin)
+        destination = 'scp://' + self.hostname + ':' + str(self.port) + '/' + self.dest_dir
+        _attrs = {}
+
+        with patch('trollmoves.movers.ScpMover') as smgc:
+            print(smgc)
+            smgc.return_value.open_connection.return_value = 'testing'
+            scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
+            self.assertEqual(scp_mover.open_connection(), 'testing')
+
     def test_scp_get_connection(self):
         """Check scp get_connection."""
         with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
@@ -80,6 +98,37 @@ class TestSSHMovers(unittest.TestCase):
             smgc.return_value.get_connection.return_value = 'testing'
             scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
             self.assertEqual(scp_mover.get_connection(self.hostname, self.port, self.login), 'testing')
+
+    def ssh_connect():
+        response_mock = Mock()
+        return response_mock
+
+    def test_scp_open_connection_2(self):
+        """Check scp get_connection."""
+        with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
+            origin = the_file.name
+        print(origin)
+        destination = 'scp://' + self.hostname + ':' + str(self.port) + '/' + self.dest_dir
+        _attrs = {}
+
+        scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
+        print(scp_mover.open_connection())
+
+    # @patch('trollmoves.movers.ScpMover.SSHClient')
+    # def test_scp_open_connection_ssh_exeption(self, mock_sshclient):
+    #    """Check scp get_connection exception."""
+    #    with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
+    #        origin = the_file.name
+    #    print(origin)
+    #    destination = 'scp://' + self.hostname + ':' + str(self.port) + '/' + self.dest_dir
+    #    _attrs = {}
+
+    #    response_mock = Mock()
+    #    mock_sshclient.connect.side_effect = [SSHException, response_mock]
+    #    print(mock_sshclient)
+    #    with self.assertRaises(SSHException):
+    #        scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
+    #        print(scp_mover.open_connection())
 
 
 if __name__ == '__main__':
