@@ -135,13 +135,13 @@ class TestSSHMovers(unittest.TestCase):
             port=self.port,
             username=self.login,
             key_filename=None)
-        #print(mock_sshclient)
-        #print("BEfore")
+        # print(mock_sshclient)
+        # print("BEfore")
         #scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
-        #print("After")
+        # print("After")
         #connection = scp_mover.open_connection()
-        #print("After2")
-        #print(connection)
+        # print("After2")
+        # print(connection)
 
 
 if __name__ == '__main__':
