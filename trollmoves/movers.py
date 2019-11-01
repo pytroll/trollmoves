@@ -37,6 +37,8 @@ from six.moves.urllib.parse import urlparse
 
 from trollmoves.utils import clean_url
 
+from paramiko import SSHClient, SSHException, AutoAddPolicy
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -262,7 +264,6 @@ class ScpMover(Mover):
     active_connection_lock = Lock()
 
     def open_connection(self):
-        from paramiko import SSHClient, SSHException, AutoAddPolicy
 
         retries = 3
         ssh_key_filename = self.attrs.get("ssh_key_filename", None)
