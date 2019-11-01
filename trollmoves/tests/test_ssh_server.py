@@ -22,11 +22,13 @@
 """Test the ssh server."""
 
 import shutil
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, MagicMock, patch
 import unittest
 from tempfile import NamedTemporaryFile, mkdtemp
 
 import trollmoves
+import paramiko
+
 # from paramiko import SSHClient
 # from paramiko import SSHException
 
@@ -103,32 +105,43 @@ class TestSSHMovers(unittest.TestCase):
         response_mock = Mock()
         return response_mock
 
-    def test_scp_open_connection_2(self):
-        """Check scp get_connection."""
-        with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
-            origin = the_file.name
-        print(origin)
-        destination = 'scp://' + self.hostname + ':' + str(self.port) + '/' + self.dest_dir
-        _attrs = {}
-
-        scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
-        print(scp_mover.open_connection())
-
-    # @patch('trollmoves.movers.ScpMover.SSHClient')
-    # def test_scp_open_connection_ssh_exeption(self, mock_sshclient):
-    #    """Check scp get_connection exception."""
+    # def test_scp_open_connection_2(self):
+    #    """Check scp get_connection."""
     #    with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
     #        origin = the_file.name
     #    print(origin)
     #    destination = 'scp://' + self.hostname + ':' + str(self.port) + '/' + self.dest_dir
     #    _attrs = {}
 
-    #    response_mock = Mock()
-    #    mock_sshclient.connect.side_effect = [SSHException, response_mock]
-    #    print(mock_sshclient)
-    #    with self.assertRaises(SSHException):
-    #        scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
-    #        print(scp_mover.open_connection())
+    #    scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
+    #    print(scp_mover.open_connection())
+
+    @patch('trollmoves.movers.SSHClient', autospec=True)
+    def test_scp_open_connection_2(self, mock_sshclient):
+        """Check scp get_connection 2."""
+
+        mocked_client = MagicMock()
+        mock_sshclient.return_value = mocked_client
+        with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
+            origin = the_file.name
+        print(origin)
+        destination = 'scp://' + self.login + '@' + self.hostname + ':' + str(self.port) + '/' + self.dest_dir
+        _attrs = {}
+        scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
+        scp_mover.get_connection(self.hostname, port=self.port, username=self.login)
+
+        mocked_client.connect.assert_called_once_with(
+            self.hostname,
+            port=self.port,
+            username=self.login,
+            key_filename=None)
+        #print(mock_sshclient)
+        #print("BEfore")
+        #scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
+        #print("After")
+        #connection = scp_mover.open_connection()
+        #print("After2")
+        #print(connection)
 
 
 if __name__ == '__main__':
