@@ -38,6 +38,7 @@ from six.moves.urllib.parse import urlparse
 from trollmoves.utils import clean_url
 
 from paramiko import SSHClient, SSHException, AutoAddPolicy
+from scp import SCPClient
 
 LOGGER = logging.getLogger(__name__)
 
@@ -319,7 +320,6 @@ class ScpMover(Mover):
 
     def copy(self):
         """Push it !"""
-        from scp import SCPClient
 
         ssh_connection = self.get_connection(self.destination.hostname,
                                              self.destination.port or 22,
