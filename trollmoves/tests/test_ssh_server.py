@@ -22,7 +22,7 @@
 """Test the ssh server."""
 
 import shutil
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 import unittest
 from tempfile import NamedTemporaryFile, mkdtemp
 from six.moves.urllib.parse import urlparse
