@@ -167,6 +167,8 @@ class TestSSHMovers(unittest.TestCase):
     def test_scp_is_connected_exception(self, mock_sshclient_connect):
         """Check scp is_connected exception."""
 
+        mocked_client = Mock()
+        mock_sshclient_connect.return_value = mocked_client
         with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
             origin = the_file.name
         destination = 'scp://' + self.login + '@' + self.hostname + '/' + self.dest_dir
