@@ -27,6 +27,8 @@ import unittest
 from tempfile import NamedTemporaryFile, mkdtemp
 from six.moves.urllib.parse import urlparse
 
+import errno
+
 import trollmoves
 
 # from paramiko import SSHClient
@@ -194,6 +196,86 @@ class TestSSHMovers(unittest.TestCase):
         _attrs = {}
         scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
         scp_mover.copy()
+        mocked_scp_client.put.assert_called_once_with(origin, urlparse(destination).path)
+
+    @patch('trollmoves.movers.SSHClient', autospec=True)
+    @patch('trollmoves.movers.SCPClient', autospec=True)
+    def test_scp_copy_exception(self, mock_scp_client, mock_sshclient):
+        """Check scp copy exception"""
+
+        copy_exception = False
+        try:
+            with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
+                origin = the_file.name
+            destination = 'scp://' + self.login + '@' + self.hostname + '/' + self.dest_dir
+            _attrs = {}
+            scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
+            mock_scp_client.side_effect = Exception
+            scp_mover.copy()
+        except Exception:
+            copy_exception = True
+        assert copy_exception is True
+
+    @patch('trollmoves.movers.SCPClient', autospec=True)
+    def test_scp_copy_exception2(self, mock_scp_client):
+        """Check scp copy exception OSError"""
+
+        put_exception = False
+        try:
+            with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
+                origin = the_file.name
+            destination = 'scp://' + self.login + '@' + self.hostname + '/' + self.dest_dir
+            _attrs = {}
+            scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
+            mock_scp_client.return_value.put.side_effect = OSError
+            scp_mover.copy()
+        except OSError:
+            put_exception = True
+        assert put_exception is True
+
+    @patch('trollmoves.movers.SCPClient', autospec=True)
+    def test_scp_copy_exception3(self, mock_scp_client):
+        """Check scp copy exception OSError errno 2"""
+
+        with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
+            origin = the_file.name
+        destination = 'scp://' + self.login + '@' + self.hostname + '/' + self.dest_dir
+        _attrs = {}
+        scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
+        mock_scp_client.return_value.put.side_effect = OSError(errno.ENOENT, 'message')
+        result = scp_mover.copy()
+        assert result is None
+
+    @patch('trollmoves.movers.SCPClient', autospec=True)
+    def test_scp_copy_exception4(self, mock_scp_client):
+        """Check scp copy exception Exception 2"""
+
+        put_exception = False
+        try:
+            with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
+                origin = the_file.name
+            destination = 'scp://' + self.login + '@' + self.hostname + '/' + self.dest_dir
+            _attrs = {}
+            scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
+            mock_scp_client.return_value.put.side_effect = Exception('Test message')
+            scp_mover.copy()
+        except Exception:
+            put_exception = True
+        assert put_exception is True
+
+    @patch('trollmoves.movers.SSHClient', autospec=True)
+    @patch('trollmoves.movers.SCPClient', autospec=True)
+    def test_scp_move(self, mock_scp_client, mock_sshclient):
+        """Check scp move"""
+
+        mocked_scp_client = MagicMock()
+        mock_scp_client.return_value = mocked_scp_client
+        with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
+            origin = the_file.name
+        destination = 'scp://' + self.login + '@' + self.hostname + '/' + self.dest_dir
+        _attrs = {}
+        scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
+        scp_mover.move()
         mocked_scp_client.put.assert_called_once_with(origin, urlparse(destination).path)
 
 
