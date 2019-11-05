@@ -145,7 +145,7 @@ class TestSSHMovers(unittest.TestCase):
             destination = 'scp://' + self.login + '@' + self.hostname + '/' + self.dest_dir
             _attrs = {'connection_uptime': 0}
             scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
-            scp_mover.get_connection(self.hostname, 22, username=self.login)
+            scp_mover.open_connection()
         except IOError as ioe:
             assert str(ioe) == 'Failed to ssh connect after 3 attempts'
 
