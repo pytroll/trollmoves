@@ -22,7 +22,7 @@
 """Test the ssh server."""
 
 import shutil
-from unittest.mock import MagicMock, patch
+from unittest.mock import Mock, MagicMock, patch
 import unittest
 from tempfile import NamedTemporaryFile, mkdtemp
 from six.moves.urllib.parse import urlparse
@@ -164,26 +164,18 @@ class TestSSHMovers(unittest.TestCase):
             assert str(ioe) == 'Failed to ssh connect after 3 attempts'
 
     @patch('trollmoves.movers.SSHClient.connect', autospec=True)
-    @patch('trollmoves.movers.ScpMover.is_connected')
-    def test_scp_is_connected_exception(self, mock_is_connected, mock_sshclient_connect):
+    def test_scp_is_connected_exception(self, mock_sshclient_connect):
         """Check scp is_connected exception."""
 
-        exception_called = False
-        try:
-            mocked_client_ic = MagicMock(side_effect=AttributeError)
-            mock_is_connected.side_effect = mocked_client_ic
-            mocked_client = MagicMock()
-            mock_sshclient_connect.return_value = mocked_client
-            with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
-                origin = the_file.name
-            destination = 'scp://' + self.login + '@' + self.hostname + '/' + self.dest_dir
-            _attrs = {'connection_uptime': 0}
-            scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
-            connection = scp_mover.get_connection(self.hostname, 22, username=self.login)
-            print(scp_mover.is_connected(connection))
-        except AttributeError:
-            exception_called = True
-        assert exception_called is True
+        with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
+            origin = the_file.name
+        destination = 'scp://' + self.login + '@' + self.hostname + '/' + self.dest_dir
+        _attrs = {'connection_uptime': 0}
+        scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
+        connection = scp_mover.get_connection(self.hostname, 22, username=self.login)
+        connection.get_transport.side_effect = AttributeError
+        result = scp_mover.is_connected(connection)
+        assert result is False
 
     @patch('trollmoves.movers.SSHClient', autospec=True)
     @patch('trollmoves.movers.SCPClient', autospec=True)
