@@ -330,6 +330,8 @@ def create_push_req_message(msg, destination, login):
     duri = urlparse(destination)
     scheme = duri.scheme or 'file'
     dest_hostname = duri.hostname or socket.gethostname()
+    if duri.port:
+        dest_hostname += ":{}".format(duri.port)
     fake_req.data["destination"] = urlunparse((scheme, dest_hostname, duri.path, "", "", ""))
     if login:
         # if necessary add the credentials for the real request
