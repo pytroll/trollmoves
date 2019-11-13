@@ -153,7 +153,6 @@ from queue import Empty
 from threading import Thread
 
 import yaml
-from six.moves.urllib.parse import urljoin
 
 import inotify.adapters
 from posttroll.listener import ListenerContainer
@@ -329,7 +328,7 @@ class Dispatcher(Thread):
             if key in mda:
                 mda[key] = aliases.get(mda[key], mda[key])
         path = compose(path, mda)
-        return urljoin(host, path), connection_parameters
+        return host + path, connection_parameters
 
     def close(self):
         """Shutdown the dispatcher."""
