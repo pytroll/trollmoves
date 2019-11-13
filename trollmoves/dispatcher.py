@@ -302,10 +302,9 @@ class Dispatcher(Thread):
         destinations = []
         for client, config in self.config.items():
             for item in config['dispatch_configs']:
-                # remove 'pytroll:/'
                 for topic in item['topics']:
-                    msg.subject[9:].startswith(topic)
-                    break
+                    if msg.subject.startswith(topic):
+                        break
                 else:
                     continue
                 if check_conditions(msg, item):
