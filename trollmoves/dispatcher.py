@@ -155,12 +155,15 @@ from threading import Thread
 import yaml
 
 import inotify.adapters
+from inotify.constants import IN_MODIFY, IN_CLOSE_WRITE, IN_CREATE, IN_MOVED_TO
 from posttroll.listener import ListenerContainer
 from trollmoves.movers import move_it
 from trollmoves.utils import clean_url
 from trollsift import compose
 
 logger = logging.getLogger(__name__)
+
+INOTIFY_MASK = IN_MODIFY | IN_CLOSE_WRITE | IN_CREATE | IN_MOVED_TO
 
 
 class Notifier(Thread):
@@ -171,7 +174,7 @@ class Notifier(Thread):
         self.filename = filename
         self.loop = True
         self.i = inotify.adapters.Inotify()
-        self.i.add_watch(filename)
+        self.i.add_watch(filename, mask=INOTIFY_MASK)
         self.event_types = set(event_types)
         self.callback = callback
         super().__init__()
