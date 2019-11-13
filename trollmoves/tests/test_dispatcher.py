@@ -206,7 +206,7 @@ def test_get_destinations():
             dp = Dispatcher(fname)
             dp.config = yaml.safe_load(test_yaml1)
             msg = Mock()
-            msg.subject = 'pytroll://level2/viirs'
+            msg.subject = '/level2/viirs'
             msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
                         'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif'}
             expected_url = 'ftp://ftp.target1.com/input_data/viirs/NOAA-20_201909190919.tif'
@@ -268,7 +268,7 @@ def test_get_destinations_with_aliases():
             dp = Dispatcher(fname)
             dp.config = yaml.safe_load(test_yaml_aliases)
             msg = Mock()
-            msg.subject = 'pytroll://level2/viirs'
+            msg.subject = '/level2/viirs'
             msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
                         'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif'}
             expected_url = 'ftp://ftp.target1.com/input_data/viirs/NOAA-20_gs_201909190919.tif'
@@ -343,7 +343,7 @@ def test_dispatcher():
                 with NamedTemporaryFile('w') as test_file:
                     msg = Mock()
                     msg.type = 'file'
-                    msg.subject = 'pytroll://level2/viirs'
+                    msg.subject = '/level2/viirs'
                     msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
                                 'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif',
                                 'area': 'euron1',
