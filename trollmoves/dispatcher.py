@@ -156,6 +156,8 @@ import yaml
 
 import inotify.adapters
 from inotify.constants import IN_MODIFY, IN_CLOSE_WRITE, IN_CREATE, IN_MOVED_TO
+from six.moves.urllib.parse import urlsplit, urlunsplit
+
 from posttroll.listener import ListenerContainer
 from trollmoves.movers import move_it
 from trollmoves.utils import clean_url
@@ -331,7 +333,10 @@ class Dispatcher(Thread):
             if key in mda:
                 mda[key] = aliases.get(mda[key], mda[key])
         path = compose(path, mda)
-        return host + path, connection_parameters
+        parts = urlsplit(host)
+        host_path = urlunsplit((parts.scheme, parts.netloc, path,
+                                parts.query, parts.fragment))
+        return host_path, connection_parameters
 
     def close(self):
         """Shutdown the dispatcher."""
