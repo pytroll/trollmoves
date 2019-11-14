@@ -59,7 +59,8 @@ class MoveItBase(object):
         else:
             # Also Mirror uses the reload_config from the Server
             from trollmoves.server import reload_config
-            reload_config(filename, self.chains, *args, publisher=self.pub)
+            reload_config(filename, self.chains, *args, publisher=self.pub,
+                          **kwargs)
 
     def signal_reload_cfg_file(self, *args):
         del args
