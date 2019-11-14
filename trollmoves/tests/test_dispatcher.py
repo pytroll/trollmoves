@@ -95,6 +95,18 @@ target2:
           coverage: '>50'
 """
 
+test_yaml_ssh_scp = test_yaml2 + """
+target3:
+  host: scp://user@server.target2.com
+  connection_parameters:
+    ssh_key_filename: ~/.ssh/rsa_id.pub
+  filepattern: 'sat_{start_time:%Y%m%d%H%M}_{platform_name}.{format}'
+  directory: /satellite/{sensor}
+  dispatch_configs:
+    - topics:
+        - /level2/viirs
+"""
+
 
 def test_config_reading():
     """Test reading the config."""
@@ -375,19 +387,25 @@ def test_create_dest_url():
             lc.return_value.output_queue = queue
             with NamedTemporaryFile('w', delete=False) as config_file:
                 config_file_name = config_file.name
-                config_file.write(test_yaml2)
+                config_file.write(test_yaml_ssh_scp)
                 config_file.flush()
                 config_file.close()
-            config = yaml.safe_load(test_yaml2)
+            config = yaml.safe_load(test_yaml_ssh_scp)
             dp = Dispatcher(config_file_name)
             msg = Mock()
             msg.subject = '/level2/viirs'
             msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
                         'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif'}
+            # SSH protocol, no username
             url, params = dp.create_dest_url(msg, 'target2', config['target2'])
-        expected_url = "ssh://server.target2.com/satellite/viirs/sat_201909190919_NOAA-20.tif"
-        assert url == expected_url
-        assert params == {'ssh_key_filename': '~/.ssh/rsa_id.pub'}
+            expected_url = "ssh://server.target2.com/satellite/viirs/sat_201909190919_NOAA-20.tif"
+            assert url == expected_url
+            assert params == {'ssh_key_filename': '~/.ssh/rsa_id.pub'}
+
+            # SCP protocolw with username
+            url, params = dp.create_dest_url(msg, 'target3', config['target3'])
+            expected_url = "scp://user@server.target2.com/satellite/viirs/sat_201909190919_NOAA-20.tif"
+            assert url == expected_url
 
     finally:
         if dp is not None:
