@@ -361,6 +361,35 @@ def test_dispatcher():
     finally:
         if dp is not None:
             dp.close()
-    os.remove(expected_file)
-    os.rmdir(dest_dir)
-    os.remove(config_file_name)
+        os.remove(expected_file)
+        os.rmdir(dest_dir)
+        os.remove(config_file_name)
+
+
+def test_create_dest_url():
+    """Test creation of destination URL."""
+    dp = None
+    try:
+        with patch('trollmoves.dispatcher.ListenerContainer') as lc:
+            queue = Queue()
+            lc.return_value.output_queue = queue
+            with NamedTemporaryFile('w', delete=False) as config_file:
+                config_file_name = config_file.name
+                config_file.write(test_yaml2)
+                config_file.flush()
+                config_file.close()
+            config = yaml.safe_load(test_yaml2)
+            dp = Dispatcher(config_file_name)
+            msg = Mock()
+            msg.subject = '/level2/viirs'
+            msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
+                        'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif'}
+            url, params= dp.create_dest_url(msg, 'target2', config['target2'])
+        expected_url = "ssh://server.target2.com/satellite/viirs/sat_201909190919_NOAA-20.tif"
+        assert url == expected_url
+        assert params == {'ssh_key_filename': '~/.ssh/rsa_id.pub'}
+
+    finally:
+        if dp is not None:
+            dp.close()
+        os.remove(config_file_name)
