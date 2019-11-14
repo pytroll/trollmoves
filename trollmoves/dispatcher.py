@@ -153,15 +153,19 @@ from queue import Empty
 from threading import Thread
 
 import yaml
-from six.moves.urllib.parse import urljoin
 
 import inotify.adapters
+from inotify.constants import IN_MODIFY, IN_CLOSE_WRITE, IN_CREATE, IN_MOVED_TO
+from six.moves.urllib.parse import urlsplit, urlunsplit
+
 from posttroll.listener import ListenerContainer
 from trollmoves.movers import move_it
 from trollmoves.utils import clean_url
 from trollsift import compose
 
 logger = logging.getLogger(__name__)
+
+INOTIFY_MASK = IN_MODIFY | IN_CLOSE_WRITE | IN_CREATE | IN_MOVED_TO
 
 
 class Notifier(Thread):
@@ -172,7 +176,7 @@ class Notifier(Thread):
         self.filename = filename
         self.loop = True
         self.i = inotify.adapters.Inotify()
-        self.i.add_watch(filename)
+        self.i.add_watch(filename, mask=INOTIFY_MASK)
         self.event_types = set(event_types)
         self.callback = callback
         super().__init__()
@@ -302,10 +306,9 @@ class Dispatcher(Thread):
         destinations = []
         for client, config in self.config.items():
             for item in config['dispatch_configs']:
-                # remove 'pytroll:/'
                 for topic in item['topics']:
-                    msg.subject[9:].startswith(topic)
-                    break
+                    if msg.subject.startswith(topic):
+                        break
                 else:
                     continue
                 if check_conditions(msg, item):
@@ -330,7 +333,10 @@ class Dispatcher(Thread):
             if key in mda:
                 mda[key] = aliases.get(mda[key], mda[key])
         path = compose(path, mda)
-        return urljoin(host, path), connection_parameters
+        parts = urlsplit(host)
+        host_path = urlunsplit((parts.scheme, parts.netloc, path,
+                                parts.query, parts.fragment))
+        return host_path, connection_parameters
 
     def close(self):
         """Shutdown the dispatcher."""
