@@ -384,7 +384,7 @@ def test_create_dest_url():
             msg.subject = '/level2/viirs'
             msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
                         'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif'}
-            url, params= dp.create_dest_url(msg, 'target2', config['target2'])
+            url, params = dp.create_dest_url(msg, 'target2', config['target2'])
         expected_url = "ssh://server.target2.com/satellite/viirs/sat_201909190919_NOAA-20.tif"
         assert url == expected_url
         assert params == {'ssh_key_filename': '~/.ssh/rsa_id.pub'}

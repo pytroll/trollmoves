@@ -36,6 +36,7 @@ from trollmoves.server import EventHandler
 LOGGER = logging.getLogger("move_it_base")
 LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
 
+
 class MoveItBase(object):
 
     def __init__(self, cmd_args, chain_type):
