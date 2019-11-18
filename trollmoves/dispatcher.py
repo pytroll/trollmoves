@@ -39,6 +39,15 @@ Example config::
         connection_uptime: 60
       filepattern: '{platform_name}_{start_time}.{format}'
       directory: /input_data/{sensor}
+      # Optional direct subscriptions
+      # subscribe_addresses:
+      #   - tcp://127.0.0.1:40000
+      # Nameserver to connect to. Optional. Defaults to localhost
+      # nameserver: 127.0.0.1
+      # Subscribe to specific services. Optional. Default: connect to all services
+      # subscribe_services:
+      #   - service_name_1
+      #   - service_name_2
       aliases:
         product:
           natural_color: dnc
@@ -81,6 +90,9 @@ Each host section have to contain the following information:
       pass to the moving function. See the `trollmoves.movers` module documentation.
     - `aliases` (optional): A dictionary of metadata items to change for the
       final filename. These are not taken into account for checking the conditions.
+    - `nameserver` (optional): Address of a nameserver to connect to.  Default: 'localhost'.
+    - `addresses` (optional): List of TCP connections to listen for messages.
+    - `services` (optional): List of service names to subscribe to.  Default: connect to all services.
 
 Note that the `host`, `filepattern`, and `directory` items can be overridden in
 the dispatch_configs section.
@@ -141,15 +153,19 @@ from queue import Empty
 from threading import Thread
 
 import yaml
-from six.moves.urllib.parse import urljoin
 
 import inotify.adapters
+from inotify.constants import IN_MODIFY, IN_CLOSE_WRITE, IN_CREATE, IN_MOVED_TO
+from six.moves.urllib.parse import urlsplit, urlunsplit
+
 from posttroll.listener import ListenerContainer
 from trollmoves.movers import move_it
 from trollmoves.utils import clean_url
 from trollsift import compose
 
 logger = logging.getLogger(__name__)
+
+INOTIFY_MASK = IN_MODIFY | IN_CLOSE_WRITE | IN_CREATE | IN_MOVED_TO
 
 
 class Notifier(Thread):
@@ -160,7 +176,7 @@ class Notifier(Thread):
         self.filename = filename
         self.loop = True
         self.i = inotify.adapters.Inotify()
-        self.i.add_watch(filename)
+        self.i.add_watch(filename, mask=INOTIFY_MASK)
         self.event_types = set(event_types)
         self.callback = callback
         super().__init__()
@@ -259,7 +275,13 @@ class Dispatcher(Thread):
                     # FIXME: make sure to get the last messages though
                     self.listener.stop()
                 self.config = new_config
-                self.listener = ListenerContainer(topics)
+                addresses = client_config.get('subscribe_addresses', None)
+                nameserver = client_config.get('nameserver', 'localhost')
+                services = client_config.get('subscribe_services', '')
+                self.listener = ListenerContainer(topics=topics,
+                                                  addresses=addresses,
+                                                  nameserver=nameserver,
+                                                  services=services)
                 self.topics = topics
 
         except KeyError as err:
@@ -284,10 +306,9 @@ class Dispatcher(Thread):
         destinations = []
         for client, config in self.config.items():
             for item in config['dispatch_configs']:
-                # remove 'pytroll:/'
                 for topic in item['topics']:
-                    msg.subject[9:].startswith(topic)
-                    break
+                    if msg.subject.startswith(topic):
+                        break
                 else:
                     continue
                 if check_conditions(msg, item):
@@ -312,7 +333,10 @@ class Dispatcher(Thread):
             if key in mda:
                 mda[key] = aliases.get(mda[key], mda[key])
         path = compose(path, mda)
-        return urljoin(host, path), connection_parameters
+        parts = urlsplit(host)
+        host_path = urlunsplit((parts.scheme, parts.netloc, path,
+                                parts.query, parts.fragment))
+        return host_path, connection_parameters
 
     def close(self):
         """Shutdown the dispatcher."""

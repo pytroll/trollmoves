@@ -21,6 +21,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+"""Trollmoves client."""
+
 import logging
 import os
 import socket
@@ -33,9 +35,11 @@ from threading import Lock, Thread, Event
 import hashlib
 import six
 from six.moves.urllib.parse import urlparse, urlunparse
+import subprocess
 
 import pyinotify
 from zmq import LINGER, POLLIN, REQ, Poller
+import bz2
 
 from posttroll import get_context
 from posttroll.message import Message, MessageError
@@ -45,7 +49,8 @@ from trollsift.parser import compose
 
 from trollmoves import heartbeat_monitor
 from trollmoves.utils import get_local_ips
-from trollmoves.utils import gen_dict_extract, translate_dict, translate_dict_value
+from trollmoves.utils import gen_dict_extract, translate_dict
+from trollmoves.movers import CTimer
 
 LOGGER = logging.getLogger(__name__)
 
@@ -53,16 +58,22 @@ file_cache = deque(maxlen=11000)
 cache_lock = Lock()
 ongoing_transfers = dict()
 ongoing_transfers_lock = Lock()
+hot_spare_timer_lock = Lock()
+ongoing_hot_spare_timers = dict()
 
 DEFAULT_REQ_TIMEOUT = 1
-
 SERVER_HEARTBEAT_TOPIC = "/heartbeat/move_it_server"
+
+COMPRESSED_ENDINGS = {'xrit': ['C_'],
+                      'tar': ['.tar', '.tar.gz', '.tgz', '.tar.bz2'],
+                      'bzip': ['.bz2'],
+                      }
+BUNZIP_BLOCK_SIZE = 1024
 
 
 # Config management
 def read_config(filename):
-    """Read the config file called *filename*.
-    """
+    """Read the config file called *filename*."""
     cp_ = RawConfigParser()
     cp_.read(filename)
 
@@ -73,8 +84,11 @@ def read_config(filename):
         res[section].setdefault("delete", False)
         if res[section]["delete"] in ["", "False", "false", "0", "off"]:
             res[section]["delete"] = False
+        if res[section]["delete"] in ["True", "true", "on", "1"]:
+            res[section]["delete"] = True
         res[section].setdefault("working_directory", None)
         res[section].setdefault("compression", False)
+        res[section].setdefault("xritdecompressor", None)
         res[section].setdefault("heartbeat", True)
         res[section].setdefault("req_timeout", DEFAULT_REQ_TIMEOUT)
         res[section].setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
@@ -120,12 +134,10 @@ def read_config(filename):
 
 
 class Listener(Thread):
-    '''PyTroll listener class for reading messages for Trollduction
-    '''
+    """PyTroll listener class for reading messages for Trollduction."""
 
     def __init__(self, address, topics, callback, *args, **kwargs):
-        '''Init Listener object
-        '''
+        """Init Listener object."""
         super(Listener, self).__init__()
 
         self.topics = topics
@@ -138,9 +150,7 @@ class Listener(Thread):
         self.restart_event = Event()
 
     def create_subscriber(self):
-        '''Create a subscriber instance using specified addresses and
-        message types.
-        '''
+        """Create a subscriber using specified addresses and message types."""
         if self.subscriber is None:
             if self.topics:
                 LOGGER.info("Subscribing to %s with topics %s",
@@ -149,9 +159,7 @@ class Listener(Thread):
                 LOGGER.debug("Subscriber %s", str(self.subscriber))
 
     def run(self):
-        '''Run listener
-        '''
-
+        """Run listener."""
         with heartbeat_monitor.Monitor(self.restart_event, **self.ckwargs) as beat_monitor:
 
             self.running = True
@@ -180,14 +188,34 @@ class Listener(Thread):
                     beat_monitor(msg)
                     if msg.type == "beat":
                         continue
+                    # Handle public "push" messages as a hot spare client
+                    if msg.type == "push":
+                        # TODO: these need to be checked and acted if
+                        # the transfers are not finished on primary
+                        # client and are not cleared
+                        LOGGER.debug("Primary client published 'push'")
+                        add_to_ongoing(msg)
 
-                    self.callback(msg, *self.cargs, **self.ckwargs)
+                    # Handle public "ack" messages as a hot spare client
+                    if msg.type == "ack":
+                        LOGGER.debug("Primary client finished transfer")
+                        _ = add_to_file_cache(msg)
+                        _ = clean_ongoing_transfer(get_msg_uid(msg))
+
+                    # If this is a hot spare client, wait for a while
+                    # for a public "push" message which will update
+                    # the ongoing transfers before starting processing here
+                    delay = self.ckwargs.get("processing_delay", False)
+                    if delay:
+                        add_timer(float(delay), self.callback, msg, *self.cargs,
+                                  **self.ckwargs)
+                    else:
+                        self.callback(msg, *self.cargs, **self.ckwargs)
 
                 LOGGER.debug("Exiting listener %s", str(self.address))
 
     def stop(self):
-        '''Stop subscriber and delete the instance
-        '''
+        """Stop subscriber and delete the instance."""
         self.running = False
         time.sleep(1)
         if self.subscriber is not None:
@@ -195,7 +223,15 @@ class Listener(Thread):
             self.subscriber = None
 
 
-def unpack_tar(filename, delete=False):
+def clean_ongoing_transfer(uid):
+    """Clear transfer for the given UID from the cache."""
+    with ongoing_transfers_lock:
+        msgs = ongoing_transfers.pop(uid, [])
+        LOGGER.debug("Remove uid %s: %s", uid, str(msgs))
+    return msgs
+
+
+def unpack_tar(filename, **kwargs):
     """Unpack tar files."""
     destdir = os.path.dirname(filename)
     try:
@@ -204,12 +240,68 @@ def unpack_tar(filename, delete=False):
             members = tar.getmembers()
     except tarfile.ReadError as err:
         raise IOError(str(err))
-    if delete:
-        os.remove(filename)
-    return (member.name for member in members)
+    fnames = tuple(os.path.join(destdir, member.name) for member in members)
+    if len(fnames) == 1:
+        return fnames[0]
+    else:
+        return fnames
 
 
-unpackers = {'tar': unpack_tar}
+def unpack_xrit(filename, **kwargs):
+    """Unpack XRIT files."""
+    if filename.endswith('__'):
+        return filename
+    cmd = kwargs.get('xritdecompressor')
+    if cmd is None:
+        raise OSError("Path to 'xRITDecompress' utility not defined. "
+                      "Set it with 'xritdecompressor' config option.")
+    destdir = os.path.dirname(filename)
+    out_fname = os.path.join(destdir, os.path.basename(filename)[:-2] + "__")
+    check_output([cmd, filename], cwd=(destdir))
+    return out_fname
+
+
+def unpack_bzip(filename, **kwargs):
+    """Unzip .bz2 files."""
+    block_size = int(kwargs.get('block_size', BUNZIP_BLOCK_SIZE))
+    out_fname = filename[:-4]
+    if os.path.exists(out_fname):
+        return out_fname
+    with open(out_fname, "wb") as dest:
+        try:
+            orig = bz2.BZ2File(filename, "r")
+            while True:
+                block = orig.read(block_size)
+
+                if not block:
+                    break
+                dest.write(block)
+            LOGGER.debug("Bunzipped %s to %s", filename, out_fname)
+        finally:
+            orig.close()
+    return out_fname
+
+
+def check_output(*popenargs, **kwargs):
+    """Copy from python 2.7, `subprocess.check_output`."""
+    if 'stdout' in kwargs:
+        raise ValueError('stdout argument not allowed, it will be overridden.')
+    LOGGER.debug("Calling %s", str(popenargs))
+    process = subprocess.Popen(stdout=subprocess.PIPE, *popenargs, **kwargs)
+    output, unused_err = process.communicate()
+    del unused_err
+    retcode = process.poll()
+    if retcode:
+        cmd = kwargs.get("args")
+        if cmd is None:
+            cmd = popenargs[0]
+        raise RuntimeError(output)
+    return output
+
+
+unpackers = {'tar': unpack_tar,
+             'xrit': unpack_xrit,
+             'bzip': unpack_bzip}
 
 
 def already_received(msg):
@@ -234,10 +326,13 @@ def resend_if_local(msg, publisher):
 
 
 def create_push_req_message(msg, destination, login):
+    """Create a message for push request."""
     fake_req = Message(msg.subject, 'push', data=msg.data.copy())
     duri = urlparse(destination)
     scheme = duri.scheme or 'file'
     dest_hostname = duri.hostname or socket.gethostname()
+    if duri.port:
+        dest_hostname += ":{}".format(duri.port)
     fake_req.data["destination"] = urlunparse((scheme, dest_hostname, duri.path, "", "", ""))
     if login:
         # if necessary add the credentials for the real request
@@ -259,20 +354,33 @@ def create_local_dir(destination, local_root, mode=0o777):
     return local_dir
 
 
-def unpack_and_create_local_message(msg, local_dir, unpack=None, delete=False):
-
-    def unpack_callback(var):
-        if not var['uid'].endswith(unpack):
+def unpack_and_create_local_message(msg, local_dir, **kwargs):
+    """Unpack the file(s) given in the message, and return an updated message."""
+    def unpack_callback(var, **kwargs):
+        unpack = kwargs.get('compression')
+        endings = COMPRESSED_ENDINGS[unpack]
+        is_compressed = any([var['uid'].endswith(ending) for ending in endings])
+        if not is_compressed:
             return var
         packname = var.pop('uid')
         del var['uri']
-        new_names = unpackers[unpack](os.path.join(local_dir, packname), delete)
-
-        var['dataset'] = [dict(uid=nn, uri=os.path.join(local_dir, nn)) for nn in new_names]
+        new_names = unpackers[unpack](os.path.join(local_dir, packname),
+                                      **kwargs)
+        if kwargs.get("delete"):
+            LOGGER.debug("Deleting %s", os.path.join(local_dir, packname))
+            os.remove(os.path.join(local_dir, packname))
+        if isinstance(new_names, tuple):
+            var['dataset'] = [dict(uid=os.path.basename(nn),
+                                   uri=os.path.join(local_dir, nn))
+                              for nn in new_names]
+        else:
+            var['uid'] = os.path.basename(new_names)
+            var['uri'] = os.path.join(local_dir, new_names)
         return var
 
-    if unpack is not None:
-        lmsg_data = translate_dict(msg.data, ('uri', 'uid'), unpack_callback)
+    if kwargs.get('compression') in COMPRESSED_ENDINGS:
+        lmsg_data = translate_dict(msg.data, ('uri', 'uid'), unpack_callback,
+                                   **kwargs)
         if 'dataset' in lmsg_data:
             lmsg_type = 'dataset'
         elif 'collection' in lmsg_data:
@@ -287,6 +395,7 @@ def unpack_and_create_local_message(msg, local_dir, unpack=None, delete=False):
 
 
 def make_uris(msg, destination, login=None):
+    """Create local URIs for the received files."""
     duri = urlparse(destination)
     scheme = duri.scheme or 'ssh'
     dest_hostname = duri.hostname or socket.gethostname()
@@ -308,6 +417,7 @@ def make_uris(msg, destination, login=None):
 
 
 def replace_mda(msg, kwargs):
+    """Replace messate metadata with itmes in kwargs dict."""
     for key in msg.data:
         if key in kwargs:
             replacement = dict(item.split(':')
@@ -341,8 +451,7 @@ def send_ack(msg, timeout):
 
 def terminate_transfers(uid, timeout):
     """Send ACK to remaining sources for uid and remove from the ongoing tranfers list."""
-    with ongoing_transfers_lock:
-        msgs = ongoing_transfers.pop(uid, [])
+    msgs = clean_ongoing_transfer(uid)
     for msg in msgs:
         send_ack(msg, timeout)
 
@@ -372,19 +481,56 @@ def get_next_msg(uid):
         return ongoing_transfers[uid].pop(0)
 
 
-def request_push(msg, destination, login, publisher=None, unpack=None, delete=False, **kwargs):
-    """Request a push for data."""
+def add_timer(timeout, callback, msg, *args, **kwargs):
+    """Add a timer for hot spare."""
     huid = get_msg_uid(msg)
+    cargs = [msg] + list(args)
+    with hot_spare_timer_lock:
+        timer = CTimer(timeout, callback, args=cargs, kwargs=kwargs)
+        ongoing_hot_spare_timers[huid] = timer
+        ongoing_hot_spare_timers[huid].start()
+    LOGGER.debug("Added timer for UID %s.", huid)
+
+
+def add_to_ongoing(msg):
+    """Add message to ongoing transfers.
+
+    Return True if similar message was already received, False otherwise.
+    """
+    huid = get_msg_uid(msg)
+    with hot_spare_timer_lock:
+        timer = ongoing_hot_spare_timers.pop(huid, None)
+        if timer is not None:
+            timer.cancel()
+            LOGGER.debug("Cleared timer for UID %s.", huid)
     with ongoing_transfers_lock:
         if huid in ongoing_transfers:
             ongoing_transfers[huid].append(msg)
-            return
+            return None
         else:
             ongoing_transfers[huid] = [msg]
+            return huid
+
+
+def add_to_file_cache(msg):
+    """Add files in the message to received file cache."""
+    with cache_lock:
+        for uid in gen_dict_extract(msg.data, 'uid'):
+            if uid not in file_cache:
+                LOGGER.debug("Add %s to file cache", str(uid))
+                file_cache.append(uid)
+
+
+def request_push(msg, destination, login, publisher=None, **kwargs):
+    """Request a push for data."""
+    huid = add_to_ongoing(msg)
+    if huid is None:
+        return
 
     if already_received(msg):
         timeout = float(kwargs["req_timeout"])
-        return send_ack(msg, timeout)
+        send_ack(msg, timeout)
+        return
 
     for msg in iterate_messages(huid):
         try:
@@ -403,15 +549,23 @@ def request_push(msg, destination, login, publisher=None, unpack=None, delete=Fa
         timeout = float(kwargs["transfer_req_timeout"])
         local_dir = create_local_dir(_destination, kwargs.get('ftp_root', '/'))
 
+        if publisher:
+            publisher.send(str(fake_req))
         response, hostname = send_request(msg, req, timeout)
 
         if response and response.type in ['file', 'collection', 'dataset']:
             LOGGER.debug("Server done sending file")
-            with cache_lock:
-                for uid in gen_dict_extract(msg.data, 'uid'):
-                    file_cache.append(uid)
+            add_to_file_cache(msg)
+            if publisher:
+                # Send an 'ack' message so that possible hot spares know
+                # the primary has completed the request
+                msg = Message(msg.subject, 'ack', msg.data)
+                LOGGER.debug("Sending a public 'ack' of completed transfer: %s",
+                             str(msg))
+                publisher.send(str(msg))
             try:
-                lmsg = unpack_and_create_local_message(response, local_dir, unpack, delete)
+                lmsg = unpack_and_create_local_message(response, local_dir,
+                                                       **kwargs)
             except IOError:
                 LOGGER.exception("Couldn't unpack %s", str(response))
                 continue
@@ -492,6 +646,8 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
                         provider = urlunparse(('tcp', parts.path,
                                                '', '', '', ''))
                     topics.append(parts.path)
+                LOGGER.debug("Add listener for %s with topic %s",
+                             provider, str(topics))
                 chains[key]["listeners"][provider] = Listener(
                     provider,
                     topics,
@@ -515,9 +671,10 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
     # disable old chains
 
     for key in (set(chains.keys()) - set(new_chains.keys())):
-        for provider, listener in chains[key]["providers"].items():
+        for provider in chains[key]["providers"]:
+            listener = chains[key]["listeners"][provider]
             listener.stop()
-            del chains[key]["providers"][provider]
+            del chains[key]["listeners"][provider]
 
         if "publisher" in chains[key]:
             chains[key]["publisher"].stop()
@@ -534,6 +691,7 @@ class PushRequester(object):
     request_retries = 3
 
     def __init__(self, host, port):
+        """Initialize pish request."""
         self._socket = None
         self._reqaddress = "tcp://" + host + ":" + str(port)
         self._poller = Poller()
@@ -558,16 +716,16 @@ class PushRequester(object):
         self._poller.unregister(self._socket)
 
     def reset_connection(self):
-        """Reset the socket
-        """
+        """Reset the socket."""
         self.stop()
         self.connect()
 
     def __del__(self, *args, **kwargs):
+        """Stop the push requester when deleted."""
         self.stop()
 
     def send_and_recv(self, msg, timeout=DEFAULT_REQ_TIMEOUT):
-
+        """Send a message end receive a response."""
         with self._lock:
             retries_left = self.request_retries
             request = str(msg)
@@ -622,21 +780,19 @@ class PushRequester(object):
 
 
 class EventHandler(pyinotify.ProcessEvent):
-    """Handle events with a generic *fun* function.
-    """
+    """Handle events with a generic *fun* function."""
 
     def __init__(self, fun, *args, **kwargs):
+        """Initialize handler."""
         pyinotify.ProcessEvent.__init__(self, *args, **kwargs)
         self._fun = fun
 
     def process_IN_CLOSE_WRITE(self, event):
-        """On closing after writing.
-        """
+        """Process on closing after writing."""
         self._fun(event.pathname)
 
     def process_IN_CREATE(self, event):
-        """On closing after linking.
-        """
+        """Process on closing after linking."""
         try:
             if os.stat(event.pathname).st_nlink > 1:
                 self._fun(event.pathname)
@@ -644,22 +800,25 @@ class EventHandler(pyinotify.ProcessEvent):
             return
 
     def process_IN_MOVED_TO(self, event):
-        """On closing after moving.
-        """
+        """Process on closing after moving."""
         self._fun(event.pathname)
 
 
 class StatCollector(object):
+    """StatCollector class."""
 
     def __init__(self, statfile):
+        """Initialize collector."""
         self.statfile = statfile
 
     def collect(self, msg, *args, **kwargs):
+        """Collect."""
         with open(self.statfile, 'a') as fd:
             fd.write(time.asctime() + " - " + str(msg) + "\n")
 
 
 def terminate(chains):
+    """Terminate client chains."""
     for chain in six.itervalues(chains):
         for listener in chain["listeners"].values():
             listener.stop()

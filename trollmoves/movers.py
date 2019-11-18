@@ -37,6 +37,9 @@ from six.moves.urllib.parse import urlparse
 
 from trollmoves.utils import clean_url
 
+from paramiko import SSHClient, SSHException, AutoAddPolicy
+from scp import SCPClient
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -104,7 +107,7 @@ class Mover(object):
     def get_connection(self, hostname, port, username=None):
         with self.active_connection_lock:
             LOGGER.debug('Getting connection to %s@%s:%s',
-                         self.destination.username, self.destination.hostname, self.destination.port)
+                         self.destination.username, self.destination.hostname, port)
             try:
                 connection, timer = self.active_connections[(hostname, port, username)]
                 if not self.is_connected(connection):
@@ -262,11 +265,9 @@ class ScpMover(Mover):
     active_connection_lock = Lock()
 
     def open_connection(self):
-        from paramiko import SSHClient, SSHException, AutoAddPolicy
 
         retries = 3
         ssh_key_filename = self.attrs.get("ssh_key_filename", None)
-
         while retries > 0:
             retries -= 1
             try:
@@ -275,9 +276,11 @@ class ScpMover(Mover):
                 ssh_connection.load_system_host_keys()
                 ssh_connection.connect(self.destination.hostname,
                                        username=self.destination.username,
+                                       port=self.destination.port or 22,
                                        key_filename=ssh_key_filename)
-                LOGGER.debug("Successfully connected to %s as %s",
+                LOGGER.debug("Successfully connected to %s:%s as %s",
                              self.destination.hostname,
+                             self.destination.port or 22,
                              self.destination.username)
             except SSHException as sshe:
                 LOGGER.error("Failed to init SSHClient: %s", str(sshe))
@@ -317,9 +320,9 @@ class ScpMover(Mover):
 
     def copy(self):
         """Push it !"""
-        from scp import SCPClient
 
-        ssh_connection = self.get_connection(self.destination.hostname, self.destination.port,
+        ssh_connection = self.get_connection(self.destination.hostname,
+                                             self.destination.port or 22,
                                              self.destination.username)
 
         try:
@@ -395,7 +398,8 @@ class SftpMover(Mover):
         """Push it !"""
         import paramiko
 
-        transport = paramiko.Transport((self.destination.hostname, 22))
+        transport = paramiko.Transport((self.destination.hostname,
+                                        self.destination.port or 22))
         transport.start_client()
 
         self._agent_auth(transport)

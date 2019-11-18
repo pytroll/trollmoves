@@ -95,6 +95,18 @@ target2:
           coverage: '>50'
 """
 
+test_yaml_ssh_scp = test_yaml2 + """
+target3:
+  host: scp://user@server.target2.com
+  connection_parameters:
+    ssh_key_filename: ~/.ssh/rsa_id.pub
+  filepattern: 'sat_{start_time:%Y%m%d%H%M}_{platform_name}.{format}'
+  directory: /satellite/{sensor}
+  dispatch_configs:
+    - topics:
+        - /level2/viirs
+"""
+
 
 def test_config_reading():
     """Test reading the config."""
@@ -206,7 +218,7 @@ def test_get_destinations():
             dp = Dispatcher(fname)
             dp.config = yaml.safe_load(test_yaml1)
             msg = Mock()
-            msg.subject = 'pytroll://level2/viirs'
+            msg.subject = '/level2/viirs'
             msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
                         'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif'}
             expected_url = 'ftp://ftp.target1.com/input_data/viirs/NOAA-20_201909190919.tif'
@@ -268,7 +280,7 @@ def test_get_destinations_with_aliases():
             dp = Dispatcher(fname)
             dp.config = yaml.safe_load(test_yaml_aliases)
             msg = Mock()
-            msg.subject = 'pytroll://level2/viirs'
+            msg.subject = '/level2/viirs'
             msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
                         'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif'}
             expected_url = 'ftp://ftp.target1.com/input_data/viirs/NOAA-20_gs_201909190919.tif'
@@ -290,6 +302,13 @@ target3:
   host: ""
   filepattern: '{platform_name}_{start_time:%Y%m%d%H%M}.{format}'
   directory: """ + os.path.join(gettempdir(), 'dptest') + """
+  subscribe_addresses:
+    - tcp://127.0.0.1:40000
+  nameserver: 127.0.0.1
+  subscribe_services:
+    - service_name_1
+    - service_name_2
+
   dispatch_configs:
     - topics:
         - /level2/viirs
@@ -336,7 +355,7 @@ def test_dispatcher():
                 with NamedTemporaryFile('w') as test_file:
                     msg = Mock()
                     msg.type = 'file'
-                    msg.subject = 'pytroll://level2/viirs'
+                    msg.subject = '/level2/viirs'
                     msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
                                 'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif',
                                 'area': 'euron1',
@@ -345,9 +364,50 @@ def test_dispatcher():
                     queue.put(msg)
                     time.sleep(.1)
                     assert os.path.exists(expected_file)
+            # Check that the listener config items are passed correctly
+            lc.assert_called_once_with(
+                addresses=['tcp://127.0.0.1:40000'],
+                nameserver='127.0.0.1',
+                services=['service_name_1', 'service_name_2'],
+                topics={'/level3/cloudtype', '/level2/viirs', '/level2/avhrr'})
     finally:
         if dp is not None:
             dp.close()
-    os.remove(expected_file)
-    os.rmdir(dest_dir)
-    os.remove(config_file_name)
+        os.remove(expected_file)
+        os.rmdir(dest_dir)
+        os.remove(config_file_name)
+
+
+def test_create_dest_url():
+    """Test creation of destination URL."""
+    dp = None
+    try:
+        with patch('trollmoves.dispatcher.ListenerContainer') as lc:
+            queue = Queue()
+            lc.return_value.output_queue = queue
+            with NamedTemporaryFile('w', delete=False) as config_file:
+                config_file_name = config_file.name
+                config_file.write(test_yaml_ssh_scp)
+                config_file.flush()
+                config_file.close()
+            config = yaml.safe_load(test_yaml_ssh_scp)
+            dp = Dispatcher(config_file_name)
+            msg = Mock()
+            msg.subject = '/level2/viirs'
+            msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
+                        'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif'}
+            # SSH protocol, no username
+            url, params = dp.create_dest_url(msg, 'target2', config['target2'])
+            expected_url = "ssh://server.target2.com/satellite/viirs/sat_201909190919_NOAA-20.tif"
+            assert url == expected_url
+            assert params == {'ssh_key_filename': '~/.ssh/rsa_id.pub'}
+
+            # SCP protocolw with username
+            url, params = dp.create_dest_url(msg, 'target3', config['target3'])
+            expected_url = "scp://user@server.target2.com/satellite/viirs/sat_201909190919_NOAA-20.tif"
+            assert url == expected_url
+
+    finally:
+        if dp is not None:
+            dp.close()
+        os.remove(config_file_name)
