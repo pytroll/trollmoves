@@ -45,6 +45,7 @@ from posttroll import get_context
 from posttroll.message import Message, MessageError
 from posttroll.publisher import NoisyPublisher
 from posttroll.subscriber import Subscriber
+from trollsift.parser import compose
 
 from trollmoves import heartbeat_monitor
 from trollmoves.utils import get_local_ips
@@ -532,10 +533,21 @@ def request_push(msg, destination, login, publisher=None, **kwargs):
         return
 
     for msg in iterate_messages(huid):
-        req, fake_req = create_push_req_message(msg, destination, login)
+        try:
+            _destination = compose(destination, msg.data)
+        except KeyError as ke:
+            LOGGER.error("Format identifier is missing from the msg.data: %s", str(ke))
+            raise
+        except ValueError as ve:
+            LOGGER.error("Type of format identifier doesn't match the type in m msg.data: %s", str(ve))
+            raise
+        except AttributeError as ae:
+            LOGGER.error("msg or msg.data is None: %s", str(ae))
+            raise
+        req, fake_req = create_push_req_message(msg, _destination, login)
         LOGGER.info("Requesting: %s", str(fake_req))
         timeout = float(kwargs["transfer_req_timeout"])
-        local_dir = create_local_dir(destination, kwargs.get('ftp_root', '/'))
+        local_dir = create_local_dir(_destination, kwargs.get('ftp_root', '/'))
 
         if publisher:
             publisher.send(str(fake_req))
@@ -558,7 +570,7 @@ def request_push(msg, destination, login, publisher=None, **kwargs):
                 LOGGER.exception("Couldn't unpack %s", str(response))
                 continue
             if publisher:
-                lmsg = make_uris(lmsg, destination, login)
+                lmsg = make_uris(lmsg, _destination, login)
                 lmsg.data['origin'] = response.data['request_address']
                 lmsg.data.pop('request_address', None)
                 lmsg = replace_mda(lmsg, kwargs)

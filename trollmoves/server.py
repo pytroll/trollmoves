@@ -67,15 +67,17 @@ class ConfigError(Exception):
 
 class Deleter(Thread):
 
-    def __init__(self):
+    def __init__(self, attrs):
         Thread.__init__(self)
         self.queue = Queue()
         self.timer = None
         self.loop = True
+        self._attrs = attrs
 
     def add(self, filename):
-        LOGGER.debug('Scheduling %s for removal', filename)
-        self.queue.put((filename, time.time() + 30))
+        remove_delay = int(self._attrs.get('remove_delay', 30))
+        LOGGER.debug('Scheduling %s for removal in %ds', filename, remove_delay)
+        self.queue.put((filename, time.time() + remove_delay))
 
     def run(self):
         while self.loop:
@@ -135,7 +137,7 @@ class RequestManager(Thread):
         except KeyError:
             if 'listen' not in attrs:
                 raise
-        self._deleter = Deleter()
+        self._deleter = Deleter(attrs)
 
         try:
             self._station = self._attrs["station"]
@@ -380,16 +382,36 @@ def create_file_notifier(attrs, publisher):
 
     tmask = (pyinotify.IN_CLOSE_WRITE |
              pyinotify.IN_MOVED_TO |
-             pyinotify.IN_CREATE)
+             pyinotify.IN_CREATE |
+             pyinotify.IN_DELETE)
 
     wm_ = pyinotify.WatchManager()
 
     pattern = globify(attrs["origin"])
     opath = os.path.dirname(pattern)
 
+    if 'origin_inotify_base_dir_skip_levels' in attrs:
+        """If you need to inotify monitor for new directories within the origin
+        this attribute tells the server how many levels to skip from the origin
+        before staring to inorify monitor a directory
+
+        Eg. origin=/tmp/{platform_name_dir}_{start_time_dir:%Y%m%d_%H%M}_{orbit_number_dir:05d}/
+                   {sensor}_{platform_name}_{start_time:%Y%m%d_%H%M}_{orbit_number:05d}.{data_processing_level:3s}
+
+        and origin_inotify_base_dir_skip_levels=-2
+
+        this means the inotify monitor will use opath=/tmp"""
+        pattern_list = pattern.split('/')
+        pattern_join = os.path.join(*pattern_list[:int(attrs['origin_inotify_base_dir_skip_levels'])])
+        opath = os.path.join("/", pattern_join)
+        LOGGER.debug("Using {} as base path for pyinotify add_watch.".format(opath))
+
     def fun(orig_pathname):
         """Publish what we have."""
         if not fnmatch.fnmatch(orig_pathname, pattern):
+            return
+        elif (os.stat(orig_pathname).st_size == 0):
+            # Want to avoid files with size 0.
             return
         else:
             LOGGER.debug('We have a match: %s', orig_pathname)
@@ -414,7 +436,7 @@ def create_file_notifier(attrs, publisher):
             file_cache.appendleft(attrs["topic"] + '/' + info["uid"])
         LOGGER.debug("Message sent: %s", str(msg))
 
-    tnotifier = pyinotify.ThreadedNotifier(wm_, EventHandler(fun))
+    tnotifier = pyinotify.ThreadedNotifier(wm_, EventHandler(fun, watchManager=wm_, tmask=tmask))
 
     wm_.add_watch(opath, tmask)
 
@@ -641,6 +663,9 @@ class EventHandler(pyinotify.ProcessEvent):
         if self._cmd_filename:
             self._cmd_filename = os.path.abspath(self._cmd_filename)
         self._fun = fun
+        self._watched_dirs = dict()
+        self._watchManager = kwargs.get('watchManager', None)
+        self._tmask = kwargs.get('tmask', None)
 
     def process_IN_CLOSE_WRITE(self, event):
         """On closing after writing."""
@@ -651,6 +676,9 @@ class EventHandler(pyinotify.ProcessEvent):
 
     def process_IN_CREATE(self, event):
         """On closing after linking."""
+        if (event.mask & pyinotify.IN_ISDIR):
+            self._watched_dirs.update(self._watchManager.add_watch(event.pathname, self._tmask))
+
         if self._cmd_filename and os.path.abspath(
                 event.pathname) != self._cmd_filename:
             return
@@ -666,6 +694,22 @@ class EventHandler(pyinotify.ProcessEvent):
                 event.pathname) != self._cmd_filename:
             return
         self._fun(event.pathname)
+
+    def process_IN_DELETE(self, event):
+        """On delete."""
+        if (event.mask & pyinotify.IN_ISDIR):
+            try:
+                try:
+                    self._watchManager.rm_watch(self._watched_dirs[event.pathname], quiet=False)
+                except pyinotify.WatchManagerError:
+                    # As the directory is deleted prior removing the watch will cause a error message
+                    # from pyinotify. This is ok, so just pass the exception.
+                    pass
+                finally:
+                    del self._watched_dirs[event.pathname]
+            except KeyError:
+                LOGGER.warning("Dir {} not watched by inotify. Can not delete watch.".format(event.pathname))
+        return
 
 
 def process_old_files(pattern, fun):

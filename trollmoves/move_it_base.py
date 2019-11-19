@@ -93,6 +93,8 @@ class MoveItBase(object):
         self.watchman = pyinotify.WatchManager()
 
         event_handler = EventHandler(self.reload_cfg_file,
+                                     watchManager=self.watchman,
+                                     tmask=mask,
                                      cmd_filename=self.cmd_args.config_file)
         self.notifier = pyinotify.ThreadedNotifier(self.watchman, event_handler)
         self.watchman.add_watch(os.path.dirname(cmd_args.config_file), mask)
