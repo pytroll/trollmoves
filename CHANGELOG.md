@@ -1,3 +1,32 @@
+## Version v0.4.0 (2020/02/10)
+
+### Issues Closed
+
+* [Issue 56](https://github.com/pytroll/trollmoves/issues/56) - All `push`, `ack` and `file` messages are published
+
+In this release 1 issue was closed.
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 55](https://github.com/pytroll/trollmoves/pull/55) - Fix dispatcher transfers for scp protocol
+* [PR 53](https://github.com/pytroll/trollmoves/pull/53) - Fix unpack_tar() to return a tuple or string
+* [PR 51](https://github.com/pytroll/trollmoves/pull/51) - Fix deletion of compressed files on the client
+* [PR 50](https://github.com/pytroll/trollmoves/pull/50) - Hotfix client decompression when decompression not defined
+
+#### Features added
+
+* [PR 52](https://github.com/pytroll/trollmoves/pull/52) - Add bzip decompression to client
+* [PR 49](https://github.com/pytroll/trollmoves/pull/49) - Add more decompression methods to client
+* [PR 46](https://github.com/pytroll/trollmoves/pull/46) - Add config option for ssh port. Defaults to 22
+* [PR 44](https://github.com/pytroll/trollmoves/pull/44) - Expose ListenerContainer config items
+* [PR 43](https://github.com/pytroll/trollmoves/pull/43) - Fix yaml loading and hooks usage for dispatcher
+* [PR 42](https://github.com/pytroll/trollmoves/pull/42) - Hot-spare client(s)
+* [PR 41](https://github.com/pytroll/trollmoves/pull/41) - Accept log configs in dispatcher
+
+In this release 11 pull requests were closed.
+
 ## Version 0.3.0 (2019/09/25)
 
 ### Issues Closed
