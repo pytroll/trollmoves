@@ -507,7 +507,12 @@ class EventHandler(pyinotify.ProcessEvent):
         self._fun = fun
 
     def process_IN_CLOSE_WRITE(self, event):
-        """On closing after writing.
+        """On closing a writable file.
+        """
+        self._fun(event.pathname)
+
+    def process_IN_MODIFY(self, event):
+        """The file was modified.
         """
         self._fun(event.pathname)
 
