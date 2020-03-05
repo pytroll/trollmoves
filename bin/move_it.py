@@ -645,13 +645,13 @@ def main():
 
     LOGGER.info("Starting up.")
 
-    mask = (pyinotify.IN_CLOSE_WRITE |
+    mask = (pyinotify.IN_MODIFY |
             pyinotify.IN_MOVED_TO |
             pyinotify.IN_CREATE)
     watchman = pyinotify.WatchManager()
 
     notifier = pyinotify.Notifier(watchman, EventHandler(reload_config))
-    watchman.add_watch(os.path.dirname(cmd_args.config_file), mask)
+    watchman.add_watch(cmd_args.config_file, mask)
 
     def chains_stop(*args):
         del args
