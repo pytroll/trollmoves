@@ -201,7 +201,7 @@ def read_config(filename):
     return res
 
 
-def reload_config(filename):
+def reload_config(filename, disable_backlog=False):
     """Rebuild chains if needed (if the configuration changed) from *filename*.
     """
     LOGGER.debug("New config file detected! %s", filename)
@@ -298,7 +298,7 @@ def reload_config(filename):
         LOGGER.debug("Removed %s", key)
 
     LOGGER.debug("Reloaded config from %s", filename)
-    if old_glob:
+    if old_glob and not disable_backlog:
         fnames = []
         for pattern in old_glob:
             fnames += glob.glob(pattern)
@@ -619,6 +619,9 @@ def parse_args():
                         help="The configuration file to run on.")
     parser.add_argument("-l", "--log",
                         help="The file to log to. stdout otherwise.")
+    parser.add_argument("-d", "--disable-backlog", default=False,
+                        action="store_true",
+                        help="Disable handling of backlog. Default: resend exising files.")
     return parser.parse_args()
 
 
@@ -665,7 +668,8 @@ def main():
     signal.signal(signal.SIGTERM, chains_stop)
 
     try:
-        reload_config(cmd_args.config_file)
+        reload_config(cmd_args.config_file,
+                      disable_backlog=cmd_args.disable_backlog)
         notifier.loop()
     except KeyboardInterrupt:
         LOGGER.debug("Interrupting")
