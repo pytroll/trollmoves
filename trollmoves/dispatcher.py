@@ -159,6 +159,8 @@ from inotify.constants import IN_MODIFY, IN_CLOSE_WRITE, IN_CREATE, IN_MOVED_TO
 from six.moves.urllib.parse import urlsplit, urlunsplit
 
 from posttroll.listener import ListenerContainer
+from posttroll.publisher import NoisyPublisher
+from posttroll.message import Message
 from trollmoves.movers import move_it
 from trollmoves.utils import clean_url
 from trollsift import compose
@@ -241,10 +243,12 @@ class DispatchConfig(YAMLConfig):
     """Class to handle dispatch configs."""
 
     def __init__(self, filename, callback):
+        """Initialize dispatch configuration class."""
         self.callback = callback
         super().__init__(filename)
 
     def read_config(self):
+        """Read configuration file."""
         super().read_config()
         self.callback(self.config)
 
@@ -252,19 +256,28 @@ class DispatchConfig(YAMLConfig):
 class Dispatcher(Thread):
     """Class that dispatches files."""
 
-    def __init__(self, config_file):
+    def __init__(self, config_file, publish_port=None,
+                 publish_nameservers=None):
+        """Initialize dispatcher class."""
         super().__init__()
         self.config = None
         self.topics = None
         self.listener = None
+        self.publisher = None
+        if publish_port:
+            self.publisher = NoisyPublisher(
+                "dispatcher", port=publish_port,
+                nameservers=publish_nameservers)
         self.loop = True
         self.config_handler = DispatchConfig(config_file, self.update_config)
         signal.signal(signal.SIGTERM, self.signal_shutdown)
 
     def signal_shutdown(self, *args, **kwargs):
+        """Shutdown dispatcher."""
         self.close()
 
     def update_config(self, new_config):
+        """Update configuration and reload listeners."""
         old_config = self.config
         topics = set()
         try:
@@ -289,6 +302,7 @@ class Dispatcher(Thread):
             self.config = old_config
 
     def run(self):
+        """Run dispatcher."""
         while self.loop:
             try:
                 msg = self.listener.output_queue.get(timeout=1)
@@ -299,7 +313,26 @@ class Dispatcher(Thread):
                     continue
                 destinations = self.get_destinations(msg)
                 if destinations:
-                    dispatch(msg.data['uri'], destinations)
+                    success = dispatch(msg.data['uri'], destinations)
+                    if self.publisher:
+                        self._publish(msg, destinations, success)
+
+    def _publish(self, msg, destinations, success):
+        """Publish a message.
+
+        The URI is replaced with the URI on the target server.
+
+        """
+        for url, params, client in destinations:
+            if not success[client]:
+                continue
+            del params
+            info = msg.data.copy()
+            info["uri"] = urlsplit(url).path
+            topic = self.config[client].get("publish_topic", msg.subject)
+            msg = Message(topic, 'file', info)
+            logger.debug('Publishing %s', str(msg))
+            self.publisher.send(str(msg))
 
     def get_destinations(self, msg):
         """Get the destinations for this message."""
@@ -336,13 +369,15 @@ class Dispatcher(Thread):
         parts = urlsplit(host)
         host_path = urlunsplit((parts.scheme, parts.netloc, path,
                                 parts.query, parts.fragment))
-        return host_path, connection_parameters
+        return host_path, connection_parameters, client
 
     def close(self):
         """Shutdown the dispatcher."""
         logger.info('Terminating dispatcher.')
         self.loop = False
         self.listener.stop()
+        if self.publisher:
+            self.publisher.stop()
         self.config_handler.close()
 
 
@@ -434,15 +469,20 @@ def dispatch(source, destinations):
         message = "Source file for dispatching does not exist:{}".format(str(source))
         logger.error(message)
         any_error = True
+    success = {}
     # rename and send file with right protocol
-    for url, params in destinations:
+    for url, params, client in destinations:
         try:
             logger.debug("Dispatching %s to %s", source, str(clean_url(url)))
             move_it(source, url, params)
+            success[client] = True
         except Exception as err:
             message = "Could not dispatch to {}: {}".format(str(clean_url(url)),
                                                             str(err))
             logger.error(message)
             any_error = True
+            success[client] = False
     if not any_error:
         logger.info("Dispatched all files.")
+
+    return success
