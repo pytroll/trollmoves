@@ -226,9 +226,10 @@ def test_get_destinations():
 
             res = dp.get_destinations(msg)
             assert len(res) == 1
-            url, attrs = res[0]
+            url, attrs, client = res[0]
             assert url == expected_url
             assert attrs == expected_attrs
+            assert client == "target1"
 
             dp.config = yaml.safe_load(test_yaml2)
             res = dp.get_destinations(msg)
@@ -288,9 +289,10 @@ def test_get_destinations_with_aliases():
 
             res = dp.get_destinations(msg)
             assert len(res) == 1
-            url, attrs = res[0]
+            url, attrs, client = res[0]
             assert url == expected_url
             assert attrs == expected_attrs
+            assert client == "target1"
 
             dp.config = yaml.safe_load(test_yaml2)
             res = dp.get_destinations(msg)
@@ -397,15 +399,19 @@ def test_create_dest_url():
             msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
                         'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif'}
             # SSH protocol, no username
-            url, params = dp.create_dest_url(msg, 'target2', config['target2'])
+            url, params, client = dp.create_dest_url(msg, 'target2',
+                                                     config['target2'])
             expected_url = "ssh://server.target2.com/satellite/viirs/sat_201909190919_NOAA-20.tif"
             assert url == expected_url
             assert params == {'ssh_key_filename': '~/.ssh/rsa_id.pub'}
+            assert client == "target2"
 
             # SCP protocolw with username
-            url, params = dp.create_dest_url(msg, 'target3', config['target3'])
+            url, params, client = dp.create_dest_url(msg, 'target3',
+                                                     config['target3'])
             expected_url = "scp://user@server.target2.com/satellite/viirs/sat_201909190919_NOAA-20.tif"
             assert url == expected_url
+            assert client == "target3"
 
     finally:
         if dp is not None:
