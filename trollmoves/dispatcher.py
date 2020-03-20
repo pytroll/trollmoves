@@ -48,6 +48,10 @@ Example config::
       # subscribe_services:
       #   - service_name_1
       #   - service_name_2
+      # Message topics for published messages. Required if command-line option
+      #   "-p"/"--publish-port" is used.  The topic can be composed using
+      #   metadata from incoming message
+      # publish_topic: "/new/topic/{platform_name}"
       aliases:
         product:
           natural_color: dnc
@@ -330,6 +334,7 @@ class Dispatcher(Thread):
             info = msg.data.copy()
             info["uri"] = urlsplit(url).path
             topic = self.config[client].get("publish_topic", msg.subject)
+            topic = compose(topic, info)
             msg = Message(topic, 'file', info)
             logger.debug('Publishing %s', str(msg))
             self.publisher.send(str(msg))
