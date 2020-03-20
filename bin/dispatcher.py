@@ -85,13 +85,21 @@ def main():
                         help="Verbosity (between 1 and 2 occurrences with more leading to more "
                         "verbose logging). WARN=0, INFO=1, "
                         "DEBUG=2. This is overridden by the log config file if specified.")
+    parser.add_argument(
+        "-p", "--publish-port", type=int, dest="pub_port",
+        help="Publish messages for dispatched files on this port. "
+        "Default: no publishing.")
+    parser.add_argument("-n", "--publish-nameserver", nargs='*',
+                        dest="pub_nameservers",
+                        help="Nameserver for publisher to connect to")
     cmd_args = parser.parse_args()
-
     setup_logging(cmd_args)
     logger.info("Starting up.")
 
     try:
-        dispatcher = Dispatcher(cmd_args.config_file)
+        dispatcher = Dispatcher(cmd_args.config_file,
+                                publish_port=cmd_args.pub_port,
+                                publish_nameservers=cmd_args.pub_nameservers)
     except Exception as err:
         logger.error('Dispatcher crashed: %s', str(err))
         sys.exit(1)
@@ -102,6 +110,7 @@ def main():
         logger.debug("Interrupting")
     finally:
         dispatcher.close()
+
 
 if __name__ == '__main__':
     main()
