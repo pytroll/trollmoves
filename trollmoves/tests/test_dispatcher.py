@@ -461,6 +461,7 @@ def test_publisher(NoisyPublisher, ListenerContainer, Message):
                         {'uri': 'url2', 'platform_name': 'platform'})
         assert msg_call in Message.mock_calls
     finally:
+        os.remove(config_file_name)
         if dp is not None:
             dp.close()
-        os.remove(config_file_name)
+            dp.publisher.stop.assert_called()
