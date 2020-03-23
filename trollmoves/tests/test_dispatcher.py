@@ -441,27 +441,26 @@ def test_publisher(NoisyPublisher, ListenerContainer, Message):
         config_file.write(test_yaml_pub)
         config_file.flush()
         config_file.close()
-    try:
-        dp = Dispatcher(config_file_name, publish_port=40000,
-                        publish_nameservers=["asd"])
+        try:
+            dp = Dispatcher(config_file_name, publish_port=40000,
+                            publish_nameservers=["asd"])
 
-        assert dp.publisher is pub
-        init_call = call("dispatcher", port=40000, nameservers=["asd"])
-        assert init_call in NoisyPublisher.mock_calls
+            assert dp.publisher is pub
+            init_call = call("dispatcher", port=40000, nameservers=["asd"])
+            assert init_call in NoisyPublisher.mock_calls
 
-        msg = Mock(data={'uri': 'original_path',
-                         'platform_name': 'platform'})
-        destinations = [['url1', 'params1', 'target2'],
-                        ['url2', 'params2', 'target3']]
-        success = {'target2': False, 'target3': True}
-        dp._publish(msg, destinations, success)
-        dp.publisher.send.assert_called_once()
-        # The message topic has been composed and uri has been replaced
-        msg_call = call('/topic/platform', 'file',
-                        {'uri': 'url2', 'platform_name': 'platform'})
-        assert msg_call in Message.mock_calls
-    finally:
-        os.remove(config_file_name)
-        if dp is not None:
-            dp.close()
-            dp.publisher.stop.assert_called()
+            msg = Mock(data={'uri': 'original_path',
+                             'platform_name': 'platform'})
+            destinations = [['url1', 'params1', 'target2'],
+                            ['url2', 'params2', 'target3']]
+            success = {'target2': False, 'target3': True}
+            dp._publish(msg, destinations, success)
+            dp.publisher.send.assert_called_once()
+            # The message topic has been composed and uri has been replaced
+            msg_call = call('/topic/platform', 'file',
+                            {'uri': 'url2', 'platform_name': 'platform'})
+            assert msg_call in Message.mock_calls
+        finally:
+            if dp is not None:
+                dp.close()
+                dp.publisher.stop.assert_called()
