@@ -333,7 +333,11 @@ class Dispatcher(Thread):
             del params
             info = msg.data.copy()
             info["uri"] = urlsplit(url).path
-            topic = self.config[client].get("publish_topic", msg.subject)
+            topic = self.config[client].get("publish_topic")
+            if topic is None:
+                logger.error("Publish topic not configured for '%s'",
+                             client)
+                continue
             topic = compose(topic, info)
             msg = Message(topic, 'file', info)
             logger.debug('Publishing %s', str(msg))
