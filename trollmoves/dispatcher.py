@@ -380,10 +380,19 @@ class Dispatcher(Thread):
         """Shutdown the dispatcher."""
         logger.info('Terminating dispatcher.')
         self.loop = False
-        self.listener.stop()
+        try:
+            self.listener.stop()
+        except Exception:
+            logger.exception("Couldn't stop listener.")
         if self.publisher:
-            self.publisher.stop()
-        self.config_handler.close()
+            try:
+                self.publisher.stop()
+            except Exception:
+                logger.exception("Couldn't stop publisher.")
+        try:
+            self.config_handler.close()
+        except Exception:
+            logger.exception("Couldn't stop config handler.")
 
 
 def check_conditions(msg, item):
