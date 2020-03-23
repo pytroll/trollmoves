@@ -86,7 +86,8 @@ def main():
                         "verbose logging). WARN=0, INFO=1, "
                         "DEBUG=2. This is overridden by the log config file if specified.")
     parser.add_argument(
-        "-p", "--publish-port", type=int, dest="pub_port",
+        "-p", "--publish-port", type=int, dest="pub_port", nargs='?',
+        const=0, default=None,
         help="Publish messages for dispatched files on this port. "
         "Default: no publishing.")
     parser.add_argument("-n", "--publish-nameserver", nargs='*',
