@@ -29,7 +29,7 @@ from datetime import datetime
 from queue import Queue
 from tempfile import NamedTemporaryFile, gettempdir
 from threading import get_ident
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, call
 
 import yaml
 
@@ -413,6 +413,53 @@ def test_create_dest_url():
             assert url == expected_url
             assert client == "target3"
 
+    finally:
+        if dp is not None:
+            dp.close()
+        os.remove(config_file_name)
+
+
+test_yaml_pub = test_yaml2 + """
+target3:
+  host: scp://user@server.target2.com
+  filepattern: 'sat_{start_time:%Y%m%d%H%M}_{platform_name}.{format}'
+  directory: /satellite/{sensor}
+  publish_topic: "/topic/{platform_name}"
+  dispatch_configs:
+    - topics:
+        - /level2/viirs
+"""
+@patch('trollmoves.dispatcher.Message')
+@patch('trollmoves.dispatcher.ListenerContainer')
+@patch('trollmoves.dispatcher.NoisyPublisher')
+def test_publisher(NoisyPublisher, ListenerContainer, Message):
+    """Test the publisher is initialized."""
+    pub = Mock()
+    NoisyPublisher.return_value = pub
+    with NamedTemporaryFile('w', delete=False) as config_file:
+        config_file_name = config_file.name
+        config_file.write(test_yaml_pub)
+        config_file.flush()
+        config_file.close()
+    try:
+        dp = Dispatcher(config_file_name, publish_port=40000,
+                        publish_nameservers=["asd"])
+
+        assert dp.publisher is pub
+        init_call = call("dispatcher", port=40000, nameservers=["asd"])
+        assert init_call in NoisyPublisher.mock_calls
+
+        msg = Mock(data={'uri': 'original_path',
+                         'platform_name': 'platform'})
+        destinations = [['url1', 'params1', 'target2'],
+                        ['url2', 'params2', 'target3']]
+        success = {'target2': False, 'target3': True}
+        dp._publish(msg, destinations, success)
+        dp.publisher.send.assert_called_once()
+        # The message topic has been composed and uri has been replaced
+        msg_call = call('/topic/platform', 'file',
+                        {'uri': 'url2', 'platform_name': 'platform'})
+        assert msg_call in Message.mock_calls
     finally:
         if dp is not None:
             dp.close()
