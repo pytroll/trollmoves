@@ -486,6 +486,9 @@ def dispatch(source, destinations):
     success = {}
     # rename and send file with right protocol
     for url, params, client in destinations:
+        # Multiple destinations for one client isn't implemented
+        if client in success:
+            raise NotImplementedError("Only one destination allowed per client")
         try:
             logger.debug("Dispatching %s to %s", source, str(clean_url(url)))
             move_it(source, url, params)
