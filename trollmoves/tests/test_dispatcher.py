@@ -462,7 +462,7 @@ def test_publisher(NoisyPublisher, ListenerContainer, Message):
         finally:
             if dp is not None:
                 dp.close()
-                dp.publisher.stop.assert_not_called()
+                dp.publisher.stop.assert_called()
         try:
             dp = Dispatcher(config_file_name, publish_port=40000,
                             publish_nameservers=["asd"])
