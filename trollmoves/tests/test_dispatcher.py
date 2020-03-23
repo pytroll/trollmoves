@@ -442,6 +442,28 @@ def test_publisher(NoisyPublisher, ListenerContainer, Message):
         config_file.flush()
         config_file.close()
         try:
+            dp = Dispatcher(config_file_name)
+            assert dp.publisher is None
+            NoisyPublisher.assert_not_called()
+        finally:
+            if dp is not None:
+                dp.close()
+        try:
+            dp = Dispatcher(config_file_name, publish_nameservers=["asd"])
+            assert dp.publisher is None
+            NoisyPublisher.assert_not_called()
+        finally:
+            if dp is not None:
+                dp.close()
+        try:
+            dp = Dispatcher(config_file_name, publish_port=40000)
+            init_call = call("dispatcher", port=40000, nameservers=None)
+            assert init_call in NoisyPublisher.mock_calls
+        finally:
+            if dp is not None:
+                dp.close()
+                dp.publisher.stop.assert_not_called()
+        try:
             dp = Dispatcher(config_file_name, publish_port=40000,
                             publish_nameservers=["asd"])
 
