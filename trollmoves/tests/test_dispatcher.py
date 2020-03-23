@@ -214,7 +214,6 @@ def test_check_conditions():
 def test_get_destinations():
     """Check getting destination urls."""
     with patch('trollmoves.dispatcher.DispatchConfig'):
-        from trollmoves.dispatcher import Dispatcher
         with NamedTemporaryFile('w', delete=False) as the_file:
             fname = the_file.name
             dp = Dispatcher(fname)
@@ -277,7 +276,6 @@ target1:
 def test_get_destinations_with_aliases():
     """Check getting destination urls."""
     with patch('trollmoves.dispatcher.DispatchConfig'):
-        from trollmoves.dispatcher import Dispatcher
         with NamedTemporaryFile('w', delete=False) as the_file:
             fname = the_file.name
             dp = Dispatcher(fname)
