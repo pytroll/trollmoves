@@ -33,7 +33,9 @@ from unittest.mock import Mock, patch, call
 
 import yaml
 
-from trollmoves.dispatcher import Dispatcher, YAMLConfig, check_conditions
+from trollmoves.dispatcher import (
+    Dispatcher, YAMLConfig, check_conditions, dispatch
+)
 
 test_yaml1 = """
 target1:
@@ -486,3 +488,33 @@ def test_publisher(NoisyPublisher, ListenerContainer, Message):
             if dp is not None:
                 dp.close()
                 dp.publisher.stop.assert_called()
+
+
+@patch('trollmoves.dispatcher.move_it')
+def test_dispatch(move_it):
+    """Test dispatching."""
+    with NamedTemporaryFile('w') as source_file:
+        source_file_name = source_file.name
+        source_file.flush()
+        # Two successful dispatches
+        destinations = [['url1', 'params1', 'target1'],
+                        ['url2', 'params2', 'target2']]
+        res = dispatch(source_file_name, destinations)
+        assert len(move_it.mock_calls) == 2
+
+        # Exception is raised because two clients have the same name
+        destinations = [['url1', 'params1', 'target1'],
+                        ['url2', 'params2', 'target1']]
+
+        try:
+            res = dispatch(source_file_name, destinations)
+            assert 1 == 0
+        except NotImplementedError:
+            pass
+
+        # One of the dispatches fail
+        move_it.side_effect = [None, IOError('test')]
+        destinations = [['url1', 'params1', 'target1'],
+                        ['url2', 'params2', 'target2']]
+        res = dispatch(source_file_name, destinations)
+        assert res == {'target1': True, 'target2': False}
