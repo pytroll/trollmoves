@@ -268,10 +268,11 @@ class Dispatcher(Thread):
         self.topics = None
         self.listener = None
         self.publisher = None
-        if publish_port:
+        if publish_port is not None:
             self.publisher = NoisyPublisher(
                 "dispatcher", port=publish_port,
                 nameservers=publish_nameservers)
+            self.publisher.start()
         self.loop = True
         self.config_handler = DispatchConfig(config_file, self.update_config)
         signal.signal(signal.SIGTERM, self.signal_shutdown)
