@@ -304,7 +304,6 @@ def reload_config(filename, disable_backlog=False):
     else:
         LOGGER.debug("No changes to reload in %s", filename)
 
-
     if old_glob and not disable_backlog:
         fnames = []
         for pattern in old_glob:
