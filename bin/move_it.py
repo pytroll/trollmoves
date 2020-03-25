@@ -658,7 +658,7 @@ def main():
 
     LOGGER.info("Starting up.")
 
-    mask = (pyinotify.IN_MODIFY |
+    mask = (pyinotify.IN_CLOSE_WRITE |
             pyinotify.IN_MOVED_TO |
             pyinotify.IN_CREATE)
     watchman = pyinotify.WatchManager()
