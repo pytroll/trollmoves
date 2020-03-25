@@ -201,7 +201,7 @@ def read_config(filename):
     return res
 
 
-def reload_config(filename):
+def reload_config(filename, disable_backlog=False):
     """Rebuild chains if needed (if the configuration changed) from *filename*.
     """
     LOGGER.debug("New config file detected! %s", filename)
@@ -210,6 +210,7 @@ def reload_config(filename):
 
     old_glob = []
 
+    config_changed = False
     for key, val in new_chains.items():
         identical = True
         if key in chains:
@@ -218,6 +219,7 @@ def reload_config(filename):
                     ((key2 not in chains[key]) or
                      (chains[key][key2] != val2))):
                     identical = False
+                    config_changed = True
                     break
             if identical:
                 continue
@@ -297,8 +299,12 @@ def reload_config(filename):
         del chains[key]
         LOGGER.debug("Removed %s", key)
 
-    LOGGER.debug("Reloaded config from %s", filename)
-    if old_glob:
+    if config_changed:
+        LOGGER.debug("Reloaded config from %s", filename)
+    else:
+        LOGGER.debug("No changes to reload in %s", filename)
+
+    if old_glob and not disable_backlog:
         fnames = []
         for pattern in old_glob:
             fnames += glob.glob(pattern)
@@ -310,7 +316,8 @@ def reload_config(filename):
                     fp_ = open(fname, "ab")
                     fp_.close()
         old_glob = []
-    LOGGER.debug("done reloading config")
+        LOGGER.info("Old files transferred")
+
 # Unpackers
 
 # xrit
@@ -507,7 +514,7 @@ class EventHandler(pyinotify.ProcessEvent):
         self._fun = fun
 
     def process_IN_CLOSE_WRITE(self, event):
-        """On closing after writing.
+        """On closing a writable file.
         """
         self._fun(event.pathname)
 
@@ -614,6 +621,9 @@ def parse_args():
                         help="The configuration file to run on.")
     parser.add_argument("-l", "--log",
                         help="The file to log to. stdout otherwise.")
+    parser.add_argument("-d", "--disable-backlog", default=False,
+                        action="store_true",
+                        help="Disable handling of backlog. Default: resend exising files.")
     return parser.parse_args()
 
 
@@ -651,7 +661,7 @@ def main():
     watchman = pyinotify.WatchManager()
 
     notifier = pyinotify.Notifier(watchman, EventHandler(reload_config))
-    watchman.add_watch(os.path.dirname(cmd_args.config_file), mask)
+    watchman.add_watch(cmd_args.config_file, mask)
 
     def chains_stop(*args):
         del args
@@ -660,7 +670,8 @@ def main():
     signal.signal(signal.SIGTERM, chains_stop)
 
     try:
-        reload_config(cmd_args.config_file)
+        reload_config(cmd_args.config_file,
+                      disable_backlog=cmd_args.disable_backlog)
         notifier.loop()
     except KeyboardInterrupt:
         LOGGER.debug("Interrupting")
