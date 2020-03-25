@@ -29,11 +29,13 @@ from datetime import datetime
 from queue import Queue
 from tempfile import NamedTemporaryFile, gettempdir
 from threading import get_ident
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, call
 
 import yaml
 
-from trollmoves.dispatcher import Dispatcher, YAMLConfig, check_conditions
+from trollmoves.dispatcher import (
+    Dispatcher, YAMLConfig, check_conditions, dispatch
+)
 
 test_yaml1 = """
 target1:
@@ -212,8 +214,7 @@ def test_check_conditions():
 def test_get_destinations():
     """Check getting destination urls."""
     with patch('trollmoves.dispatcher.DispatchConfig'):
-        from trollmoves.dispatcher import Dispatcher
-        with NamedTemporaryFile('w', delete=False) as the_file:
+        with NamedTemporaryFile('w') as the_file:
             fname = the_file.name
             dp = Dispatcher(fname)
             dp.config = yaml.safe_load(test_yaml1)
@@ -226,9 +227,10 @@ def test_get_destinations():
 
             res = dp.get_destinations(msg)
             assert len(res) == 1
-            url, attrs = res[0]
+            url, attrs, client = res[0]
             assert url == expected_url
             assert attrs == expected_attrs
+            assert client == "target1"
 
             dp.config = yaml.safe_load(test_yaml2)
             res = dp.get_destinations(msg)
@@ -274,8 +276,7 @@ target1:
 def test_get_destinations_with_aliases():
     """Check getting destination urls."""
     with patch('trollmoves.dispatcher.DispatchConfig'):
-        from trollmoves.dispatcher import Dispatcher
-        with NamedTemporaryFile('w', delete=False) as the_file:
+        with NamedTemporaryFile('w') as the_file:
             fname = the_file.name
             dp = Dispatcher(fname)
             dp.config = yaml.safe_load(test_yaml_aliases)
@@ -288,9 +289,10 @@ def test_get_destinations_with_aliases():
 
             res = dp.get_destinations(msg)
             assert len(res) == 1
-            url, attrs = res[0]
+            url, attrs, client = res[0]
             assert url == expected_url
             assert attrs == expected_attrs
+            assert client == "target1"
 
             dp.config = yaml.safe_load(test_yaml2)
             res = dp.get_destinations(msg)
@@ -397,17 +399,132 @@ def test_create_dest_url():
             msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
                         'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif'}
             # SSH protocol, no username
-            url, params = dp.create_dest_url(msg, 'target2', config['target2'])
+            url, params, client = dp.create_dest_url(msg, 'target2',
+                                                     config['target2'])
             expected_url = "ssh://server.target2.com/satellite/viirs/sat_201909190919_NOAA-20.tif"
             assert url == expected_url
             assert params == {'ssh_key_filename': '~/.ssh/rsa_id.pub'}
+            assert client == "target2"
 
             # SCP protocolw with username
-            url, params = dp.create_dest_url(msg, 'target3', config['target3'])
+            url, params, client = dp.create_dest_url(msg, 'target3',
+                                                     config['target3'])
             expected_url = "scp://user@server.target2.com/satellite/viirs/sat_201909190919_NOAA-20.tif"
             assert url == expected_url
+            assert client == "target3"
 
     finally:
         if dp is not None:
             dp.close()
         os.remove(config_file_name)
+
+
+test_yaml_pub = test_yaml2 + """
+target3:
+  host: scp://user@server.target2.com
+  filepattern: 'sat_{start_time:%Y%m%d%H%M}_{platform_name}.{format}'
+  directory: /satellite/{sensor}
+  publish_topic: "/topic/{platform_name}"
+  dispatch_configs:
+    - topics:
+        - /level2/viirs
+"""
+@patch('trollmoves.dispatcher.Message')
+@patch('trollmoves.dispatcher.ListenerContainer')
+@patch('trollmoves.dispatcher.NoisyPublisher')
+def test_publisher(NoisyPublisher, ListenerContainer, Message):
+    """Test the publisher is initialized."""
+    pub = Mock()
+    NoisyPublisher.return_value = pub
+    try:
+        with NamedTemporaryFile('w', delete=False) as config_file:
+            config_file_name = config_file.name
+            config_file.write(test_yaml_pub)
+            config_file.flush()
+            config_file.close()
+            try:
+                dp = Dispatcher(config_file_name)
+                assert dp.publisher is None
+                NoisyPublisher.assert_not_called()
+            finally:
+                if dp is not None:
+                    dp.close()
+            try:
+                dp = Dispatcher(config_file_name, publish_nameservers=["asd"])
+                assert dp.publisher is None
+                NoisyPublisher.assert_not_called()
+            finally:
+                if dp is not None:
+                    dp.close()
+            try:
+                dp = Dispatcher(config_file_name, publish_port=0)
+                init_call = call("dispatcher", port=0, nameservers=None)
+                assert init_call in NoisyPublisher.mock_calls
+            finally:
+                if dp is not None:
+                    dp.close()
+                dp.publisher.stop.assert_called()
+            try:
+                dp = Dispatcher(config_file_name, publish_port=40000)
+                init_call = call("dispatcher", port=40000, nameservers=None)
+                assert init_call in NoisyPublisher.mock_calls
+            finally:
+                if dp is not None:
+                    dp.close()
+                assert len(dp.publisher.stop.mock_calls) == 2
+            try:
+                dp = Dispatcher(config_file_name, publish_port=40000,
+                                publish_nameservers=["asd"])
+
+                assert dp.publisher is pub
+                init_call = call("dispatcher", port=40000, nameservers=["asd"])
+                assert init_call in NoisyPublisher.mock_calls
+
+                msg = Mock(data={'uri': 'original_path',
+                                 'platform_name': 'platform'})
+                destinations = [['url1', 'params1', 'target2'],
+                                ['url2', 'params2', 'target3']]
+                success = {'target2': False, 'target3': True}
+                dp._publish(msg, destinations, success)
+                dp.publisher.send.assert_called_once()
+                # The message topic has been composed and uri has been replaced
+                msg_call = call('/topic/platform', 'file',
+                                {'uri': 'url2', 'platform_name': 'platform'})
+                assert msg_call in Message.mock_calls
+            finally:
+                if dp is not None:
+                    dp.close()
+                    dp.publisher.stop.assert_called()
+    finally:
+        os.remove(config_file_name)
+
+
+@patch('trollmoves.dispatcher.move_it')
+def test_dispatch(move_it):
+    """Test dispatching."""
+    with NamedTemporaryFile('w') as source_file:
+        source_file_name = source_file.name
+        # Flush the file so that os.path.exists() works
+        source_file.flush()
+        # Two successful dispatches
+        destinations = [['url1', 'params1', 'target1'],
+                        ['url2', 'params2', 'target2']]
+        res = dispatch(source_file_name, destinations)
+        assert len(move_it.mock_calls) == 2
+
+        # Exception is raised because two clients have the same name
+        destinations = [['url1', 'params1', 'target1'],
+                        ['url2', 'params2', 'target1']]
+
+        try:
+            res = dispatch(source_file_name, destinations)
+            assert 1 == 0
+        except NotImplementedError:
+            pass
+
+        # One of the dispatches fail
+        move_it.side_effect = [None, IOError('test')]
+        destinations = [['url1', 'params1', 'target1'],
+                        ['url2', 'params2', 'target2']]
+        res = dispatch(source_file_name, destinations)
+        assert res == {'target1': True, 'target2': False}
