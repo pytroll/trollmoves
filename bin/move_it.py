@@ -210,6 +210,7 @@ def reload_config(filename, disable_backlog=False):
 
     old_glob = []
 
+    config_changed = False
     for key, val in new_chains.items():
         identical = True
         if key in chains:
@@ -218,6 +219,7 @@ def reload_config(filename, disable_backlog=False):
                     ((key2 not in chains[key]) or
                      (chains[key][key2] != val2))):
                     identical = False
+                    config_changed = True
                     break
             if identical:
                 continue
@@ -297,7 +299,9 @@ def reload_config(filename, disable_backlog=False):
         del chains[key]
         LOGGER.debug("Removed %s", key)
 
-    LOGGER.debug("Reloaded config from %s", filename)
+    if config_changed:
+        LOGGER.debug("Reloaded config from %s", filename)
+
     if old_glob and not disable_backlog:
         fnames = []
         for pattern in old_glob:
@@ -310,7 +314,8 @@ def reload_config(filename, disable_backlog=False):
                     fp_ = open(fname, "ab")
                     fp_.close()
         old_glob = []
-    LOGGER.debug("done reloading config")
+        LOGGER.info("Old files transferred")
+
 # Unpackers
 
 # xrit
