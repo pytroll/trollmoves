@@ -471,7 +471,7 @@ def iterate_messages(uid):
         try:
             msg = get_next_msg(uid)
         except IndexError:
-            raise StopIteration
+            return
         yield msg
 
 
