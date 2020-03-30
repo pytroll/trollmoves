@@ -83,9 +83,9 @@ def test_unpack_xrit(check_output, remove):
     try:
         res = unpack_xrit(fname_in, **kwargs)
         # Should raise OSError as xritdecompressor hasn't been defined
-        assert False
+        raise AssertionError
     except OSError:
-        assert True
+        pass
     remove.assert_not_called()
 
     # Define xritdecompressor path
