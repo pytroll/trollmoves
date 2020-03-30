@@ -695,3 +695,14 @@ def test_add_timer(CTimer, hot_spare_timer_lock):
     hot_spare_timer_lock.__enter__.assert_called_once()
     assert UID_FILE1 in ongoing_hot_spare_timers
     assert len(ongoing_hot_spare_timers) == 1
+
+
+@patch('trollmoves.client.ongoing_transfers_lock')
+def test_iterate_messages(lock):
+    """Test iterate_messages()."""
+    from trollmoves.client import ongoing_transfers, iterate_messages
+    values = ["bar", "baz"]
+    ongoing_transfers["foo"] = values.copy()
+    res = iterate_messages("foo")
+    assert list(res) == values
+    assert len(lock.__enter__.mock_calls) == 3
