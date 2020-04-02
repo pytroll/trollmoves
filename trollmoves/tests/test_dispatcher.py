@@ -237,7 +237,7 @@ def test_get_destinations():
             assert len(res) == 2
 
 
-test_yaml_aliases = """
+test_yaml_aliases_simple = """
 target1:
   host: ftp://ftp.target1.com
   connection_parameters:
@@ -254,6 +254,25 @@ target1:
         - /level2/viirs
 """
 
+test_yaml_aliases_multiple = """
+target1:
+  host: ftp://ftp.target1.com
+  connection_parameters:
+    connection_uptime: 20
+  filepattern: '{platform_name}_{product}_{start_time:%Y%m%d%H%M}.{format}'
+  directory: /input_data/{product_dir}
+  aliases:
+    product:
+      - _alias_name: product_dir
+        green_snow: alternate_dir_for_green_snow
+      - green_snow: gs
+    variant:
+      DR: direct_readout
+  dispatch_configs:
+    - topics:
+        - /level2/viirs
+"""
+
 
 def test_get_destinations_with_aliases():
     """Check getting destination urls."""
@@ -261,7 +280,7 @@ def test_get_destinations_with_aliases():
         with NamedTemporaryFile('w') as the_file:
             fname = the_file.name
             dp = Dispatcher(fname)
-            dp.config = yaml.safe_load(test_yaml_aliases)
+            dp.config = yaml.safe_load(test_yaml_aliases_simple)
             msg = Mock()
             msg.subject = '/level2/viirs'
             msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
@@ -271,6 +290,14 @@ def test_get_destinations_with_aliases():
 
             res = dp.get_destinations(msg)
             assert len(res) == 1
+            url, attrs, client = res[0]
+            assert url == expected_url
+            assert attrs == expected_attrs
+            assert client == "target1"
+
+            dp.config = yaml.safe_load(test_yaml_aliases_multiple)
+            res = dp.get_destinations(msg)
+            expected_url = 'ftp://ftp.target1.com/input_data/alternate_dir_for_green_snow/NOAA-20_gs_201909190919.tif'
             url, attrs, client = res[0]
             assert url == expected_url
             assert attrs == expected_attrs

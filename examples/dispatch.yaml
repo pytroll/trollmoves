@@ -21,6 +21,13 @@ target1:
     product:
       natural_color: dnc
       overview: ovw
+  # Alternate way in using aliases.  This will create a new tag named
+  #   "product_dir", but will also retain the original tag "product"
+  # aliases:
+  #   product:
+  #   - _alias_name: product_dir
+  #     green_snow: alternate_dir_for_green_snow
+  #   - green_snow: gs
   dispatch_configs:
     - topics:
         - /level2/viirs

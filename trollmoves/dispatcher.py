@@ -374,9 +374,16 @@ class Dispatcher(Thread):
         host = info_dict['host']
         path = os.path.join(info_dict['directory'], info_dict['filepattern'])
         mda = msg.data.copy()
+
         for key, aliases in defaults.get('aliases', {}).items():
-            if key in mda:
-                mda[key] = aliases.get(mda[key], mda[key])
+            if isinstance(aliases, dict):
+                aliases = [aliases]
+
+            for alias in aliases:
+                new_key = alias.pop("_alias_name", key)
+                if key in msg.data:
+                    mda[new_key] = alias.get(msg.data[key], msg.data[key])
+
         path = compose(path, mda)
         parts = urlsplit(host)
         host_path = urlunsplit((parts.scheme, parts.netloc, path,
