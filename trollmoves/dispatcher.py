@@ -348,27 +348,29 @@ class Dispatcher(Thread):
         """Get the destinations for this message."""
         destinations = []
         for client, config in self.config.items():
-            for item in config['dispatch_configs']:
-                for topic in item['topics']:
+            for disp_config in config['dispatch_configs']:
+                for topic in disp_config['topics']:
                     if msg.subject.startswith(topic):
                         break
                 else:
                     continue
-                if check_conditions(msg, item):
-                    destinations.append(self.create_dest_url(msg, client, item))
+                if check_conditions(msg, disp_config):
+                    destinations.append(
+                        self.create_dest_url(msg, client, disp_config))
         return destinations
 
-    def create_dest_url(self, msg, client, item):
+    def create_dest_url(self, msg, client, disp_config):
         """Create the destination URL and the connection parameters."""
         defaults = self.config[client]
         info_dict = dict()
         for key in ['host', 'directory', 'filepattern']:
             try:
-                info_dict[key] = item[key]
+                info_dict[key] = disp_config[key]
             except KeyError:
                 info_dict[key] = defaults[key]
-        connection_parameters = item.get('connection_parameters',
-                                         defaults.get('connection_parameters'))
+        connection_parameters = disp_config.get(
+            'connection_parameters',
+            defaults.get('connection_parameters'))
         host = info_dict['host']
         path = os.path.join(info_dict['directory'], info_dict['filepattern'])
         mda = msg.data.copy()
