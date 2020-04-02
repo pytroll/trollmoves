@@ -252,24 +252,6 @@ target1:
   dispatch_configs:
     - topics:
         - /level2/viirs
-        - /level2/avhrr
-      conditions:
-        # key matches metadata items or provides default
-        - product: [green_snow, true_color]
-          sensor: viirs
-        - product: [green_snow, overview]
-          sensor: avhrr
-          # special section "except" for negating
-          except:
-            platform_name: NOAA-15
-    - topics:
-        - /level3/cloudtype
-      directory: /input/cloud_products
-      conditions:
-        - area: omerc_bb
-          # ' 122'.strip().isdigit() -> True
-          daylight: '<30'
-          coverage: '>50'
 """
 
 
