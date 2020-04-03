@@ -1,3 +1,28 @@
+## Version <v0.5.0> (2020/04/03)
+
+### Issues Closed
+
+* [Issue 40](https://github.com/pytroll/trollmoves/issues/40) - Make server and client aware of hot spare processes
+* [Issue 39](https://github.com/pytroll/trollmoves/issues/39) - Make unpacking possible on both client and server
+
+In this release 2 issues were closed.
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 60](https://github.com/pytroll/trollmoves/pull/60) - Fix iterate_messages() generator raising StopIteration
+* [PR 57](https://github.com/pytroll/trollmoves/pull/57) - Reload only the actual config file when it is modified
+
+#### Features added
+
+* [PR 61](https://github.com/pytroll/trollmoves/pull/61) - Create new compose-tags with aliases
+* [PR 59](https://github.com/pytroll/trollmoves/pull/59) - Fix rpm names for newer distros
+* [PR 58](https://github.com/pytroll/trollmoves/pull/58) - Publish messages after dispatch
+* [PR 57](https://github.com/pytroll/trollmoves/pull/57) - Reload only the actual config file when it is modified
+
+In this release 6 pull requests were closed.
+
 ## Version v0.4.0 (2020/02/10)
 
 ### Issues Closed
