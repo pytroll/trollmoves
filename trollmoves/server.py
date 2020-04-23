@@ -389,7 +389,7 @@ def create_posttroll_notifier(attrs, publisher):
     return listener, None
 
 
-def create_file_notifier(attrs, publisher):
+def create_inotify_notifier(attrs, publisher):
     """Create a notifier from the specified configuration attributes *attrs*."""
     tmask = (pyinotify.IN_CLOSE_WRITE |
              pyinotify.IN_MOVED_TO |
@@ -544,7 +544,7 @@ def reload_config(filename,
 
         if notifier_builder is None:
             if 'origin' in val:
-                notifier_builder = create_file_notifier
+                notifier_builder = create_inotify_notifier
             elif 'listen' in val:
                 notifier_builder = create_posttroll_notifier
 
