@@ -21,6 +21,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+"""Classes and functions for Trollmoves server."""
+
 import bz2
 import datetime
 import errno
@@ -62,12 +64,16 @@ START_TIME = datetime.datetime.utcnow()
 
 
 class ConfigError(Exception):
+    """Configuration error."""
+
     pass
 
 
 class Deleter(Thread):
+    """Class for deleting moved files."""
 
     def __init__(self, attrs):
+        """Initialize Deleter."""
         Thread.__init__(self)
         self.queue = Queue()
         self.timer = None
@@ -75,11 +81,13 @@ class Deleter(Thread):
         self._attrs = attrs
 
     def add(self, filename):
+        """Schedule file for deletion."""
         remove_delay = int(self._attrs.get('remove_delay', 30))
         LOGGER.debug('Scheduling %s for removal in %ds', filename, remove_delay)
         self.queue.put((filename, time.time() + remove_delay))
 
     def run(self):
+        """Start the deleter."""
         while self.loop:
             try:
                 filename, the_time = self.queue.get(True, 2)
@@ -99,6 +107,7 @@ class Deleter(Thread):
 
     @staticmethod
     def delete(filename):
+        """Delete the given file."""
         try:
             os.remove(filename)
         except OSError as err:
@@ -106,16 +115,17 @@ class Deleter(Thread):
                 raise
 
     def stop(self):
+        """Stop the deleter."""
         self.loop = False
         if self.timer:
             self.timer.cancel()
 
 
 class RequestManager(Thread):
-    """Manage requests.
-    """
+    """Manage requests."""
 
     def __init__(self, port, attrs=None):
+        """Initialize request manager."""
         Thread.__init__(self)
 
         self._loop = True
@@ -147,17 +157,16 @@ class RequestManager(Thread):
         LOGGER.debug("Station is '%s'", self._station)
 
     def start(self):
+        """Start the request manager."""
         self._deleter.start()
         Thread.start(self)
 
     def pong(self, message):
-        """Reply to ping
-        """
+        """Reply to ping."""
         return Message(message.subject, "pong", {"station": self._station})
 
     def push(self, message):
-        """Reply to push request
-        """
+        """Reply to push request."""
         for the_dict in gen_dict_contains(message.data, 'uri'):
             uri = urlparse(the_dict['uri'])
             rel_path = the_dict.get('path', None)
@@ -196,8 +205,7 @@ class RequestManager(Thread):
         return new_msg
 
     def ack(self, message):
-        """Reply with ack to a publication
-        """
+        """Reply with ack to a publication."""
         for url in gen_dict_extract(message.data, 'uri'):
             uri = urlparse(url)
             pathname = uri.path
@@ -222,6 +230,7 @@ class RequestManager(Thread):
         return new_msg
 
     def info(self, message):
+        """Collect information from file cache to message."""
         topic = message.subject
         max_count = 2256  # Let's set a (close to arbitrary) limit on messages size.
         try:
@@ -239,11 +248,11 @@ class RequestManager(Thread):
         return Message(message.subject, "info", data={"files": files, "max_count": max_count, "uptime": str(uptime)})
 
     def unknown(self, message):
-        """Reply to any unknown request.
-        """
+        """Reply to any unknown request."""
         return Message(message.subject, "unknown")
 
     def reply_and_send(self, fun, address, message):
+        """Reply to request."""
         in_socket = get_context().socket(PUSH)
         in_socket.connect("inproc://replies" + str(self.port))
 
@@ -262,6 +271,7 @@ class RequestManager(Thread):
                                                               'utf-8')])
 
     def run(self):
+        """Run request manager."""
         while self._loop:
             try:
                 socks = dict(self._poller.poll(timeout=2000))
@@ -314,14 +324,17 @@ class RequestManager(Thread):
 
 
 class Listener(Thread):
+    """A message listener for the server."""
 
     def __init__(self, attrs, publisher):
+        """Initialize the listener."""
         super(Listener, self).__init__()
         self.attrs = attrs
         self.publisher = publisher
         self.loop = True
 
     def run(self):
+        """Start listening to messages."""
         with Subscribe('', topics=self.attrs['listen'], addr_listener=True) as sub:
             for msg in sub.recv(1):
                 if msg is None:
@@ -339,7 +352,7 @@ class Listener(Thread):
                 else:
                     LOGGER.debug('We have a match: %s', str(msg))
 
-                    #pathname = unpack(orig_pathname, **attrs)
+                    # pathname = unpack(orig_pathname, **attrs)
 
                     info = self.attrs.get("info", {})
                     if info:
@@ -365,21 +378,19 @@ class Listener(Thread):
                         break
 
     def stop(self):
+        """Stop the listener."""
         self.loop = False
 
 
 def create_posttroll_notifier(attrs, publisher):
-    """Create a notifier listening to posttroll messages from *attrs*.
-    """
+    """Create a notifier listening to posttroll messages from *attrs*."""
     listener = Listener(attrs, publisher)
 
     return listener, None
 
 
 def create_file_notifier(attrs, publisher):
-    """Create a notifier from the specified configuration attributes *attrs*.
-    """
-
+    """Create a notifier from the specified configuration attributes *attrs*."""
     tmask = (pyinotify.IN_CLOSE_WRITE |
              pyinotify.IN_MOVED_TO |
              pyinotify.IN_CREATE |
@@ -444,8 +455,7 @@ def create_file_notifier(attrs, publisher):
 
 
 def read_config(filename):
-    """Read the config file called *filename*.
-    """
+    """Read the config file called *filename*."""
     cp_ = RawConfigParser()
     cp_.read(filename)
 
@@ -494,9 +504,7 @@ def reload_config(filename,
                   manager=RequestManager,
                   publisher=None,
                   disable_backlog=False):
-    """Rebuild chains if needed (if the configuration changed) from *filename*.
-    """
-
+    """Rebuild chains if needed (if the configuration changed) from *filename*."""
     LOGGER.debug("New config file detected: %s", filename)
 
     new_chains = read_config(filename)
@@ -654,10 +662,10 @@ def unpack(pathname,
 # Generic event handler
 # fixme: on deletion, the file should be removed from the filecache
 class EventHandler(pyinotify.ProcessEvent):
-    """Handle events with a generic *fun* function.
-    """
+    """Handle events with a generic *fun* function."""
 
     def __init__(self, fun, *args, **kwargs):
+        """Initialize event handler."""
         pyinotify.ProcessEvent.__init__(self, *args, **kwargs)
         self._cmd_filename = kwargs.get('cmd_filename')
         if self._cmd_filename:
@@ -713,6 +721,7 @@ class EventHandler(pyinotify.ProcessEvent):
 
 
 def process_old_files(pattern, fun):
+    """Process files from *pattern* with function *fun*."""
     fnames = glob.glob(pattern)
     if fnames:
         # time.sleep(3)
@@ -723,6 +732,7 @@ def process_old_files(pattern, fun):
 
 
 def terminate(chains, publisher=None):
+    """Terminate the given *chains* and stop the *publisher*."""
     for chain in chains.values():
         chain["notifier"].stop()
         if "request_manager" in chain:
