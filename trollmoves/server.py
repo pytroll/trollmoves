@@ -41,6 +41,8 @@ from threading import Lock, Thread
 
 import pyinotify
 from zmq import NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers.polling import PollingObserver
 
 from posttroll import get_context
 from posttroll.message import Message
@@ -446,7 +448,7 @@ def create_inotify_notifier(attrs, publisher):
         pattern_list = pattern.split('/')
         pattern_join = os.path.join(*pattern_list[:int(attrs['origin_inotify_base_dir_skip_levels'])])
         opath = os.path.join("/", pattern_join)
-        LOGGER.debug("Using {} as base path for pyinotify add_watch.".format(opath))
+        LOGGER.debug("Using %s as base path for pyinotify add_watch.", opath)
 
     def fun(orig_pathname):
         """Wrap the publisher."""
@@ -458,6 +460,39 @@ def create_inotify_notifier(attrs, publisher):
     wm_.add_watch(opath, tmask)
 
     return tnotifier, fun
+
+
+class WatchdogHandler(FileSystemEventHandler):
+    """Trigger processing on filesystem events."""
+
+    def __init__(self, fun, publisher, pattern, attrs):
+        """Initialize the processor."""
+        FileSystemEventHandler.__init__(self)
+        self.fun = fun
+        self.publisher = publisher
+        self.pattern = pattern
+        self.attrs = attrs
+
+    def on_created(self, event):
+        """Process file creation."""
+        self.fun(event.src_path, self.publisher, self.pattern, self.attrs)
+
+    def on_moved(self, event):
+        """Process a file being moved to the destination directory."""
+        self.fun(event.dest_path, self.publisher, self.pattern, self.attrs)
+
+
+def create_watchdog_notifier(attrs, publisher):
+    """Create a notifier from the specified configuration attributes *attrs*."""
+    pattern = globify(attrs["origin"])
+    opath = os.path.dirname(pattern)
+
+    observer = PollingObserver()
+    handler = WatchdogHandler(process_notify, publisher, pattern, attrs)
+
+    observer.schedule(handler, opath)
+
+    return observer, process_notify
 
 
 def read_config(filename):
@@ -509,7 +544,8 @@ def reload_config(filename,
                   notifier_builder=None,
                   manager=RequestManager,
                   publisher=None,
-                  disable_backlog=False):
+                  disable_backlog=False,
+                  use_watchdog=False):
     """Rebuild chains if needed (if the configuration changed) from *filename*."""
     LOGGER.debug("New config file detected: %s", filename)
 
@@ -530,6 +566,11 @@ def reload_config(filename,
                 continue
 
             chains[key]["notifier"].stop()
+            try:
+                # Join the Watchdog thread
+                chains[key]["notifier"].join()
+            except AttributeError:
+                pass
             if "request_manager" in chains[key]:
                 chains[key]["request_manager"].stop()
                 LOGGER.debug('Stopped reqman')
@@ -550,7 +591,12 @@ def reload_config(filename,
 
         if notifier_builder is None:
             if 'origin' in val:
-                notifier_builder = create_inotify_notifier
+                if use_watchdog:
+                    LOGGER.info("Using Watchdog notifier")
+                    notifier_builder = create_watchdog_notifier
+                else:
+                    LOGGER.info("Using inotify notifier")
+                    notifier_builder = create_inotify_notifier
             elif 'listen' in val:
                 notifier_builder = create_posttroll_notifier
 
@@ -567,6 +613,11 @@ def reload_config(filename,
 
     for key in (set(chains.keys()) - set(new_chains.keys())):
         chains[key]["notifier"].stop()
+        try:
+            # Join the Watchdog thread
+            chains[key]["notifier"].join()
+        except AttributeError:
+            pass
         del chains[key]
         LOGGER.debug("Removed %s", key)
 
@@ -741,6 +792,11 @@ def terminate(chains, publisher=None):
     """Terminate the given *chains* and stop the *publisher*."""
     for chain in chains.values():
         chain["notifier"].stop()
+        try:
+            # Join the Watchdog thread
+            chain["notifier"].join()
+        except AttributeError:
+            pass
         if "request_manager" in chain:
             chain["request_manager"].stop()
 
