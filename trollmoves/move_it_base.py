@@ -38,8 +38,10 @@ LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
 
 
 class MoveItBase(object):
+    """Base class for Trollmoves."""
 
     def __init__(self, cmd_args, chain_type):
+        """Initialize the class."""
         self.cmd_args = cmd_args
         self.chain_type = chain_type
         self.running = False
@@ -53,6 +55,7 @@ class MoveItBase(object):
         self.setup_watchers(cmd_args)
 
     def reload_cfg_file(self, filename, *args, **kwargs):
+        """Reload configuration file."""
         if self.chain_type == "client":
             from trollmoves.client import reload_config
             reload_config(filename, self.chains, *args, pub_instance=self.pub,
@@ -61,9 +64,11 @@ class MoveItBase(object):
             # Also Mirror uses the reload_config from the Server
             from trollmoves.server import reload_config
             reload_config(filename, self.chains, *args, publisher=self.pub,
+                          use_watchdog=self.cmd_args.watchdog,
                           **kwargs)
 
     def signal_reload_cfg_file(self, *args):
+        """Handle reload signal."""
         del args
         if self.chain_type == "client":
             from trollmoves.client import reload_config
@@ -73,6 +78,7 @@ class MoveItBase(object):
                       pub_instance=self.pub)
 
     def chains_stop(self, *args):
+        """Stop all transfer chains."""
         del args
         if self.chain_type == "client":
             from trollmoves.client import terminate
@@ -87,6 +93,7 @@ class MoveItBase(object):
         terminate(self.chains)
 
     def setup_watchers(self, cmd_args):
+        """Set up watcher for the configuration file."""
         mask = (pyinotify.IN_CLOSE_WRITE |
                 pyinotify.IN_MOVED_TO |
                 pyinotify.IN_CREATE)
@@ -100,6 +107,7 @@ class MoveItBase(object):
         self.watchman.add_watch(os.path.dirname(cmd_args.config_file), mask)
 
     def run(self):
+        """Start the transfer chains."""
         signal.signal(signal.SIGTERM, self.chains_stop)
         signal.signal(signal.SIGHUP, self.signal_reload_cfg_file)
         self.notifier.start()
@@ -110,7 +118,7 @@ class MoveItBase(object):
 
 
 def setup_logging(cmd_args, chain_type):
-    """Setup logging"""
+    """Set up logging."""
     global LOGGER
     LOGGER = logging.getLogger('')
     if cmd_args.verbose:
