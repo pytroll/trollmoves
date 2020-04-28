@@ -389,6 +389,37 @@ def create_posttroll_notifier(attrs, publisher):
     return listener, None
 
 
+def process_notify(orig_pathname, publisher, pattern, kwargs):
+    """Publish what we have."""
+    if not fnmatch.fnmatch(orig_pathname, pattern):
+        return
+    elif (os.stat(orig_pathname).st_size == 0):
+        # Want to avoid files with size 0.
+        return
+    else:
+        LOGGER.debug('We have a match: %s', orig_pathname)
+
+    pathname = unpack(orig_pathname, **kwargs)
+
+    info = kwargs.get("info", {})
+    if info:
+        info = dict((elt.strip().split('=') for elt in info.split(";")))
+        for infokey, infoval in info.items():
+            if "," in infoval:
+                info[infokey] = infoval.split(",")
+
+    info.update(parse(kwargs["origin"], orig_pathname))
+    info['uri'] = pathname
+    info['uid'] = os.path.basename(pathname)
+    info['request_address'] = kwargs.get(
+        "request_address", get_own_ip()) + ":" + kwargs["request_port"]
+    msg = Message(kwargs["topic"], 'file', info)
+    publisher.send(str(msg))
+    with file_cache_lock:
+        file_cache.appendleft(kwargs["topic"] + '/' + info["uid"])
+    LOGGER.debug("Message sent: %s", str(msg))
+
+
 def create_inotify_notifier(attrs, publisher):
     """Create a notifier from the specified configuration attributes *attrs*."""
     tmask = (pyinotify.IN_CLOSE_WRITE |
@@ -418,36 +449,11 @@ def create_inotify_notifier(attrs, publisher):
         LOGGER.debug("Using {} as base path for pyinotify add_watch.".format(opath))
 
     def fun(orig_pathname):
-        """Publish what we have."""
-        if not fnmatch.fnmatch(orig_pathname, pattern):
-            return
-        elif (os.stat(orig_pathname).st_size == 0):
-            # Want to avoid files with size 0.
-            return
-        else:
-            LOGGER.debug('We have a match: %s', orig_pathname)
+        """Wrap the publisher."""
+        process_notify(orig_pathname, publisher, pattern, attrs)
 
-        pathname = unpack(orig_pathname, **attrs)
-
-        info = attrs.get("info", {})
-        if info:
-            info = dict((elt.strip().split('=') for elt in info.split(";")))
-            for infokey, infoval in info.items():
-                if "," in infoval:
-                    info[infokey] = infoval.split(",")
-
-        info.update(parse(attrs["origin"], orig_pathname))
-        info['uri'] = pathname
-        info['uid'] = os.path.basename(pathname)
-        info['request_address'] = attrs.get(
-            "request_address", get_own_ip()) + ":" + attrs["request_port"]
-        msg = Message(attrs["topic"], 'file', info)
-        publisher.send(str(msg))
-        with file_cache_lock:
-            file_cache.appendleft(attrs["topic"] + '/' + info["uid"])
-        LOGGER.debug("Message sent: %s", str(msg))
-
-    tnotifier = pyinotify.ThreadedNotifier(wm_, EventHandler(fun, watchManager=wm_, tmask=tmask))
+    tnotifier = pyinotify.ThreadedNotifier(
+        wm_, EventHandler(fun, watchManager=wm_, tmask=tmask))
 
     wm_.add_watch(opath, tmask)
 
