@@ -58,24 +58,26 @@ class MoveItBase(object):
         """Reload configuration file."""
         if self.chain_type == "client":
             from trollmoves.client import reload_config
-            reload_config(filename, self.chains, *args, pub_instance=self.pub,
-                          **kwargs)
         else:
             # Also Mirror uses the reload_config from the Server
             from trollmoves.server import reload_config
             reload_config(filename, self.chains, *args, publisher=self.pub,
                           use_watchdog=self.cmd_args.watchdog,
-                          **kwargs)
+                          disable_backlog=self.cmd_args.disable_backlog)
 
     def signal_reload_cfg_file(self, *args):
         """Handle reload signal."""
         del args
         if self.chain_type == "client":
             from trollmoves.client import reload_config
+            reload_config(self.cmd_args.config_file, self.chains,
+                          pub_instance=self.pub)
         else:
             from trollmoves.server import reload_config
-        reload_config(self.cmd_args.config_file, self.chains,
-                      pub_instance=self.pub)
+            reload_config(self.cmd_args.config_file, self.chains,
+                          publisher=self.pub,
+                          use_watchdog=self.cmd_args.watchdog,
+                          disable_backlog=self.cmd_args.disable_backlog)
 
     def chains_stop(self, *args):
         """Stop all transfer chains."""
