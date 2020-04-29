@@ -604,7 +604,7 @@ def reload_config(filename,
         chains[key]["request_manager"].start()
         chains[key]["notifier"].start()
         if 'origin' in val:
-            old_glob.append((globify(val["origin"]), fun))
+            old_glob.append((globify(val["origin"]), fun, val))
 
         if not identical:
             LOGGER.debug("Updated %s", key)
@@ -624,8 +624,8 @@ def reload_config(filename,
     LOGGER.debug("Reloaded config from %s", filename)
     if old_glob and not disable_backlog:
         time.sleep(3)
-        for pattern, fun in old_glob:
-            process_old_files(pattern, fun)
+        for pattern, fun, attrs in old_glob:
+            process_old_files(pattern, fun, publisher, attrs)
 
     LOGGER.debug("done reloading config")
 
@@ -767,17 +767,21 @@ class EventHandler(pyinotify.ProcessEvent):
                 try:
                     self._watchManager.rm_watch(self._watched_dirs[event.pathname], quiet=False)
                 except pyinotify.WatchManagerError:
-                    # As the directory is deleted prior removing the watch will cause a error message
-                    # from pyinotify. This is ok, so just pass the exception.
+                    # As the directory is deleted prior removing the
+                    # watch will cause a error message from
+                    # pyinotify. This is ok, so just pass the
+                    # exception.
                     pass
                 finally:
                     del self._watched_dirs[event.pathname]
             except KeyError:
-                LOGGER.warning("Dir {} not watched by inotify. Can not delete watch.".format(event.pathname))
+                LOGGER.warning(
+                    "Dir %s not watched by inotify. Can not delete watch.",
+                    event.pathname)
         return
 
 
-def process_old_files(pattern, fun):
+def process_old_files(pattern, fun, publisher, kwargs):
     """Process files from *pattern* with function *fun*."""
     fnames = glob.glob(pattern)
     if fnames:
@@ -785,7 +789,7 @@ def process_old_files(pattern, fun):
         LOGGER.debug("Touching old files")
         for fname in fnames:
             if os.path.exists(fname):
-                fun(fname)
+                fun(fname, publisher, pattern, kwargs)
 
 
 def terminate(chains, publisher=None):
