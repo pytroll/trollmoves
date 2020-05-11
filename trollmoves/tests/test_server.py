@@ -48,7 +48,7 @@ def test_create_watchdog_notifier(process_notify):
             fid.write('')
 
         # Wait for a while for the watchdog to register the event
-        time.sleep(1.0)
+        time.sleep(2.0)
 
         observer.stop()
         observer.join()
