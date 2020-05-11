@@ -450,16 +450,12 @@ def create_inotify_notifier(attrs, publisher):
         opath = os.path.join("/", pattern_join)
         LOGGER.debug("Using %s as base path for pyinotify add_watch.", opath)
 
-    def fun(orig_pathname, publisher, pattern, attrs):
-        """Wrap the publisher."""
-        process_notify(orig_pathname, publisher, pattern, attrs)
-
     tnotifier = pyinotify.ThreadedNotifier(
-        wm_, EventHandler(fun, watchManager=wm_, tmask=tmask))
+        wm_, EventHandler(process_notify, watchManager=wm_, tmask=tmask))
 
     wm_.add_watch(opath, tmask)
 
-    return tnotifier, fun
+    return tnotifier, process_notify
 
 
 class WatchdogHandler(FileSystemEventHandler):
