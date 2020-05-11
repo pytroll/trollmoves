@@ -391,7 +391,7 @@ def create_posttroll_notifier(attrs, publisher):
     return listener, None
 
 
-def process_notify(orig_pathname, publisher, pattern, kwargs):
+def process_notify(orig_pathname, publisher, pattern, attrs):
     """Publish what we have."""
     if not fnmatch.fnmatch(orig_pathname, pattern):
         return
@@ -401,24 +401,24 @@ def process_notify(orig_pathname, publisher, pattern, kwargs):
     else:
         LOGGER.debug('We have a match: %s', orig_pathname)
 
-    pathname = unpack(orig_pathname, **kwargs)
+    pathname = unpack(orig_pathname, **attrs)
 
-    info = kwargs.get("info", {})
+    info = attrs.get("info", {})
     if info:
         info = dict((elt.strip().split('=') for elt in info.split(";")))
         for infokey, infoval in info.items():
             if "," in infoval:
                 info[infokey] = infoval.split(",")
 
-    info.update(parse(kwargs["origin"], orig_pathname))
+    info.update(parse(attrs["origin"], orig_pathname))
     info['uri'] = pathname
     info['uid'] = os.path.basename(pathname)
-    info['request_address'] = kwargs.get(
-        "request_address", get_own_ip()) + ":" + kwargs["request_port"]
-    msg = Message(kwargs["topic"], 'file', info)
+    info['request_address'] = attrs.get(
+        "request_address", get_own_ip()) + ":" + attrs["request_port"]
+    msg = Message(attrs["topic"], 'file', info)
     publisher.send(str(msg))
     with file_cache_lock:
-        file_cache.appendleft(kwargs["topic"] + '/' + info["uid"])
+        file_cache.appendleft(attrs["topic"] + '/' + info["uid"])
     LOGGER.debug("Message sent: %s", str(msg))
 
 
