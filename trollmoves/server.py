@@ -450,7 +450,7 @@ def create_inotify_notifier(attrs, publisher):
         opath = os.path.join("/", pattern_join)
         LOGGER.debug("Using %s as base path for pyinotify add_watch.", opath)
 
-    def fun(orig_pathname):
+    def fun(orig_pathname, publisher, pattern, attrs):
         """Wrap the publisher."""
         process_notify(orig_pathname, publisher, pattern, attrs)
 
