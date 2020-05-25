@@ -21,6 +21,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+"""Classes and functions for Trollmoves server."""
+
 import bz2
 import datetime
 import errno
@@ -39,6 +41,8 @@ from threading import Lock, Thread
 
 import pyinotify
 from zmq import NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers.polling import PollingObserver
 
 from posttroll import get_context
 from posttroll.message import Message
@@ -62,12 +66,16 @@ START_TIME = datetime.datetime.utcnow()
 
 
 class ConfigError(Exception):
+    """Configuration error."""
+
     pass
 
 
 class Deleter(Thread):
+    """Class for deleting moved files."""
 
     def __init__(self, attrs):
+        """Initialize Deleter."""
         Thread.__init__(self)
         self.queue = Queue()
         self.timer = None
@@ -75,11 +83,13 @@ class Deleter(Thread):
         self._attrs = attrs
 
     def add(self, filename):
+        """Schedule file for deletion."""
         remove_delay = int(self._attrs.get('remove_delay', 30))
         LOGGER.debug('Scheduling %s for removal in %ds', filename, remove_delay)
         self.queue.put((filename, time.time() + remove_delay))
 
     def run(self):
+        """Start the deleter."""
         while self.loop:
             try:
                 filename, the_time = self.queue.get(True, 2)
@@ -99,6 +109,7 @@ class Deleter(Thread):
 
     @staticmethod
     def delete(filename):
+        """Delete the given file."""
         try:
             os.remove(filename)
         except OSError as err:
@@ -106,16 +117,17 @@ class Deleter(Thread):
                 raise
 
     def stop(self):
+        """Stop the deleter."""
         self.loop = False
         if self.timer:
             self.timer.cancel()
 
 
 class RequestManager(Thread):
-    """Manage requests.
-    """
+    """Manage requests."""
 
     def __init__(self, port, attrs=None):
+        """Initialize request manager."""
         Thread.__init__(self)
 
         self._loop = True
@@ -147,17 +159,16 @@ class RequestManager(Thread):
         LOGGER.debug("Station is '%s'", self._station)
 
     def start(self):
+        """Start the request manager."""
         self._deleter.start()
         Thread.start(self)
 
     def pong(self, message):
-        """Reply to ping
-        """
+        """Reply to ping."""
         return Message(message.subject, "pong", {"station": self._station})
 
     def push(self, message):
-        """Reply to push request
-        """
+        """Reply to push request."""
         for the_dict in gen_dict_contains(message.data, 'uri'):
             uri = urlparse(the_dict['uri'])
             rel_path = the_dict.get('path', None)
@@ -196,8 +207,7 @@ class RequestManager(Thread):
         return new_msg
 
     def ack(self, message):
-        """Reply with ack to a publication
-        """
+        """Reply with ack to a publication."""
         for url in gen_dict_extract(message.data, 'uri'):
             uri = urlparse(url)
             pathname = uri.path
@@ -222,6 +232,7 @@ class RequestManager(Thread):
         return new_msg
 
     def info(self, message):
+        """Collect information from file cache to message."""
         topic = message.subject
         max_count = 2256  # Let's set a (close to arbitrary) limit on messages size.
         try:
@@ -239,11 +250,11 @@ class RequestManager(Thread):
         return Message(message.subject, "info", data={"files": files, "max_count": max_count, "uptime": str(uptime)})
 
     def unknown(self, message):
-        """Reply to any unknown request.
-        """
+        """Reply to any unknown request."""
         return Message(message.subject, "unknown")
 
     def reply_and_send(self, fun, address, message):
+        """Reply to request."""
         in_socket = get_context().socket(PUSH)
         in_socket.connect("inproc://replies" + str(self.port))
 
@@ -262,6 +273,7 @@ class RequestManager(Thread):
                                                               'utf-8')])
 
     def run(self):
+        """Run request manager."""
         while self._loop:
             try:
                 socks = dict(self._poller.poll(timeout=2000))
@@ -314,14 +326,17 @@ class RequestManager(Thread):
 
 
 class Listener(Thread):
+    """A message listener for the server."""
 
     def __init__(self, attrs, publisher):
+        """Initialize the listener."""
         super(Listener, self).__init__()
         self.attrs = attrs
         self.publisher = publisher
         self.loop = True
 
     def run(self):
+        """Start listening to messages."""
         with Subscribe('', topics=self.attrs['listen'], addr_listener=True) as sub:
             for msg in sub.recv(1):
                 if msg is None:
@@ -339,7 +354,7 @@ class Listener(Thread):
                 else:
                     LOGGER.debug('We have a match: %s', str(msg))
 
-                    #pathname = unpack(orig_pathname, **attrs)
+                    # pathname = unpack(orig_pathname, **attrs)
 
                     info = self.attrs.get("info", {})
                     if info:
@@ -365,21 +380,50 @@ class Listener(Thread):
                         break
 
     def stop(self):
+        """Stop the listener."""
         self.loop = False
 
 
 def create_posttroll_notifier(attrs, publisher):
-    """Create a notifier listening to posttroll messages from *attrs*.
-    """
+    """Create a notifier listening to posttroll messages from *attrs*."""
     listener = Listener(attrs, publisher)
 
     return listener, None
 
 
-def create_file_notifier(attrs, publisher):
-    """Create a notifier from the specified configuration attributes *attrs*.
-    """
+def process_notify(orig_pathname, publisher, pattern, attrs):
+    """Publish what we have."""
+    if not fnmatch.fnmatch(orig_pathname, pattern):
+        return
+    elif (os.stat(orig_pathname).st_size == 0):
+        # Want to avoid files with size 0.
+        return
+    else:
+        LOGGER.debug('We have a match: %s', orig_pathname)
 
+    pathname = unpack(orig_pathname, **attrs)
+
+    info = attrs.get("info", {})
+    if info:
+        info = dict((elt.strip().split('=') for elt in info.split(";")))
+        for infokey, infoval in info.items():
+            if "," in infoval:
+                info[infokey] = infoval.split(",")
+
+    info.update(parse(attrs["origin"], orig_pathname))
+    info['uri'] = pathname
+    info['uid'] = os.path.basename(pathname)
+    info['request_address'] = attrs.get(
+        "request_address", get_own_ip()) + ":" + attrs["request_port"]
+    msg = Message(attrs["topic"], 'file', info)
+    publisher.send(str(msg))
+    with file_cache_lock:
+        file_cache.appendleft(attrs["topic"] + '/' + info["uid"])
+    LOGGER.debug("Message sent: %s", str(msg))
+
+
+def create_inotify_notifier(attrs, publisher):
+    """Create a notifier from the specified configuration attributes *attrs*."""
     tmask = (pyinotify.IN_CLOSE_WRITE |
              pyinotify.IN_MOVED_TO |
              pyinotify.IN_CREATE |
@@ -404,48 +448,51 @@ def create_file_notifier(attrs, publisher):
         pattern_list = pattern.split('/')
         pattern_join = os.path.join(*pattern_list[:int(attrs['origin_inotify_base_dir_skip_levels'])])
         opath = os.path.join("/", pattern_join)
-        LOGGER.debug("Using {} as base path for pyinotify add_watch.".format(opath))
+        LOGGER.debug("Using %s as base path for pyinotify add_watch.", opath)
 
-    def fun(orig_pathname):
-        """Publish what we have."""
-        if not fnmatch.fnmatch(orig_pathname, pattern):
-            return
-        elif (os.stat(orig_pathname).st_size == 0):
-            # Want to avoid files with size 0.
-            return
-        else:
-            LOGGER.debug('We have a match: %s', orig_pathname)
-
-        pathname = unpack(orig_pathname, **attrs)
-
-        info = attrs.get("info", {})
-        if info:
-            info = dict((elt.strip().split('=') for elt in info.split(";")))
-            for infokey, infoval in info.items():
-                if "," in infoval:
-                    info[infokey] = infoval.split(",")
-
-        info.update(parse(attrs["origin"], orig_pathname))
-        info['uri'] = pathname
-        info['uid'] = os.path.basename(pathname)
-        info['request_address'] = attrs.get(
-            "request_address", get_own_ip()) + ":" + attrs["request_port"]
-        msg = Message(attrs["topic"], 'file', info)
-        publisher.send(str(msg))
-        with file_cache_lock:
-            file_cache.appendleft(attrs["topic"] + '/' + info["uid"])
-        LOGGER.debug("Message sent: %s", str(msg))
-
-    tnotifier = pyinotify.ThreadedNotifier(wm_, EventHandler(fun, watchManager=wm_, tmask=tmask))
+    tnotifier = pyinotify.ThreadedNotifier(
+        wm_, EventHandler(process_notify, watchManager=wm_, tmask=tmask))
 
     wm_.add_watch(opath, tmask)
 
-    return tnotifier, fun
+    return tnotifier, process_notify
+
+
+class WatchdogHandler(FileSystemEventHandler):
+    """Trigger processing on filesystem events."""
+
+    def __init__(self, fun, publisher, pattern, attrs):
+        """Initialize the processor."""
+        FileSystemEventHandler.__init__(self)
+        self.fun = fun
+        self.publisher = publisher
+        self.pattern = pattern
+        self.attrs = attrs
+
+    def on_created(self, event):
+        """Process file creation."""
+        self.fun(event.src_path, self.publisher, self.pattern, self.attrs)
+
+    def on_moved(self, event):
+        """Process a file being moved to the destination directory."""
+        self.fun(event.dest_path, self.publisher, self.pattern, self.attrs)
+
+
+def create_watchdog_notifier(attrs, publisher):
+    """Create a notifier from the specified configuration attributes *attrs*."""
+    pattern = globify(attrs["origin"])
+    opath = os.path.dirname(pattern)
+
+    observer = PollingObserver()
+    handler = WatchdogHandler(process_notify, publisher, pattern, attrs)
+
+    observer.schedule(handler, opath)
+
+    return observer, process_notify
 
 
 def read_config(filename):
-    """Read the config file called *filename*.
-    """
+    """Read the config file called *filename*."""
     cp_ = RawConfigParser()
     cp_.read(filename)
 
@@ -493,10 +540,9 @@ def reload_config(filename,
                   notifier_builder=None,
                   manager=RequestManager,
                   publisher=None,
-                  disable_backlog=False):
-    """Rebuild chains if needed (if the configuration changed) from *filename*.
-    """
-
+                  disable_backlog=False,
+                  use_watchdog=False):
+    """Rebuild chains if needed (if the configuration changed) from *filename*."""
     LOGGER.debug("New config file detected: %s", filename)
 
     new_chains = read_config(filename)
@@ -516,6 +562,11 @@ def reload_config(filename,
                 continue
 
             chains[key]["notifier"].stop()
+            try:
+                # Join the Watchdog thread
+                chains[key]["notifier"].join()
+            except AttributeError:
+                pass
             if "request_manager" in chains[key]:
                 chains[key]["request_manager"].stop()
                 LOGGER.debug('Stopped reqman')
@@ -536,7 +587,12 @@ def reload_config(filename,
 
         if notifier_builder is None:
             if 'origin' in val:
-                notifier_builder = create_file_notifier
+                if use_watchdog:
+                    LOGGER.info("Using Watchdog notifier")
+                    notifier_builder = create_watchdog_notifier
+                else:
+                    LOGGER.info("Using inotify notifier")
+                    notifier_builder = create_inotify_notifier
             elif 'listen' in val:
                 notifier_builder = create_posttroll_notifier
 
@@ -544,7 +600,7 @@ def reload_config(filename,
         chains[key]["request_manager"].start()
         chains[key]["notifier"].start()
         if 'origin' in val:
-            old_glob.append((globify(val["origin"]), fun))
+            old_glob.append((globify(val["origin"]), fun, val))
 
         if not identical:
             LOGGER.debug("Updated %s", key)
@@ -553,14 +609,19 @@ def reload_config(filename,
 
     for key in (set(chains.keys()) - set(new_chains.keys())):
         chains[key]["notifier"].stop()
+        try:
+            # Join the Watchdog thread
+            chains[key]["notifier"].join()
+        except AttributeError:
+            pass
         del chains[key]
         LOGGER.debug("Removed %s", key)
 
     LOGGER.debug("Reloaded config from %s", filename)
     if old_glob and not disable_backlog:
         time.sleep(3)
-        for pattern, fun in old_glob:
-            process_old_files(pattern, fun)
+        for pattern, fun, attrs in old_glob:
+            process_old_files(pattern, fun, publisher, attrs)
 
     LOGGER.debug("done reloading config")
 
@@ -654,10 +715,10 @@ def unpack(pathname,
 # Generic event handler
 # fixme: on deletion, the file should be removed from the filecache
 class EventHandler(pyinotify.ProcessEvent):
-    """Handle events with a generic *fun* function.
-    """
+    """Handle events with a generic *fun* function."""
 
     def __init__(self, fun, *args, **kwargs):
+        """Initialize event handler."""
         pyinotify.ProcessEvent.__init__(self, *args, **kwargs)
         self._cmd_filename = kwargs.get('cmd_filename')
         if self._cmd_filename:
@@ -702,29 +763,40 @@ class EventHandler(pyinotify.ProcessEvent):
                 try:
                     self._watchManager.rm_watch(self._watched_dirs[event.pathname], quiet=False)
                 except pyinotify.WatchManagerError:
-                    # As the directory is deleted prior removing the watch will cause a error message
-                    # from pyinotify. This is ok, so just pass the exception.
+                    # As the directory is deleted prior removing the
+                    # watch will cause a error message from
+                    # pyinotify. This is ok, so just pass the
+                    # exception.
                     pass
                 finally:
                     del self._watched_dirs[event.pathname]
             except KeyError:
-                LOGGER.warning("Dir {} not watched by inotify. Can not delete watch.".format(event.pathname))
+                LOGGER.warning(
+                    "Dir %s not watched by inotify. Can not delete watch.",
+                    event.pathname)
         return
 
 
-def process_old_files(pattern, fun):
+def process_old_files(pattern, fun, publisher, kwargs):
+    """Process files from *pattern* with function *fun*."""
     fnames = glob.glob(pattern)
     if fnames:
         # time.sleep(3)
         LOGGER.debug("Touching old files")
         for fname in fnames:
             if os.path.exists(fname):
-                fun(fname)
+                fun(fname, publisher, pattern, kwargs)
 
 
 def terminate(chains, publisher=None):
+    """Terminate the given *chains* and stop the *publisher*."""
     for chain in chains.values():
         chain["notifier"].stop()
+        try:
+            # Join the Watchdog thread
+            chain["notifier"].join()
+        except AttributeError:
+            pass
         if "request_manager" in chain:
             chain["request_manager"].stop()
 

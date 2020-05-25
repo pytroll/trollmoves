@@ -21,7 +21,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-"""
+"""Trollmoves Server.
+
 Moving and unpacking files
 ==========================
 
@@ -103,14 +104,17 @@ LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
 
 
 class MoveItServer(MoveItBase):
+    """Wrapper class for Trollmoves Server."""
 
     def __init__(self, cmd_args):
+        """Initialize server."""
         super(MoveItServer, self).__init__(cmd_args, "server")
         LOGGER.info("Starting publisher on port %s.", str(cmd_args.port))
         self.pub = Publisher("tcp://*:" + str(cmd_args.port), "move_it_server")
 
 
 def parse_args():
+    """Parse command-line arguments."""
     parser = argparse.ArgumentParser()
     parser.add_argument("config_file",
                         help="The configuration file to run on.")
@@ -124,12 +128,14 @@ def parse_args():
     parser.add_argument("--disable-backlog",
                         help="Disable glob and handling of backlog of files at start/restart",
                         action='store_true')
+    parser.add_argument("-w", "--watchdog", default=False, action="store_true",
+                        help="Use Watchdog instead of inotify")
 
     return parser.parse_args()
 
 
 def main():
-    """Main()"""
+    """Start the server."""
     cmd_args = parse_args()
     server = MoveItServer(cmd_args)
 
