@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2012-2019
+# Copyright (c) 2012-2020
 #
 # Author(s):
 #
@@ -160,7 +160,8 @@ import yaml
 
 import inotify.adapters
 from inotify.constants import IN_MODIFY, IN_CLOSE_WRITE, IN_CREATE, IN_MOVED_TO
-from six.moves.urllib.parse import urlsplit, urlunsplit
+from six.moves.urllib.parse import urlsplit, urlunsplit, urlparse
+import socket
 
 from posttroll.listener import ListenerContainer
 from posttroll.publisher import NoisyPublisher
@@ -268,6 +269,8 @@ class Dispatcher(Thread):
         self.topics = None
         self.listener = None
         self.publisher = None
+        self.host = socket.gethostname()
+
         if publish_port is not None:
             self.publisher = NoisyPublisher(
                 "dispatcher", port=publish_port,
@@ -318,7 +321,19 @@ class Dispatcher(Thread):
                     continue
                 destinations = self.get_destinations(msg)
                 if destinations:
-                    success = dispatch(msg.data['uri'], destinations)
+                    # Check if the url are on another host:
+                    url = urlparse(msg.data['uri'])
+                    if url.scheme != '':
+                        netloc = url.netloc
+                        if netloc != self.host:
+                            # This warning may appear even if the file path
+                            # does exist on both servers (a central file server
+                            # reachable from both). But in those cases one
+                            # should probably not use an url scheme but just a
+                            # file path:
+                            logger.warning(
+                                "uri is pointing to a file path on another server! Host=<%s> uri netloc=<%s>", self.host, netloc)
+                    success = dispatch(url.path, destinations)
                     if self.publisher:
                         self._publish(msg, destinations, success)
 
