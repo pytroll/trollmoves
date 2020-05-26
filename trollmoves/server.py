@@ -274,6 +274,13 @@ class RequestManager(Thread):
 
     def run(self):
         """Run request manager."""
+        try:
+            self._run()
+        except Exception:
+            LOGGER.exception("Request Manager died.")
+
+    def _run(self):
+        """Run request manager."""
         while self._loop:
             try:
                 socks = dict(self._poller.poll(timeout=2000))
@@ -282,8 +289,13 @@ class RequestManager(Thread):
                 continue
             if socks.get(self.out_socket) == POLLIN:
                 LOGGER.debug("Received a request")
-                address, _, payload = self.out_socket.recv_multipart(
-                    NOBLOCK)
+                multiparts = self.out_socket.recv_multipart(NOBLOCK)
+                try:
+                    address, _, payload = multiparts
+                except ValueError:
+                    LOGGER.warning("Invalid request, ignoring.")
+                    continue
+
                 message = Message(rawstr=payload)
                 fake_msg = Message(rawstr=str(message))
                 try:

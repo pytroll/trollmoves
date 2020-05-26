@@ -234,7 +234,6 @@ class Listener(Thread):
             self.cause_of_death = err
             self.die_event.set()
 
-
     def stop(self):
         """Stop subscriber and delete the instance."""
         self.running = False
@@ -876,6 +875,7 @@ class PushRequester(object):
     def connect(self):
         """Connect to the server."""
         self._socket = get_context().socket(REQ)
+        # self._socket.setsockopt(zmq.RCVTIMEO, 500)  # milliseconds
         self._socket.connect(self._reqaddress)
         self._poller.register(self._socket, POLLIN)
 
@@ -896,7 +896,7 @@ class PushRequester(object):
         self.stop()
 
     def send_and_recv(self, msg, timeout=DEFAULT_REQ_TIMEOUT):
-        """Send a message end receive a response."""
+        """Send a message and receive a response."""
         with self._lock:
             retries_left = self.request_retries
             request = str(msg)
