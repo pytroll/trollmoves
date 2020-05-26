@@ -658,11 +658,11 @@ class Chain(Thread):
     def run(self):
         while self.running:
             if self.listener_died_event.wait(1):
-                for listener in listeners:
-                    # TODO
-                    # try to restart the listener if it's dead
-                    # crash otherwise
-                    pass
+                for provider in self.listeners:
+                    if not self.listeners[provider].is_alive():
+                        # TODO
+                        # try to restart the listener
+                        # crash otherwise
 
     def __eq__(self, other_config):
         for key, val in other_config.items():
