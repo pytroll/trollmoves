@@ -110,19 +110,6 @@ class MoveItBase(object):
         self.notifier = pyinotify.ThreadedNotifier(self.watchman, event_handler)
         self.watchman.add_watch(os.path.dirname(cmd_args.config_file), mask)
 
-    def run(self):
-        """Start the transfer chains."""
-        signal.signal(signal.SIGTERM, self.chains_stop)
-        signal.signal(signal.SIGHUP, self.signal_reload_cfg_file)
-        self.notifier.start()
-        self.running = True
-        while self.running:
-            time.sleep(1)
-            self.sync_pub.heartbeat(30)
-            for chain_name in self.chains:
-                if not self.chains[chain_name].is_alive():
-                    self.chains[chain_name] = self.chains[chain_name].restart()
-
 
 def setup_logging(cmd_args, chain_type):
     """Set up logging."""

@@ -78,6 +78,8 @@ with the -l or --log option::
 import logging
 import logging.handlers
 import argparse
+import signal
+import time
 
 from posttroll.publisher import NoisyPublisher
 from trollmoves.move_it_base import MoveItBase
@@ -94,6 +96,19 @@ class MoveItClient(MoveItBase):
         self._np = NoisyPublisher("move_it_client")
         self.sync_pub = self._np.start()
         self.setup_watchers(cmd_args)
+
+    def run(self):
+        """Start the transfer chains."""
+        signal.signal(signal.SIGTERM, self.chains_stop)
+        signal.signal(signal.SIGHUP, self.signal_reload_cfg_file)
+        self.notifier.start()
+        self.running = True
+        while self.running:
+            time.sleep(1)
+            self.sync_pub.heartbeat(30)
+            for chain_name in self.chains:
+                if not self.chains[chain_name].is_alive():
+                    self.chains[chain_name] = self.chains[chain_name].restart()
 
 
 def parse_args():

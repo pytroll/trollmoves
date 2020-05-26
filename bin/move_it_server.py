@@ -95,7 +95,8 @@ ith the -l or --log option::
 import logging
 import logging.handlers
 import argparse
-
+import signal
+import time
 from posttroll.publisher import Publisher
 from trollmoves.move_it_base import MoveItBase
 
@@ -111,6 +112,16 @@ class MoveItServer(MoveItBase):
         super(MoveItServer, self).__init__(cmd_args, "server")
         LOGGER.info("Starting publisher on port %s.", str(cmd_args.port))
         self.sync_pub = Publisher("tcp://*:" + str(cmd_args.port), "move_it_server")
+
+    def run(self):
+        """Start the transfer chains."""
+        signal.signal(signal.SIGTERM, self.chains_stop)
+        signal.signal(signal.SIGHUP, self.signal_reload_cfg_file)
+        self.notifier.start()
+        self.running = True
+        while self.running:
+            time.sleep(1)
+            self.sync_pub.heartbeat(30)
 
 
 def parse_args():

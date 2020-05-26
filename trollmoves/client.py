@@ -36,7 +36,7 @@ import hashlib
 import six
 from six.moves.urllib.parse import urlparse, urlunparse
 import subprocess
-
+from contextlib import suppress
 import pyinotify
 from zmq import LINGER, POLLIN, REQ, Poller
 import bz2
@@ -149,11 +149,14 @@ class Listener(Thread):
         self.cargs = args
         self.ckwargs = kwargs
         self.restart_event = Event()
+        self.cause_of_death = None
+        self.death_count = 0
 
     def restart(self):
         self.stop()
         new_listener = self.__class__(self.address, self.topics, self.callback, *
                                       self.cargs, die_event=self.die_event, **self.ckwargs)
+        new_listener.death_count = self.death_count + 1
         new_listener.start()
         return new_listener
 
@@ -183,7 +186,10 @@ class Listener(Thread):
                         if not self.running:
                             break
 
+                        # If the heartbeat didn't arrive, restart the subscriber
                         if self.restart_event.is_set():
+                            LOGGER.warning("Missing a heartbeat, restarting the subscriber to %s.",
+                                           str(self.subscriber.addresses))
                             self.restart_event.clear()
                             self.stop()
                             self.running = True
@@ -196,6 +202,7 @@ class Listener(Thread):
 
                         beat_monitor(msg)
                         if msg.type == "beat":
+                            self.death_count = 0
                             continue
                         # Handle public "push" messages as a hot spare client
                         if msg.type == "push":
@@ -222,9 +229,11 @@ class Listener(Thread):
                             self.callback(msg, *self.cargs, **self.ckwargs)
 
                     LOGGER.debug("Exiting listener %s", str(self.address))
-        except Exception:
+        except Exception as err:
             LOGGER.exception("Listener died.")
+            self.cause_of_death = err
             self.die_event.set()
+
 
     def stop(self):
         """Stop subscriber and delete the instance."""
@@ -533,7 +542,7 @@ def add_to_file_cache(msg):
                 file_cache.append(uid)
 
 
-def request_push(msg, destination, login, sync_publisher=None, **kwargs):
+def request_push(msg, destination, login=None, sync_publisher=None, **kwargs):
     """Request a push for data."""
     huid = add_to_ongoing(msg)
     if huid is None:
@@ -665,9 +674,26 @@ class Chain(Thread):
         try:
             while self.running:
                 if self.listener_died_event.wait(1):
-                    for provider in self.listeners:
+                    for provider in list(self.listeners.keys()):
                         if not self.listeners[provider].is_alive():
-                            self.listeners[provider] = self.listeners[provider].restart()
+                            LOGGER.debug('Listener crashed!!!!!!!!!!!!!!!!!!!!!!!!')
+                            cause_of_death = self.listeners[provider].cause_of_death
+                            death_count = self.listeners[provider].death_count
+                            while death_count < 3:
+                                LOGGER.error("Listener for %s died: %s", provider, str(cause_of_death))
+                                self.listeners[provider] = self.listeners[provider].restart()
+                                time.sleep(.5)
+                                if not self.listeners[provider].is_alive():
+                                    death_count = self.listeners[provider].death_count
+                                    cause_of_death = self.listeners[provider].cause_of_death
+                                else:
+                                    break
+                            if death_count >= 3:
+                                with suppress(Exception):
+                                    self.listeners[provider].stop()
+                                del self.listeners[provider]
+                                LOGGER.critical("Listener for %s switched off: %s", provider, str(cause_of_death))
+
         except Exception:
             LOGGER.exception("Chain %s died!", self._name)
 
@@ -965,10 +991,7 @@ class StatCollector(object):
 def terminate(chains):
     """Terminate client chains."""
     for chain in six.itervalues(chains):
-        for listener in chain["listeners"].values():
-            listener.stop()
-        if "publisher" in chain:
-            chain["publisher"].stop()
+        chain.stop()
     LOGGER.info("Shutting down.")
     print("Thank you for using pytroll/move_it_client."
           " See you soon on pytroll.org!")
