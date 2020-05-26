@@ -210,7 +210,7 @@ class Listener(Thread):
                         delay = self.ckwargs.get("processing_delay", False)
                         if delay:
                             add_timer(float(delay), self.callback, msg, *self.cargs,
-                                    **self.ckwargs)
+                                      **self.ckwargs)
                         else:
                             self.callback(msg, *self.cargs, **self.ckwargs)
 
