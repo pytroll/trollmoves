@@ -152,7 +152,8 @@ class Listener(Thread):
 
     def restart(self):
         self.stop()
-        new_listener = self.__class__(self.address, self.topics, self.callback, *self.cargs, die_event=self.die_event, **self.ckwargs)
+        new_listener = self.__class__(self.address, self.topics, self.callback, *
+                                      self.cargs, die_event=self.die_event, **self.ckwargs)
         new_listener.start()
         return new_listener
 
