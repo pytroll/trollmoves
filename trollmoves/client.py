@@ -150,6 +150,12 @@ class Listener(Thread):
         self.ckwargs = kwargs
         self.restart_event = Event()
 
+    def restart(self):
+        self.stop()
+        new_listener = self.__class__(self.address, self.topics, self.callback, *self.cargs, die_event=self.die_event, **self.ckwargs)
+        new_listener.start()
+        return new_listener
+
     def create_subscriber(self):
         """Create a subscriber using specified addresses and message types."""
         if self.subscriber is None:
@@ -656,13 +662,14 @@ class Chain(Thread):
                 raise
 
     def run(self):
-        while self.running:
-            if self.listener_died_event.wait(1):
-                for provider in self.listeners:
-                    if not self.listeners[provider].is_alive():
-                        # TODO
-                        # try to restart the listener
-                        # crash otherwise
+        try:
+            while self.running:
+                if self.listener_died_event.wait(1):
+                    for provider in self.listeners:
+                        if not self.listeners[provider].is_alive():
+                            self.listeners[provider] = self.listeners[provider].restart()
+        except Exception:
+            LOGGER.exception("Chain %s died!", self._name)
 
     def __eq__(self, other_config):
         for key, val in other_config.items():
