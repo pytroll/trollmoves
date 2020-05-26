@@ -639,15 +639,15 @@ class Chain(Thread):
                     parts = urlparse(provider)
                     if parts.scheme != '':
                         provider = urlunparse((parts.scheme, parts.netloc,
-                                                '', '', '', ''))
+                                               '', '', '', ''))
                     else:
                         # If there's no scheme, urlparse thinks the
                         # URI is a local file
                         provider = urlunparse(('tcp', parts.path,
-                                                '', '', '', ''))
+                                               '', '', '', ''))
                     topics.append(parts.path)
                 LOGGER.debug("Add listener for %s with topic %s",
-                                provider, str(topics))
+                             provider, str(topics))
                 listener = Listener(
                     provider,
                     topics,
