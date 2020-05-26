@@ -602,7 +602,6 @@ def request_push(msg, destination, login, sync_publisher=None, **kwargs):
 
 
 class Chain(Thread):
-
     def __init__(self, name, config):
         """Init a chain object."""
         super(Chain, self).__init__()
@@ -626,41 +625,41 @@ class Chain(Thread):
         except (KeyError, NameError):
             pass
 
-        def setup_listeners(self, callback, sync_pub_instance):
-            self.callback = callback
-            self.sync_pub_instance = sync_pub_instance
-            try:
-                topics = []
-                if "topic" in self._config:
-                    topics.append(self._config["topic"])
-                if self._config.get("heartbeat", False):
-                    topics.append(SERVER_HEARTBEAT_TOPIC)
-                for provider in self._config["providers"]:
-                    if '/' in provider.split(':')[-1]:
-                        parts = urlparse(provider)
-                        if parts.scheme != '':
-                            provider = urlunparse((parts.scheme, parts.netloc,
-                                                   '', '', '', ''))
-                        else:
-                            # If there's no scheme, urlparse thinks the
-                            # URI is a local file
-                            provider = urlunparse(('tcp', parts.path,
-                                                   '', '', '', ''))
-                        topics.append(parts.path)
-                    LOGGER.debug("Add listener for %s with topic %s",
-                                 provider, str(topics))
-                    listener = Listener(
-                        provider,
-                        topics,
-                        callback,
-                        sync_pub_instance=sync_pub_instance,
-                        die_event=self.listener_died_event,
-                        **self._config)
-                    listener.start()
-                    self.listeners[provider] = listener
-            except Exception as err:
-                LOGGER.exception(str(err))
-                raise
+    def setup_listeners(self, callback, sync_pub_instance):
+        self.callback = callback
+        self.sync_pub_instance = sync_pub_instance
+        try:
+            topics = []
+            if "topic" in self._config:
+                topics.append(self._config["topic"])
+            if self._config.get("heartbeat", False):
+                topics.append(SERVER_HEARTBEAT_TOPIC)
+            for provider in self._config["providers"]:
+                if '/' in provider.split(':')[-1]:
+                    parts = urlparse(provider)
+                    if parts.scheme != '':
+                        provider = urlunparse((parts.scheme, parts.netloc,
+                                                '', '', '', ''))
+                    else:
+                        # If there's no scheme, urlparse thinks the
+                        # URI is a local file
+                        provider = urlunparse(('tcp', parts.path,
+                                                '', '', '', ''))
+                    topics.append(parts.path)
+                LOGGER.debug("Add listener for %s with topic %s",
+                                provider, str(topics))
+                listener = Listener(
+                    provider,
+                    topics,
+                    callback,
+                    sync_pub_instance=sync_pub_instance,
+                    die_event=self.listener_died_event,
+                    **self._config)
+                listener.start()
+                self.listeners[provider] = listener
+        except Exception as err:
+            LOGGER.exception(str(err))
+            raise
 
     def run(self):
         try:
@@ -672,7 +671,7 @@ class Chain(Thread):
         except Exception:
             LOGGER.exception("Chain %s died!", self._name)
 
-    def __eq__(self, other_config):
+    def config_equals(self, other_config):
         for key, val in other_config.items():
             if ((key not in ["listeners", "publisher"]) and
                 ((key not in self._config) or
@@ -709,7 +708,7 @@ def reload_config(filename, chains, callback=request_push, sync_pub_instance=Non
 
     for key, new_config in new_configs.items():
         if key in chains:
-            if chains[key] == new_config:
+            if chains[key].config_equals(new_config):
                 continue
 
             chains[key].stop()
@@ -718,7 +717,6 @@ def reload_config(filename, chains, callback=request_push, sync_pub_instance=Non
         else:
             verb = "Added"
             LOGGER.debug("Adding %s", key)
-
         chains[key] = Chain(key, new_config)
         chains[key].setup_listeners(callback, sync_pub_instance)
         chains[key].start()
