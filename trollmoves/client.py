@@ -631,7 +631,7 @@ class Chain(Thread):
                             # If there's no scheme, urlparse thinks the
                             # URI is a local file
                             provider = urlunparse(('tcp', parts.path,
-                                                '', '', '', ''))
+                                                   '', '', '', ''))
                         topics.append(parts.path)
                     LOGGER.debug("Add listener for %s with topic %s",
                                  provider, str(topics))
