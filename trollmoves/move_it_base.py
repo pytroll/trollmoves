@@ -47,7 +47,7 @@ class MoveItBase(object):
         self.running = False
         self.notifier = None
         self.watchman = None
-        self.pub = None
+        self.sync_pub = None
         self._np = None
         self.chains = {}
         setup_logging(cmd_args, chain_type)
@@ -58,12 +58,12 @@ class MoveItBase(object):
         """Reload configuration file."""
         if self.chain_type == "client":
             from trollmoves.client import reload_config
-            reload_config(filename, self.chains, *args, pub_instance=self.pub,
+            reload_config(filename, self.chains, *args, sync_pub_instance=self.sync_pub,
                           **kwargs)
         else:
             # Also Mirror uses the reload_config from the Server
             from trollmoves.server import reload_config
-            reload_config(filename, self.chains, *args, publisher=self.pub,
+            reload_config(filename, self.chains, *args, publisher=self.sync_pub,
                           use_watchdog=self.cmd_args.watchdog,
                           disable_backlog=self.cmd_args.disable_backlog)
 
@@ -73,11 +73,11 @@ class MoveItBase(object):
         if self.chain_type == "client":
             from trollmoves.client import reload_config
             reload_config(self.cmd_args.config_file, self.chains,
-                          pub_instance=self.pub)
+                          sync_pub_instance=self.sync_pub)
         else:
             from trollmoves.server import reload_config
             reload_config(self.cmd_args.config_file, self.chains,
-                          publisher=self.pub,
+                          publisher=self.sync_pub,
                           use_watchdog=self.cmd_args.watchdog,
                           disable_backlog=self.cmd_args.disable_backlog)
 
@@ -118,7 +118,7 @@ class MoveItBase(object):
         self.running = True
         while self.running:
             time.sleep(1)
-            self.pub.heartbeat(30)
+            self.sync_pub.heartbeat(30)
 
 
 def setup_logging(cmd_args, chain_type):

@@ -521,7 +521,7 @@ def add_to_file_cache(msg):
                 file_cache.append(uid)
 
 
-def request_push(msg, destination, login, publisher=None, **kwargs):
+def request_push(msg, destination, login, sync_publisher=None, **kwargs):
     """Request a push for data."""
     huid = add_to_ongoing(msg)
     if huid is None:
@@ -549,27 +549,27 @@ def request_push(msg, destination, login, publisher=None, **kwargs):
         timeout = float(kwargs["transfer_req_timeout"])
         local_dir = create_local_dir(_destination, kwargs.get('ftp_root', '/'))
 
-        if publisher:
-            publisher.send(str(fake_req))
+        if sync_publisher:
+            sync_publisher.send(str(fake_req))
         response, hostname = send_request(msg, req, timeout)
 
         if response and response.type in ['file', 'collection', 'dataset']:
             LOGGER.debug("Server done sending file")
             add_to_file_cache(msg)
-            if publisher:
+            if sync_publisher:
                 # Send an 'ack' message so that possible hot spares know
                 # the primary has completed the request
                 msg = Message(msg.subject, 'ack', msg.data)
                 LOGGER.debug("Sending a public 'ack' of completed transfer: %s",
                              str(msg))
-                publisher.send(str(msg))
+                sync_publisher.send(str(msg))
             try:
                 lmsg = unpack_and_create_local_message(response, local_dir,
                                                        **kwargs)
             except IOError:
                 LOGGER.exception("Couldn't unpack %s", str(response))
                 continue
-            if publisher:
+            if sync_publisher:
                 lmsg = make_uris(lmsg, _destination, login)
                 lmsg.data['origin'] = response.data['request_address']
                 lmsg.data.pop('request_address', None)
@@ -577,7 +577,7 @@ def request_push(msg, destination, login, publisher=None, **kwargs):
                 lmsg.data.pop('destination', None)
 
                 LOGGER.debug("publishing %s", str(lmsg))
-                publisher.send(str(lmsg))
+                sync_publisher.send(str(lmsg))
             terminate_transfers(huid, float(kwargs["req_timeout"]))
             break
         else:
@@ -589,7 +589,120 @@ def request_push(msg, destination, login, publisher=None, **kwargs):
         terminate_transfers(huid, float(kwargs["req_timeout"]))
 
 
-def reload_config(filename, chains, callback=request_push, pub_instance=None):
+class Chain(Thread):
+
+    def __init__(self, name, config):
+        """Init a chain object."""
+        super(Chain, self).__init__()
+        self._config = config
+        self._name = name
+        self.publisher = None
+        self.listeners = {}
+        # self.restart_event = Event()
+
+        # Setup publisher
+        try:
+            nameservers = self._config["nameservers"]
+            if nameservers:
+                nameservers = nameservers.split()
+            self.publisher = NoisyPublisher(
+                "move_it_" + self._name,
+                port=self._config["publish_port"],
+                nameservers=nameservers)
+            self.publisher.start()
+        except (KeyError, NameError):
+            pass
+
+        def setup_listeners(self, callback, sync_pub_instance):
+
+            try:
+                topics = []
+                if "topic" in self._config:
+                    topics.append(self._config["topic"])
+                if self._config.get("heartbeat", False):
+                    topics.append(SERVER_HEARTBEAT_TOPIC)
+                for provider in self._config["providers"]:
+                    if '/' in provider.split(':')[-1]:
+                        parts = urlparse(provider)
+                        if parts.scheme != '':
+                            provider = urlunparse((parts.scheme, parts.netloc,
+                                                   '', '', '', ''))
+                        else:
+                            # If there's no scheme, urlparse thinks the
+                            # URI is a local file
+                            provider = urlunparse(('tcp', parts.path,
+                                                '', '', '', ''))
+                        topics.append(parts.path)
+                    LOGGER.debug("Add listener for %s with topic %s",
+                                 provider, str(topics))
+                    listener = Listener(
+                        provider,
+                        topics,
+                        callback,
+                        sync_pub_instance=sync_pub_instance,
+                        **self._config)
+                    listener.start()
+                    self.listeners[provider] = listener
+            except Exception as err:
+                LOGGER.exception(str(err))
+                raise
+
+    def __eq__(self, other_config):
+        for key, val in other_config.items():
+            if ((key not in ["listeners", "publisher"]) and
+                ((key not in self._config) or
+                    (self._config[key] != val))):
+                return False
+        return True
+
+    def reset_listeners(self):
+        for listener in self.listeners.values():
+            listener.stop()
+        self.listeners = {}
+
+    def stop(self):
+        if self.publisher:
+            self.publisher.stop()
+        self.reset_listeners()
+
+
+def reload_config(filename, chains, callback=request_push, sync_pub_instance=None):
+    """Rebuild chains if needed (if the configuration changed) from *filename*."""
+    LOGGER.debug("New config file detected: %s", filename)
+
+    new_configs = read_config(filename)
+
+    # setup new chains
+
+    for key, new_config in new_configs.items():
+        if key in chains:
+            if chains[key] == new_config:
+                continue
+
+            chains[key].stop()
+            verb = "Updated"
+            LOGGER.debug("Updating %s", key)
+        else:
+            verb = "Added"
+            LOGGER.debug("Adding %s", key)
+
+        chains[key] = Chain(key, new_config)
+        chains[key].setup_listeners(callback, sync_pub_instance)
+
+        LOGGER.debug("%s %s", verb, key)
+
+    # disable old chains
+
+    for key in (set(chains.keys()) - set(new_configs.keys())):
+        chains[key].stop()
+
+        del chains[key]
+        LOGGER.debug("Removed %s", key)
+
+    LOGGER.debug("Reloaded config from %s", filename)
+
+
+def old_reload_config(filename, chains, callback=request_push, sync_pub_instance=None):
     """Rebuild chains if needed (if the configuration changed) from *filename*."""
     LOGGER.debug("New config file detected: %s", filename)
 
@@ -652,7 +765,7 @@ def reload_config(filename, chains, callback=request_push, pub_instance=None):
                     provider,
                     topics,
                     callback,
-                    pub_instance=pub_instance,
+                    sync_pub_instance=sync_pub_instance,
                     **chains[key])
                 chains[key]["listeners"][provider].start()
         except Exception as err:

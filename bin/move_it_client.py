@@ -92,7 +92,7 @@ class MoveItClient(MoveItBase):
     def __init__(self, cmd_args):
         super(MoveItClient, self).__init__(cmd_args, "client")
         self._np = NoisyPublisher("move_it_client")
-        self.pub = self._np.start()
+        self.sync_pub = self._np.start()
         self.setup_watchers(cmd_args)
 
 
@@ -130,4 +130,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
