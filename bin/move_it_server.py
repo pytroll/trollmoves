@@ -110,7 +110,7 @@ class MoveItServer(MoveItBase):
         """Initialize server."""
         super(MoveItServer, self).__init__(cmd_args, "server")
         LOGGER.info("Starting publisher on port %s.", str(cmd_args.port))
-        self.pub = Publisher("tcp://*:" + str(cmd_args.port), "move_it_server")
+        self.sync_pub = Publisher("tcp://*:" + str(cmd_args.port), "move_it_server")
 
 
 def parse_args():
