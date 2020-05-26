@@ -119,6 +119,9 @@ class MoveItBase(object):
         while self.running:
             time.sleep(1)
             self.sync_pub.heartbeat(30)
+            for chain_name in self.chains:
+                if not self.chains[chain_name].is_alive():
+                    self.chains[chain_name] = self.chains[chain_name].restart()
 
 
 def setup_logging(cmd_args, chain_type):

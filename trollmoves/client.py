@@ -136,7 +136,7 @@ def read_config(filename):
 class Listener(Thread):
     """PyTroll listener class for reading messages for Trollduction."""
 
-    def __init__(self, address, topics, callback, *args, **kwargs):
+    def __init__(self, address, topics, callback, *args, die_event=None, **kwargs):
         """Init Listener object."""
         super(Listener, self).__init__()
 
@@ -145,6 +145,7 @@ class Listener(Thread):
         self.subscriber = None
         self.address = address
         self.running = False
+        self.die_event = die_event
         self.cargs = args
         self.ckwargs = kwargs
         self.restart_event = Event()
@@ -160,59 +161,63 @@ class Listener(Thread):
 
     def run(self):
         """Run listener."""
-        with heartbeat_monitor.Monitor(self.restart_event, **self.ckwargs) as beat_monitor:
+        try:
+            with heartbeat_monitor.Monitor(self.restart_event, **self.ckwargs) as beat_monitor:
 
-            self.running = True
+                self.running = True
 
-            while self.running:
-                # Loop for restart.
+                while self.running:
+                    # Loop for restart.
 
-                LOGGER.debug("Starting listener %s", str(self.address))
-                self.create_subscriber()
+                    LOGGER.debug("Starting listener %s", str(self.address))
+                    self.create_subscriber()
 
-                for msg in self.subscriber(timeout=1):
-                    if not self.running:
-                        break
+                    for msg in self.subscriber(timeout=1):
+                        if not self.running:
+                            break
 
-                    if self.restart_event.is_set():
-                        self.restart_event.clear()
-                        self.stop()
-                        self.running = True
-                        break
+                        if self.restart_event.is_set():
+                            self.restart_event.clear()
+                            self.stop()
+                            self.running = True
+                            break
 
-                    if msg is None:
-                        continue
+                        if msg is None:
+                            continue
 
-                    LOGGER.debug("Receiving (SUB) %s", str(msg))
+                        LOGGER.debug("Receiving (SUB) %s", str(msg))
 
-                    beat_monitor(msg)
-                    if msg.type == "beat":
-                        continue
-                    # Handle public "push" messages as a hot spare client
-                    if msg.type == "push":
-                        # TODO: these need to be checked and acted if
-                        # the transfers are not finished on primary
-                        # client and are not cleared
-                        LOGGER.debug("Primary client published 'push'")
-                        add_to_ongoing(msg)
+                        beat_monitor(msg)
+                        if msg.type == "beat":
+                            continue
+                        # Handle public "push" messages as a hot spare client
+                        if msg.type == "push":
+                            # TODO: these need to be checked and acted if
+                            # the transfers are not finished on primary
+                            # client and are not cleared
+                            LOGGER.debug("Primary client published 'push'")
+                            add_to_ongoing(msg)
 
-                    # Handle public "ack" messages as a hot spare client
-                    if msg.type == "ack":
-                        LOGGER.debug("Primary client finished transfer")
-                        _ = add_to_file_cache(msg)
-                        _ = clean_ongoing_transfer(get_msg_uid(msg))
+                        # Handle public "ack" messages as a hot spare client
+                        if msg.type == "ack":
+                            LOGGER.debug("Primary client finished transfer")
+                            _ = add_to_file_cache(msg)
+                            _ = clean_ongoing_transfer(get_msg_uid(msg))
 
-                    # If this is a hot spare client, wait for a while
-                    # for a public "push" message which will update
-                    # the ongoing transfers before starting processing here
-                    delay = self.ckwargs.get("processing_delay", False)
-                    if delay:
-                        add_timer(float(delay), self.callback, msg, *self.cargs,
-                                  **self.ckwargs)
-                    else:
-                        self.callback(msg, *self.cargs, **self.ckwargs)
+                        # If this is a hot spare client, wait for a while
+                        # for a public "push" message which will update
+                        # the ongoing transfers before starting processing here
+                        delay = self.ckwargs.get("processing_delay", False)
+                        if delay:
+                            add_timer(float(delay), self.callback, msg, *self.cargs,
+                                    **self.ckwargs)
+                        else:
+                            self.callback(msg, *self.cargs, **self.ckwargs)
 
-                LOGGER.debug("Exiting listener %s", str(self.address))
+                    LOGGER.debug("Exiting listener %s", str(self.address))
+        except Exception:
+            LOGGER.exception("Listener died.")
+            self.die_event.set()
 
     def stop(self):
         """Stop subscriber and delete the instance."""
@@ -598,7 +603,8 @@ class Chain(Thread):
         self._name = name
         self.publisher = None
         self.listeners = {}
-        # self.restart_event = Event()
+        self.listener_died_event = Event()
+        self.running = True
 
         # Setup publisher
         try:
@@ -614,7 +620,8 @@ class Chain(Thread):
             pass
 
         def setup_listeners(self, callback, sync_pub_instance):
-
+            self.callback = callback
+            self.sync_pub_instance = sync_pub_instance
             try:
                 topics = []
                 if "topic" in self._config:
@@ -640,12 +647,22 @@ class Chain(Thread):
                         topics,
                         callback,
                         sync_pub_instance=sync_pub_instance,
+                        die_event=self.listener_died_event,
                         **self._config)
                     listener.start()
                     self.listeners[provider] = listener
             except Exception as err:
                 LOGGER.exception(str(err))
                 raise
+
+    def run(self):
+        while self.running:
+            if self.listener_died_event.wait(1):
+                for listener in listeners:
+                    # TODO
+                    # try to restart the listener if it's dead
+                    # crash otherwise
+                    pass
 
     def __eq__(self, other_config):
         for key, val in other_config.items():
@@ -661,9 +678,17 @@ class Chain(Thread):
         self.listeners = {}
 
     def stop(self):
+        self.running = False
         if self.publisher:
             self.publisher.stop()
         self.reset_listeners()
+
+    def restart(self):
+        self.stop()
+        new_chain = self.__class__(self._name, self._config)
+        new_chain.setup_listeners(self.callback, self.sync_pub_instance)
+        new_chain.start()
+        return new_chain
 
 
 def reload_config(filename, chains, callback=request_push, sync_pub_instance=None):
@@ -688,6 +713,7 @@ def reload_config(filename, chains, callback=request_push, sync_pub_instance=Non
 
         chains[key] = Chain(key, new_config)
         chains[key].setup_listeners(callback, sync_pub_instance)
+        chains[key].start()
 
         LOGGER.debug("%s %s", verb, key)
 
