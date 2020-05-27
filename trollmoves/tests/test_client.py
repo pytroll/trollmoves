@@ -645,7 +645,7 @@ def test_reload_config(Listener, NoisyPublisher):
             assert listeners[key].start.call_count == 4
         NoisyPublisher.assert_called_once()
         chains[section_name].publisher.start.assert_called_once()
-
+        chains[section_name].stop()
         # Reload the same config again, nothing should happen
         reload_config(config_fname_1, chains, callback=callback,
                       sync_pub_instance='pub')
@@ -653,6 +653,7 @@ def test_reload_config(Listener, NoisyPublisher):
             assert listeners[key].start.call_count == 4
         NoisyPublisher.assert_called_once()
         chains[section_name].publisher.start.assert_called_once()
+        chains[section_name].stop()
 
         # Load a new config with one new item
         reload_config(config_fname_2, chains, callback=callback,
@@ -662,6 +663,8 @@ def test_reload_config(Listener, NoisyPublisher):
         # One additional call to publisher and listener
         assert NoisyPublisher.call_count == 2
         assert Listener.call_count == 5
+        for section_name in chains:
+            chains[section_name].stop()
 
         # Load the first config again, the other chain should have been removed
         reload_config(config_fname_1, chains, callback=callback,
@@ -670,6 +673,8 @@ def test_reload_config(Listener, NoisyPublisher):
         # No new calls to publisher nor listener
         assert NoisyPublisher.call_count == 2
         assert Listener.call_count == 5
+        for section_name in chains:
+            chains[section_name].stop()
     finally:
         os.remove(config_fname_1)
         os.remove(config_fname_2)
