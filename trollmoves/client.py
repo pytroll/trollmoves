@@ -69,7 +69,7 @@ COMPRESSED_ENDINGS = {'xrit': ['C_'],
                       'bzip': ['.bz2'],
                       }
 BUNZIP_BLOCK_SIZE = 1024
-
+LISTENER_CHECK_INTERVAL = 1
 
 # Config management
 def read_config(filename):
@@ -670,29 +670,36 @@ class Chain(Thread):
             LOGGER.exception(str(err))
             raise
 
+    def restart_dead_listeners(self):
+        """Restart dead listeners."""
+        plural = ['', 's']
+        for provider in list(self.listeners.keys()):
+            if not self.listeners[provider].is_alive():
+                cause_of_death = self.listeners[provider].cause_of_death
+                death_count = self.listeners[provider].death_count
+                while death_count < 3:
+                    LOGGER.error("Listener for %s died %d time%s: %s", provider, death_count + 1,
+                                 plural[min(death_count, 1)], str(cause_of_death))
+                    self.listeners[provider] = self.listeners[provider].restart()
+                    time.sleep(.5)
+                    if not self.listeners[provider].is_alive():
+                        death_count = self.listeners[provider].death_count
+                        cause_of_death = self.listeners[provider].cause_of_death
+                    else:
+                        break
+                if death_count >= 3:
+                    with suppress(Exception):
+                        self.listeners[provider].stop()
+                    del self.listeners[provider]
+                    LOGGER.critical("Listener for %s switched off: %s", provider, str(cause_of_death))
+
     def run(self):
+        """Monitor the listeners."""
         try:
             while self.running:
-                if self.listener_died_event.wait(1):
-                    for provider in list(self.listeners.keys()):
-                        if not self.listeners[provider].is_alive():
-                            cause_of_death = self.listeners[provider].cause_of_death
-                            death_count = self.listeners[provider].death_count
-                            while death_count < 3:
-                                LOGGER.error("Listener for %s died: %s", provider, str(cause_of_death))
-                                self.listeners[provider] = self.listeners[provider].restart()
-                                time.sleep(.5)
-                                if not self.listeners[provider].is_alive():
-                                    death_count = self.listeners[provider].death_count
-                                    cause_of_death = self.listeners[provider].cause_of_death
-                                else:
-                                    break
-                            if death_count >= 3:
-                                with suppress(Exception):
-                                    self.listeners[provider].stop()
-                                del self.listeners[provider]
-                                LOGGER.critical("Listener for %s switched off: %s", provider, str(cause_of_death))
-
+                if self.listener_died_event.wait(LISTENER_CHECK_INTERVAL):
+                    self.restart_dead_listeners()
+                    self.listener_died_event.clear()
         except Exception:
             LOGGER.exception("Chain %s died!", self._name)
 

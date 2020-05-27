@@ -26,6 +26,7 @@ import copy
 from unittest.mock import MagicMock, patch, call
 from tempfile import NamedTemporaryFile
 import os
+import time
 
 from posttroll.message import Message
 
@@ -711,3 +712,91 @@ def test_iterate_messages(lock):
     res = iterate_messages("foo")
     assert list(res) == values
     assert len(lock.__enter__.mock_calls) == 3
+
+
+@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.Listener')
+def test_chain(Listener, NoisyPublisher, caplog):
+    """Test the Chain object."""
+    from trollmoves.client import Chain, read_config
+    with NamedTemporaryFile('w', delete=False) as fid:
+        config_fname = fid.name
+        fid.write(CLIENT_CONFIG_1_ITEM)
+    try:
+        conf = read_config(config_fname)
+    finally:
+        os.remove(config_fname)
+
+    def restart():
+        return Listener()
+
+    side_effect = [MagicMock(), MagicMock(), MagicMock(), MagicMock(),
+                   MagicMock(), MagicMock(), MagicMock(), MagicMock(),
+                   MagicMock(), MagicMock(), MagicMock(), MagicMock()]
+    for l in side_effect:
+        l.is_alive.return_value = True
+        l.death_count = 0
+        l.restart.side_effect = restart
+    Listener.side_effect = side_effect
+
+    # Init
+    name = 'eumetcast_hrit_0deg_scp_hot_spare'
+    chain = Chain(name, conf[name])
+    NoisyPublisher.assert_called_once()
+    assert chain.listeners == {}
+    assert not chain.listener_died_event.is_set()
+
+    # Setup listeners
+    callback = MagicMock()
+    sync_pub_instance = MagicMock()
+    chain.setup_listeners(callback, sync_pub_instance)
+    assert len(chain.listeners) == 4
+
+    # Check running with alive listeners
+    import trollmoves.client
+    with patch('trollmoves.client.LISTENER_CHECK_INTERVAL', new=.1):
+        trollmoves.client.LISTENER_CHECK_INTERVAL = .1
+        chain.start()
+        try:
+            with patch.object(chain, 'restart_dead_listeners') as rdl:
+                time.sleep(.2)
+                assert rdl.call_count == 0
+                chain.listener_died_event.set()
+                time.sleep(.2)
+                assert rdl.call_count == 1
+                assert not chain.listener_died_event.is_set()
+
+            chain.listener_died_event.set()
+            time.sleep(.2)
+            assert not chain.listener_died_event.is_set()
+
+
+            # Check with listener crashing once
+            listener = chain.listeners['tcp://satmottag2:9010']
+            listener.is_alive.return_value = False
+            listener.cause_of_death = RuntimeError('OMG, they killed the listener!')
+            chain.listener_died_event.set()
+            time.sleep(.2)
+            listener.restart.assert_called_once()
+            assert "Listener for tcp://satmottag2:9010 died 1 time: OMG, they killed the listener!" in caplog.text
+            time.sleep(.6)
+
+            # Check with listener crashing all the time
+            death_count = 0
+            for l in side_effect[5:]:
+                death_count += 1
+                l.is_alive.return_value = False
+                l.cause_of_death = RuntimeError('OMG, they killed the listener!')
+                l.death_count = death_count
+
+            listener = chain.listeners['tcp://satmottag2:9010']
+            listener.is_alive.return_value = False
+            listener.death_count = 0
+            listener.cause_of_death = RuntimeError('OMG, they killed the listener!')
+            listener.restart.side_effect = restart
+
+            chain.listener_died_event.set()
+            time.sleep(2)
+            assert "Listener for tcp://satmottag2:9010 switched off: OMG, they killed the listener!" in caplog.text
+        finally:
+            chain.stop()
