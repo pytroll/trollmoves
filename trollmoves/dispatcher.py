@@ -162,12 +162,11 @@ import inotify.adapters
 from inotify.constants import IN_MODIFY, IN_CLOSE_WRITE, IN_CREATE, IN_MOVED_TO
 from six.moves.urllib.parse import urlsplit, urlunsplit, urlparse
 import socket
-from utils import is_file_local
 from posttroll.listener import ListenerContainer
 from posttroll.publisher import NoisyPublisher
 from posttroll.message import Message
 from trollmoves.movers import move_it
-from trollmoves.utils import clean_url
+from trollmoves.utils import (clean_url, is_file_local)
 from trollsift import compose
 
 logger = logging.getLogger(__name__)
