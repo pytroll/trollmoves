@@ -232,7 +232,8 @@ class Listener(Thread):
         except Exception as err:
             LOGGER.exception("Listener died.")
             self.cause_of_death = err
-            self.die_event.set()
+            with suppress(AttributeError):
+                self.die_event.set()
 
     def stop(self):
         """Stop subscriber and delete the instance."""
@@ -675,7 +676,6 @@ class Chain(Thread):
                 if self.listener_died_event.wait(1):
                     for provider in list(self.listeners.keys()):
                         if not self.listeners[provider].is_alive():
-                            LOGGER.debug('Listener crashed!!!!!!!!!!!!!!!!!!!!!!!!')
                             cause_of_death = self.listeners[provider].cause_of_death
                             death_count = self.listeners[provider].death_count
                             while death_count < 3:

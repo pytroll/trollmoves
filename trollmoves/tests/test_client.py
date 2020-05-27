@@ -634,29 +634,29 @@ def test_reload_config(Listener, NoisyPublisher):
 
     try:
         reload_config(config_fname_1, chains, callback=callback,
-                      pub_instance='pub')
+                      sync_pub_instance='pub')
         section_name = "eumetcast_hrit_0deg_scp_hot_spare"
         assert section_name in chains
-        listeners = chains[section_name]['listeners']
+        listeners = chains[section_name].listeners
         assert len(listeners) == 4
         # The same listener was used for all, so it should have been
         # started four times
         for key in listeners:
             assert listeners[key].start.call_count == 4
         NoisyPublisher.assert_called_once()
-        chains[section_name]['publisher'].start.assert_called_once()
+        chains[section_name].publisher.start.assert_called_once()
 
         # Reload the same config again, nothing should happen
         reload_config(config_fname_1, chains, callback=callback,
-                      pub_instance='pub')
+                      sync_pub_instance='pub')
         for key in listeners:
             assert listeners[key].start.call_count == 4
         NoisyPublisher.assert_called_once()
-        chains[section_name]['publisher'].start.assert_called_once()
+        chains[section_name].publisher.start.assert_called_once()
 
         # Load a new config with one new item
         reload_config(config_fname_2, chains, callback=callback,
-                      pub_instance='pub')
+                      sync_pub_instance='pub')
         assert len(chains) == 2
         assert "foo" in chains
         # One additional call to publisher and listener
@@ -665,7 +665,7 @@ def test_reload_config(Listener, NoisyPublisher):
 
         # Load the first config again, the other chain should have been removed
         reload_config(config_fname_1, chains, callback=callback,
-                      pub_instance='pub')
+                      sync_pub_instance='pub')
         assert "foo" not in chains
         # No new calls to publisher nor listener
         assert NoisyPublisher.call_count == 2
