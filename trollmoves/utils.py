@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# Copyright (c) 2018
+# Copyright (c) 2018, 2020
 
 # Author(s):
 
@@ -21,6 +21,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import netifaces
 from six import string_types
+import socket
 
 from six.moves.urllib.parse import urlparse, urlunparse
 
@@ -123,3 +124,12 @@ def translate_dict(var, keys, callback, **kwargs):
         return newvar
     else:
         return var
+
+
+def is_file_local(urlobj):
+    """Check that a url path is for a local file."""
+    if(urlobj.scheme not in ['', 'file']
+       and not socket.gethostbyname(urlobj.netloc) in get_local_ips()):
+        return False
+
+    return True

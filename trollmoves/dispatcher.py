@@ -162,7 +162,7 @@ import inotify.adapters
 from inotify.constants import IN_MODIFY, IN_CLOSE_WRITE, IN_CREATE, IN_MOVED_TO
 from six.moves.urllib.parse import urlsplit, urlunsplit, urlparse
 import socket
-
+from utils import is_file_local
 from posttroll.listener import ListenerContainer
 from posttroll.publisher import NoisyPublisher
 from posttroll.message import Message
@@ -323,16 +323,14 @@ class Dispatcher(Thread):
                 if destinations:
                     # Check if the url are on another host:
                     url = urlparse(msg.data['uri'])
-                    if url.scheme != '':
-                        netloc = url.netloc
-                        if netloc != self.host:
-                            # This warning may appear even if the file path
-                            # does exist on both servers (a central file server
-                            # reachable from both). But in those cases one
-                            # should probably not use an url scheme but just a
-                            # file path:
-                            logger.warning(
-                                "uri is pointing to a file path on another server! Host=<%s> uri netloc=<%s>", self.host, netloc)
+                    if not is_file_local(url):
+                        # This warning may appear even if the file path
+                        # does exist on both servers (a central file server
+                        # reachable from both). But in those cases one
+                        # should probably not use an url scheme but just a
+                        # file path:
+                        raise NotImplementedError(("uri is pointing to a file path on another server! " +
+                                                   "Host=<%s> uri netloc=<%s>", self.host, url.netloc))
                     success = dispatch(url.path, destinations)
                     if self.publisher:
                         self._publish(msg, destinations, success)
