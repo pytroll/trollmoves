@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2012-2019
+# Copyright (c) 2012-2020
 #
 # Author(s):
 #
@@ -31,7 +31,6 @@ import glob
 import logging
 import logging.handlers
 import os
-import socket
 import subprocess
 import sys
 import tempfile
@@ -54,7 +53,7 @@ from six.moves.urllib.parse import urlparse
 from trollmoves.client import DEFAULT_REQ_TIMEOUT
 from trollmoves.movers import move_it
 from trollmoves.utils import (clean_url, gen_dict_contains, gen_dict_extract,
-                              get_local_ips)
+                              get_local_ips, is_file_local)
 from trollsift import globify, parse
 
 LOGGER = logging.getLogger(__name__)
@@ -348,8 +347,7 @@ class Listener(Thread):
                 # check that files are local
                 for uri in gen_dict_extract(msg.data, 'uri'):
                     urlobj = urlparse(uri)
-                    if(urlobj.scheme not in ['', 'file']
-                       and not socket.gethostbyname(urlobj.netloc) in get_local_ips()):
+                    if not is_file_local(urlobj):
                         break
                 else:
                     LOGGER.debug('We have a match: %s', str(msg))
