@@ -770,7 +770,6 @@ def test_chain(Listener, NoisyPublisher, caplog):
             time.sleep(.2)
             assert not chain.listener_died_event.is_set()
 
-
             # Check with listener crashing once
             listener = chain.listeners['tcp://satmottag2:9010']
             listener.is_alive.return_value = False
