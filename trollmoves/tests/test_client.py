@@ -480,6 +480,22 @@ def test_listener(Subscriber, Monitor, CTimer, hot_spare_timer_lock):
     assert len(ongoing_hot_spare_timers) == 0
     assert MSG_FILE1.data['uid'] in file_cache
 
+    running = True
+
+    def slow_messages(timeout):
+        while running:
+            time.sleep(timeout)
+            yield MSG_ACK
+
+    subscriber.side_effect = slow_messages
+    new_listener = listener.restart()
+    assert not listener.is_alive()
+    assert new_listener.is_alive()
+    assert new_listener.death_count == 1
+    running = False
+    new_listener.stop()
+    assert not new_listener.is_alive()
+
 
 @patch('trollmoves.client.ongoing_transfers_lock')
 def test_add_to_ongoing(lock):
