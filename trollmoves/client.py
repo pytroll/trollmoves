@@ -71,6 +71,7 @@ COMPRESSED_ENDINGS = {'xrit': ['C_'],
 BUNZIP_BLOCK_SIZE = 1024
 LISTENER_CHECK_INTERVAL = 1
 
+
 # Config management
 def read_config(filename):
     """Read the config file called *filename*."""
@@ -153,6 +154,7 @@ class Listener(Thread):
         self.death_count = 0
 
     def restart(self):
+        """Restart the listener, returns a new running instance."""
         self.stop()
         new_listener = self.__class__(self.address, self.topics, self.callback, *
                                       self.cargs, die_event=self.die_event, **self.ckwargs)
@@ -611,6 +613,8 @@ def request_push(msg, destination, login=None, sync_publisher=None, **kwargs):
 
 
 class Chain(Thread):
+    """The Chain class."""
+
     def __init__(self, name, config):
         """Init a chain object."""
         super(Chain, self).__init__()
@@ -635,6 +639,7 @@ class Chain(Thread):
             pass
 
     def setup_listeners(self, callback, sync_pub_instance):
+        """Set up the listeners."""
         self.callback = callback
         self.sync_pub_instance = sync_pub_instance
         try:
@@ -704,6 +709,7 @@ class Chain(Thread):
             LOGGER.exception("Chain %s died!", self._name)
 
     def config_equals(self, other_config):
+        """Check that current config is the same as `other_config`."""
         for key, val in other_config.items():
             if ((key not in ["listeners", "publisher"]) and
                 ((key not in self._config) or
@@ -712,17 +718,20 @@ class Chain(Thread):
         return True
 
     def reset_listeners(self):
+        """Reset the listeners."""
         for listener in self.listeners.values():
             listener.stop()
         self.listeners = {}
 
     def stop(self):
+        """Stop the chain."""
         self.running = False
         if self.publisher:
             self.publisher.stop()
         self.reset_listeners()
 
     def restart(self):
+        """Restart the chain, return a new running instance."""
         self.stop()
         new_chain = self.__class__(self._name, self._config)
         new_chain.setup_listeners(self.callback, self.sync_pub_instance)

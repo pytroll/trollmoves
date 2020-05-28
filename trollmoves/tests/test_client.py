@@ -733,10 +733,10 @@ def test_chain(Listener, NoisyPublisher, caplog):
     side_effect = [MagicMock(), MagicMock(), MagicMock(), MagicMock(),
                    MagicMock(), MagicMock(), MagicMock(), MagicMock(),
                    MagicMock(), MagicMock(), MagicMock(), MagicMock()]
-    for l in side_effect:
-        l.is_alive.return_value = True
-        l.death_count = 0
-        l.restart.side_effect = restart
+    for lis in side_effect:
+        lis.is_alive.return_value = True
+        lis.death_count = 0
+        lis.restart.side_effect = restart
     Listener.side_effect = side_effect
 
     # Init
@@ -782,11 +782,11 @@ def test_chain(Listener, NoisyPublisher, caplog):
 
             # Check with listener crashing all the time
             death_count = 0
-            for l in side_effect[5:]:
+            for lis in side_effect[5:]:
                 death_count += 1
-                l.is_alive.return_value = False
-                l.cause_of_death = RuntimeError('OMG, they killed the listener!')
-                l.death_count = death_count
+                lis.is_alive.return_value = False
+                lis.cause_of_death = RuntimeError('OMG, they killed the listener!')
+                lis.death_count = death_count
 
             listener = chain.listeners['tcp://satmottag2:9010']
             listener.is_alive.return_value = False
