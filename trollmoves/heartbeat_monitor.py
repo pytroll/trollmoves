@@ -80,6 +80,7 @@ class Monitor(threading.Thread):
     # Context interface.
     #
     def __enter__(self):
+        LOGGER.debug('Entering the Heartbeat monitor %.2f', self._alarm_scale)
         return self.start()
 
     def __exit__(self, *exc):

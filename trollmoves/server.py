@@ -273,6 +273,13 @@ class RequestManager(Thread):
 
     def run(self):
         """Run request manager."""
+        try:
+            self._run()
+        except Exception:
+            LOGGER.exception("Request Manager died.")
+
+    def _run(self):
+        """Run request manager."""
         while self._loop:
             try:
                 socks = dict(self._poller.poll(timeout=2000))
@@ -281,8 +288,13 @@ class RequestManager(Thread):
                 continue
             if socks.get(self.out_socket) == POLLIN:
                 LOGGER.debug("Received a request")
-                address, _, payload = self.out_socket.recv_multipart(
-                    NOBLOCK)
+                multiparts = self.out_socket.recv_multipart(NOBLOCK)
+                try:
+                    address, _, payload = multiparts
+                except ValueError:
+                    LOGGER.warning("Invalid request, ignoring.")
+                    continue
+
                 message = Message(rawstr=payload)
                 fake_msg = Message(rawstr=str(message))
                 try:
@@ -395,6 +407,7 @@ def process_notify(orig_pathname, publisher, pattern, attrs):
         return
     elif (os.stat(orig_pathname).st_size == 0):
         # Want to avoid files with size 0.
+        LOGGER.debug("Ignoring empty file: %s", orig_pathname)
         return
     else:
         LOGGER.debug('We have a match: %s', orig_pathname)
@@ -448,8 +461,12 @@ def create_inotify_notifier(attrs, publisher):
         opath = os.path.join("/", pattern_join)
         LOGGER.debug("Using %s as base path for pyinotify add_watch.", opath)
 
+    def process_notify_publish(pathname):
+        pattern = globify(attrs["origin"])
+        return process_notify(pathname, publisher, pattern, attrs)
+
     tnotifier = pyinotify.ThreadedNotifier(
-        wm_, EventHandler(process_notify, watchManager=wm_, tmask=tmask))
+        wm_, EventHandler(process_notify_publish, watchManager=wm_, tmask=tmask))
 
     wm_.add_watch(opath, tmask)
 
