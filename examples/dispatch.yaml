@@ -2,6 +2,8 @@ target1:
   host: ftp://ftp.target1.com
   connection_parameters:
     connection_uptime: 60
+  # File name pattern for the target file.  If not given, the filename
+  #   will be taken from the incoming message 'uid'
   filepattern: '{platform_name}_{start_time}.{format}'
   directory: /input_data/{sensor}
   # Optional direct subscriptions

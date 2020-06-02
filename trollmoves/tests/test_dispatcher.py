@@ -99,10 +99,19 @@ target2:
 
 test_yaml_ssh_scp = test_yaml2 + """
 target3:
-  host: scp://user@server.target2.com
+  host: scp://user@server.target3.com
   connection_parameters:
     ssh_key_filename: ~/.ssh/rsa_id.pub
   filepattern: 'sat_{start_time:%Y%m%d%H%M}_{platform_name}.{format}'
+  directory: /satellite/{sensor}
+  dispatch_configs:
+    - topics:
+        - /level2/viirs
+
+target4:
+  host: scp://user@server.target4.com
+  connection_parameters:
+    ssh_key_filename: ~/.ssh/rsa_id.pub
   directory: /satellite/{sensor}
   dispatch_configs:
     - topics:
@@ -221,7 +230,8 @@ def test_get_destinations():
             msg = Mock()
             msg.subject = '/level2/viirs'
             msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
-                        'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif'}
+                        'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif',
+                        'uid': '201909190919_NOAA-20_viirs.tif'}
             expected_url = 'ftp://ftp.target1.com/input_data/viirs/NOAA-20_201909190919.tif'
             expected_attrs = {'connection_uptime': 20}
 
@@ -284,7 +294,8 @@ def test_get_destinations_with_aliases():
             msg = Mock()
             msg.subject = '/level2/viirs'
             msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
-                        'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif'}
+                        'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif',
+                        'uid': '201909190919_NOAA-20_viirs.tif'}
             expected_url = 'ftp://ftp.target1.com/input_data/viirs/NOAA-20_gs_201909190919.tif'
             expected_attrs = {'connection_uptime': 20}
 
@@ -369,7 +380,7 @@ def test_dispatcher():
                     msg.subject = '/level2/viirs'
                     msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
                                 'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif',
-                                'area': 'euron1',
+                                'area': 'euron1', 'uid': '201909190919_NOAA-20_viirs.tif',
                                 'uri': test_file.name}
                     expected_file = os.path.join(dest_dir, 'NOAA-20_201909190919.tif')
                     queue.put(msg)
@@ -406,7 +417,8 @@ def test_create_dest_url():
             msg = Mock()
             msg.subject = '/level2/viirs'
             msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
-                        'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif'}
+                        'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif',
+                        'uid': '201909190919_NOAA-20_viirs.tif'}
             # SSH protocol, no username
             url, params, client = dp.create_dest_url(msg, 'target2',
                                                      config['target2'])
@@ -418,9 +430,15 @@ def test_create_dest_url():
             # SCP protocolw with username
             url, params, client = dp.create_dest_url(msg, 'target3',
                                                      config['target3'])
-            expected_url = "scp://user@server.target2.com/satellite/viirs/sat_201909190919_NOAA-20.tif"
+            expected_url = "scp://user@server.target3.com/satellite/viirs/sat_201909190919_NOAA-20.tif"
             assert url == expected_url
             assert client == "target3"
+
+            # SSH protocol, no filepattern (use uid as target filename)
+            url, params, client = dp.create_dest_url(msg, 'target4',
+                                                     config['target4'])
+            expected_url = expected_url = "scp://user@server.target4.com/satellite/viirs/" + msg.data['uid']
+            assert url == expected_url
 
     finally:
         if dp is not None:
@@ -438,6 +456,8 @@ target3:
     - topics:
         - /level2/viirs
 """
+
+
 @patch('trollmoves.dispatcher.Message')
 @patch('trollmoves.dispatcher.ListenerContainer')
 @patch('trollmoves.dispatcher.NoisyPublisher')
