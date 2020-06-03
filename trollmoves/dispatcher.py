@@ -328,7 +328,7 @@ class Dispatcher(Thread):
                         # reachable from both). But in those cases one
                         # should probably not use an url scheme but just a
                         # file path:
-                        raise NotImplementedError(("uri is pointing to a file path on another server! " +
+                        raise NotImplementedError(("uri is pointing to a file path on another server! "
                                                    "Host=<%s> uri netloc=<%s>", self.host, url.netloc))
                     success = dispatch(url.path, destinations)
                     if self.publisher:
@@ -373,13 +373,13 @@ class Dispatcher(Thread):
 
     def create_dest_url(self, msg, client, disp_config):
         """Create the destination URL and the connection parameters."""
-        defaults = self.config[client]
+        defaults = self.config[client].copy()
+        if 'filepattern' not in defaults:
+            source_filename = os.path.basename(urlsplit(msg.data['uri']).path)
+            defaults['filepattern'] = source_filename
         info_dict = dict()
         for key in ['host', 'directory', 'filepattern']:
-            try:
-                info_dict[key] = disp_config[key]
-            except KeyError:
-                info_dict[key] = defaults[key]
+            info_dict[key] = disp_config.get(key, defaults[key])
         connection_parameters = disp_config.get(
             'connection_parameters',
             defaults.get('connection_parameters'))
