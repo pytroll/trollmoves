@@ -55,6 +55,8 @@ nosetests.xml
 
 # Others
 *~
+CHANGELOG.temp
+
 # PyCharm Settings
 .idea
 
