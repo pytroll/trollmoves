@@ -1,3 +1,24 @@
+## Version 0.6.0 (2020/06/03)
+
+### Issues Closed
+
+* [Issue 72](https://github.com/pytroll/trollmoves/issues/72) - filepattern is a required parameter - should be optional ([PR 73](https://github.com/pytroll/trollmoves/pull/73))
+* [Issue 54](https://github.com/pytroll/trollmoves/issues/54) -  connection lifetime should be configurable for all transfer methods
+
+In this release 2 issues were closed.
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 73](https://github.com/pytroll/trollmoves/pull/73) - Make filepattern optional ([72](https://github.com/pytroll/trollmoves/issues/72))
+
+#### Features added
+
+* [PR 62](https://github.com/pytroll/trollmoves/pull/62) - Add Watchdog based event handler
+
+In this release 2 pull requests were closed.
+
 ## Version <v0.5.0> (2020/04/03)
 
 ### Issues Closed
