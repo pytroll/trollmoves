@@ -118,6 +118,37 @@ target4:
         - /level2/viirs
 """
 
+test_yaml_no_default_directory = """
+target1:
+  host: ftp://ftp.target1.com
+  connection_parameters:
+    connection_uptime: 20
+  filepattern: '{platform_name}_{start_time:%Y%m%d%H%M}.{format}'
+  dispatch_configs:
+    - topics:
+        - /level2/viirs
+        - /level2/avhrr
+      conditions:
+        # key matches metadata items or provides default
+        - product: [green_snow, true_color]
+          sensor: viirs
+        - product: [green_snow, overview]
+          sensor: avhrr
+          # special section "except" for negating
+          except:
+            platform_name: NOAA-15
+      directory: /input_data/{sensor}
+    - topics:
+        - /level3/cloudtype
+      directory: /input/cloud_products
+      conditions:
+        - area: omerc_bb
+          # ' 122'.strip().isdigit() -> True
+          daylight: '<30'
+          coverage: '>50'
+      directory: /input_data/{sensor}
+"""
+
 
 def test_config_reading():
     """Test reading the config."""
@@ -227,6 +258,33 @@ def test_get_destinations():
             fname = the_file.name
             dp = Dispatcher(fname)
             dp.config = yaml.safe_load(test_yaml1)
+            msg = Mock()
+            msg.subject = '/level2/viirs'
+            msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
+                        'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif',
+                        'uid': '201909190919_NOAA-20_viirs.tif'}
+            expected_url = 'ftp://ftp.target1.com/input_data/viirs/NOAA-20_201909190919.tif'
+            expected_attrs = {'connection_uptime': 20}
+
+            res = dp.get_destinations(msg)
+            assert len(res) == 1
+            url, attrs, client = res[0]
+            assert url == expected_url
+            assert attrs == expected_attrs
+            assert client == "target1"
+
+            dp.config = yaml.safe_load(test_yaml2)
+            res = dp.get_destinations(msg)
+            assert len(res) == 2
+
+
+def test_get_destinations_no_default_directory():
+    """Check getting destination urls."""
+    with patch('trollmoves.dispatcher.DispatchConfig'):
+        with NamedTemporaryFile('w') as the_file:
+            fname = the_file.name
+            dp = Dispatcher(fname)
+            dp.config = yaml.safe_load(test_yaml_no_default_directory)
             msg = Mock()
             msg.subject = '/level2/viirs'
             msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
