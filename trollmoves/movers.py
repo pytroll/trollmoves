@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2012-2019
+# Copyright (c) 2012-2020
 #
 # Author(s):
 #
@@ -31,6 +31,7 @@ import time
 import traceback
 from ftplib import FTP, all_errors, error_perm
 from threading import Event, Lock, Thread, current_thread
+import netrc
 
 from six import string_types
 from six.moves.urllib.parse import urlparse
@@ -41,6 +42,12 @@ from paramiko import SSHClient, SSHException, AutoAddPolicy
 from scp import SCPClient
 
 LOGGER = logging.getLogger(__name__)
+
+HOME = os.environ.get('HOME')
+if HOME:
+    NETRCFILE = os.path.join(HOME, '.netrc')
+else:
+    NETRCFILE = None
 
 
 def move_it(pathname, destination, attrs=None, hook=None, rel_path=None):
@@ -105,6 +112,7 @@ class Mover(object):
                                   + " not implemented (yet).")
 
     def get_connection(self, hostname, port, username=None):
+        """Get the connection."""
         with self.active_connection_lock:
             LOGGER.debug('Getting connection to %s@%s:%s',
                          self.destination.username, self.destination.hostname, port)
@@ -201,10 +209,30 @@ class FtpMover(Mover):
     active_connections = dict()
     active_connection_lock = Lock()
 
+    # Check if usernams, password is stored in a netrc file
+
+    def _get_netrc_authentication(self):
+        """Get login authentications from netrc file if available"""
+        if NETRCFILE and os.path.exists(NETRCFILE):
+            try:
+                secrets = netrc.netrc(NETRCFILE)
+            except netrc.NetrcParseError:
+                logger.warning('Failed retrieve authentification details from netrc file!')
+                return
+
+            secrets = netrc.netrc(NETRCFILE)
+            if self.destination.hostname in secrets.hosts:
+                self.destination.username, account, self.destination.password = secrets.authenticators(
+                    self.destination.hostname)
+                logger.debug('Got username and password from netrc file!')
+
     def open_connection(self):
+        """Open the connection and login."""
         connection = FTP(timeout=10)
         connection.connect(self.destination.hostname,
                            self.destination.port or 21)
+
+        self._get_netrc_authentication()
         if self.destination.username and self.destination.password:
             connection.login(self.destination.username,
                              self.destination.password)
