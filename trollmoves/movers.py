@@ -43,12 +43,6 @@ from scp import SCPClient
 
 LOGGER = logging.getLogger(__name__)
 
-HOME = os.environ.get('HOME')
-if HOME:
-    NETRCFILE = os.path.join(HOME, '.netrc')
-else:
-    NETRCFILE = None
-
 
 def move_it(pathname, destination, attrs=None, hook=None, rel_path=None):
     """Check if the file pointed by *pathname* is in the filelist, and move it
@@ -209,22 +203,22 @@ class FtpMover(Mover):
     active_connections = dict()
     active_connection_lock = Lock()
 
-    # Check if usernams, password is stored in a netrc file
-
     def _get_netrc_authentication(self):
         """Get login authentications from netrc file if available"""
-        if NETRCFILE and os.path.exists(NETRCFILE):
-            try:
-                secrets = netrc.netrc(NETRCFILE)
-            except netrc.NetrcParseError:
-                logger.warning('Failed retrieve authentification details from netrc file!')
-                return
+        try:
+            secrets = netrc.netrc()
+        except netrc.NetrcParseError:
+            logger.warning('Failed retrieve authentification details from netrc file!')
+            return
+        except netrc.FileNotFoundError:
+            logger.warning('Failed retrieve authentification details from netrc file!')
+            return
 
-            secrets = netrc.netrc(NETRCFILE)
-            if self.destination.hostname in secrets.hosts:
-                self.destination.username, account, self.destination.password = secrets.authenticators(
-                    self.destination.hostname)
-                logger.debug('Got username and password from netrc file!')
+        secrets = netrc.netrc(NETRCFILE)
+        if self.destination.hostname in secrets.hosts:
+            self.destination.username, account, self.destination.password = secrets.authenticators(
+                self.destination.hostname)
+            logger.debug('Got username and password from netrc file!')
 
     def open_connection(self):
         """Open the connection and login."""
@@ -232,7 +226,10 @@ class FtpMover(Mover):
         connection.connect(self.destination.hostname,
                            self.destination.port or 21)
 
-        self._get_netrc_authentication()
+        if not self.destination.username or not self.destination.password:
+            # Check if usernams, password is stored in the $(HOME)/.netrc file:
+            self._get_netrc_authentication()
+
         if self.destination.username and self.destination.password:
             connection.login(self.destination.username,
                              self.destination.password)
