@@ -666,7 +666,7 @@ class Chain(Thread):
                     provider,
                     topics,
                     callback,
-                    sync_pub_instance=sync_pub_instance,
+                    sync_publisher=sync_pub_instance,
                     die_event=self.listener_died_event,
                     **self._config)
                 listener.start()
