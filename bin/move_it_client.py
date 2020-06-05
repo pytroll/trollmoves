@@ -21,7 +21,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-"""
+"""Client for Trollmoves.
+
 Moving and unpacking files
 ==========================
 
@@ -90,11 +91,13 @@ LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
 
 
 class MoveItClient(MoveItBase):
+    """Trollmoves client class."""
 
     def __init__(self, cmd_args):
+        """Initialize client."""
         super(MoveItClient, self).__init__(cmd_args, "client")
         self._np = NoisyPublisher("move_it_client")
-        self.sync_pub = self._np.start()
+        self.sync_publisher = self._np.start()
         self.setup_watchers(cmd_args)
 
     def run(self):
@@ -105,13 +108,14 @@ class MoveItClient(MoveItBase):
         self.running = True
         while self.running:
             time.sleep(1)
-            self.sync_pub.heartbeat(30)
+            self.sync_publisher.heartbeat(30)
             for chain_name in self.chains:
                 if not self.chains[chain_name].is_alive():
                     self.chains[chain_name] = self.chains[chain_name].restart()
 
 
 def parse_args():
+    """Parse commandline arguments."""
     parser = argparse.ArgumentParser()
     parser.add_argument("config_file",
                         help="The configuration file to run on.")
@@ -125,7 +129,7 @@ def parse_args():
 
 
 def main():
-    """Main()"""
+    """Run the Trollmoves Client."""
     cmd_args = parse_args()
     client = MoveItClient(cmd_args)
 
