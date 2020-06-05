@@ -207,11 +207,8 @@ class FtpMover(Mover):
         """Get login authentications from netrc file if available"""
         try:
             secrets = netrc.netrc()
-        except netrc.NetrcParseError:
-            logger.warning('Failed retrieve authentification details from netrc file!')
-            return
-        except netrc.FileNotFoundError:
-            logger.warning('Failed retrieve authentification details from netrc file!')
+        except (netrc.NetrcParseError, FileNotFoundError) as e__:
+            logger.warning('Failed retrieve authentification details from netrc file! Exception: ', str(e__))
             return
 
         secrets = netrc.netrc(NETRCFILE)
