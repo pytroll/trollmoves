@@ -544,7 +544,7 @@ def add_to_file_cache(msg):
                 file_cache.append(uid)
 
 
-def request_push(msg, destination, login=None, sync_publisher=None, **kwargs):
+def request_push(msg, destination, login=None, sync_publisher=None, publisher=None, **kwargs):
     """Request a push for data."""
     huid = add_to_ongoing(msg)
     if huid is None:
@@ -592,7 +592,7 @@ def request_push(msg, destination, login=None, sync_publisher=None, **kwargs):
             except IOError:
                 LOGGER.exception("Couldn't unpack %s", str(response))
                 continue
-            if sync_publisher:
+            if publisher:
                 lmsg = make_uris(lmsg, _destination, login)
                 lmsg.data['origin'] = response.data['request_address']
                 lmsg.data.pop('request_address', None)
@@ -600,7 +600,7 @@ def request_push(msg, destination, login=None, sync_publisher=None, **kwargs):
                 lmsg.data.pop('destination', None)
 
                 LOGGER.debug("publishing %s", str(lmsg))
-                sync_publisher.send(str(lmsg))
+                publisher.send(str(lmsg))
             terminate_transfers(huid, float(kwargs["req_timeout"]))
             break
         else:
@@ -667,6 +667,7 @@ class Chain(Thread):
                     topics,
                     callback,
                     sync_publisher=sync_pub_instance,
+                    publisher=self.publisher,
                     die_event=self.listener_died_event,
                     **self._config)
                 listener.start()
