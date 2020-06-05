@@ -379,7 +379,10 @@ class Dispatcher(Thread):
             defaults['filepattern'] = source_filename
         info_dict = dict()
         for key in ['host', 'directory', 'filepattern']:
-            info_dict[key] = disp_config.get(key, defaults[key])
+            try:
+                info_dict[key] = disp_config[key]
+            except KeyError:
+                info_dict[key] = defaults[key]
         connection_parameters = disp_config.get(
             'connection_parameters',
             defaults.get('connection_parameters'))
