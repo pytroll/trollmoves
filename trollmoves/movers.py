@@ -208,14 +208,13 @@ class FtpMover(Mover):
         try:
             secrets = netrc.netrc()
         except (netrc.NetrcParseError, FileNotFoundError) as e__:
-            logger.warning('Failed retrieve authentification details from netrc file! Exception: ', str(e__))
+            LOGGER.warning('Failed retrieve authentification details from netrc file! Exception: ', str(e__))
             return
 
-        secrets = netrc.netrc(NETRCFILE)
         if self.destination.hostname in secrets.hosts:
             self.destination.username, account, self.destination.password = secrets.authenticators(
                 self.destination.hostname)
-            logger.debug('Got username and password from netrc file!')
+            LOGGER.debug('Got username and password from netrc file!')
 
     def open_connection(self):
         """Open the connection and login."""
