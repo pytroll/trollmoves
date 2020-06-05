@@ -544,7 +544,7 @@ def add_to_file_cache(msg):
                 file_cache.append(uid)
 
 
-def request_push(msg, destination, login=None, sync_publisher=None, **kwargs):
+def request_push(msg, destination, login=None, sync_publisher=None, publisher=None, **kwargs):
     """Request a push for data."""
     huid = add_to_ongoing(msg)
     if huid is None:
@@ -592,7 +592,7 @@ def request_push(msg, destination, login=None, sync_publisher=None, **kwargs):
             except IOError:
                 LOGGER.exception("Couldn't unpack %s", str(response))
                 continue
-            if sync_publisher:
+            if publisher:
                 lmsg = make_uris(lmsg, _destination, login)
                 lmsg.data['origin'] = response.data['request_address']
                 lmsg.data.pop('request_address', None)
@@ -600,7 +600,7 @@ def request_push(msg, destination, login=None, sync_publisher=None, **kwargs):
                 lmsg.data.pop('destination', None)
 
                 LOGGER.debug("publishing %s", str(lmsg))
-                sync_publisher.send(str(lmsg))
+                publisher.send(str(lmsg))
             terminate_transfers(huid, float(kwargs["req_timeout"]))
             break
         else:
@@ -638,10 +638,10 @@ class Chain(Thread):
         except (KeyError, NameError):
             pass
 
-    def setup_listeners(self, callback, sync_pub_instance):
+    def setup_listeners(self, callback, sync_publisher):
         """Set up the listeners."""
         self.callback = callback
-        self.sync_pub_instance = sync_pub_instance
+        self.sync_publisher = sync_publisher
         try:
             topics = []
             if "topic" in self._config:
@@ -666,7 +666,8 @@ class Chain(Thread):
                     provider,
                     topics,
                     callback,
-                    sync_pub_instance=sync_pub_instance,
+                    sync_publisher=sync_publisher,
+                    publisher=self.publisher,
                     die_event=self.listener_died_event,
                     **self._config)
                 listener.start()
@@ -734,12 +735,12 @@ class Chain(Thread):
         """Restart the chain, return a new running instance."""
         self.stop()
         new_chain = self.__class__(self._name, self._config)
-        new_chain.setup_listeners(self.callback, self.sync_pub_instance)
+        new_chain.setup_listeners(self.callback, self.sync_publisher)
         new_chain.start()
         return new_chain
 
 
-def reload_config(filename, chains, callback=request_push, sync_pub_instance=None):
+def reload_config(filename, chains, callback=request_push, sync_publisher=None):
     """Rebuild chains if needed (if the configuration changed) from *filename*."""
     LOGGER.debug("New config file detected: %s", filename)
 
@@ -759,7 +760,7 @@ def reload_config(filename, chains, callback=request_push, sync_pub_instance=Non
             verb = "Added"
             LOGGER.debug("Adding %s", key)
         chains[key] = Chain(key, new_config)
-        chains[key].setup_listeners(callback, sync_pub_instance)
+        chains[key].setup_listeners(callback, sync_publisher)
         chains[key].start()
 
         LOGGER.debug("%s %s", verb, key)
