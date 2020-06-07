@@ -1,5 +1,5 @@
 #!/usr/bin/python
-# Copyright (c) 2015.
+# Copyright (c) 2015, 2020.
 #
 
 # Author(s):
@@ -51,5 +51,5 @@ setup(name="trollmoves",
       install_requires=['pyinotify', 'posttroll>=1.5.1',
                         'trollsift', 'netifaces',
                         'pyzmq', 'six', 'inotify',
-                        'scp', 'paramiko', 'pyyaml', 'watchdog'],
+                        'scp', 'paramiko', 'pyyaml', 'watchdog', 'furl'],
       )

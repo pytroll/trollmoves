@@ -34,10 +34,10 @@ from threading import Event, Lock, Thread, current_thread
 import netrc
 
 from six import string_types
-from six.moves.urllib.parse import urlparse
+#from six.moves.urllib.parse import urlparse
+from furl import furl as urlparse
 
 from trollmoves.utils import clean_url
-
 from paramiko import SSHClient, SSHException, AutoAddPolicy
 from scp import SCPClient
 
@@ -60,8 +60,10 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None):
     new_dest = dest_url._replace(path=new_path)
     fake_dest = clean_url(new_dest)
 
+    LOGGER.debug("new_dest = %s", new_dest)
     LOGGER.debug("Copying to: %s", fake_dest)
     try:
+        LOGGER.debug("Scheme = %s", str(dest_url.scheme))
         mover = MOVERS[dest_url.scheme]
     except KeyError:
         LOGGER.error("Unsupported protocol '" + str(dest_url.scheme)
@@ -92,6 +94,10 @@ class Mover(object):
         else:
             self.destination = destination
 
+        self.dest_username = None
+        self.dest_password = None
+
+        LOGGER.debug("Destination: %s", str(destination))
         self.origin = origin
         self.attrs = attrs or {}
 
@@ -108,6 +114,8 @@ class Mover(object):
     def get_connection(self, hostname, port, username=None):
         """Get the connection."""
         with self.active_connection_lock:
+            LOGGER.debug("Destination username and passwd: %s %s",
+                         self.destination.username, self.destination.password)
             LOGGER.debug('Getting connection to %s@%s:%s',
                          self.destination.username, self.destination.hostname, port)
             try:
@@ -205,26 +213,46 @@ class FtpMover(Mover):
 
     def _get_netrc_authentication(self):
         """Get login authentications from netrc file if available"""
+        LOGGER.debug("HOME = %s", os.environ.get('HOME'))
         try:
             secrets = netrc.netrc()
         except (netrc.NetrcParseError, FileNotFoundError) as e__:
             LOGGER.warning('Failed retrieve authentification details from netrc file! Exception: ', str(e__))
             return
 
-        if self.destination.hostname in secrets.hosts:
-            self.destination.username, account, self.destination.password = secrets.authenticators(
-                self.destination.hostname)
+        LOGGER.debug("hosts: %s", str(list(secrets.hosts.keys())))
+        LOGGER.debug("Check if hostname matches any listed in the netrc file")
+        if self.destination.hostname in list(secrets.hosts.keys()):
+            LOGGER.debug("Destination hostname: %s", self.destination.hostname)
+            username, account, password = secrets.authenticators(self.destination.hostname)
+            LOGGER.debug("Destination hostname: %s", self.destination.hostname)
+            try:
+                self.destination.username = username
+            except Exception:
+                LOGGER.debug("Failed setting username!")
+                LOGGER.debug(type(self.destination))
+                raise Exception
+            try:
+                self.destination.password = password
+                LOGGER.debug(type(self.destination))
+            except Exception:
+                LOGGER.debug("Failed setting password!")
+                raise Exception
+
             LOGGER.debug('Got username and password from netrc file!')
 
     def open_connection(self):
         """Open the connection and login."""
+
         connection = FTP(timeout=10)
+        LOGGER.debug("Connect...")
         connection.connect(self.destination.hostname,
                            self.destination.port or 21)
 
         if not self.destination.username or not self.destination.password:
             # Check if usernams, password is stored in the $(HOME)/.netrc file:
             self._get_netrc_authentication()
+            LOGGER.debug("Authentication retrieved from netrc file!")
 
         if self.destination.username and self.destination.password:
             connection.login(self.destination.username,
