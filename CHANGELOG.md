@@ -1,3 +1,25 @@
+## Version 0.6.1 (2020/06/08)
+
+### Issues Closed
+
+* [Issue 77](https://github.com/pytroll/trollmoves/issues/77) - Use correct publishers ([PR 76](https://github.com/pytroll/trollmoves/pull/76))
+* [Issue 74](https://github.com/pytroll/trollmoves/issues/74) - KeyError 'directory' ([PR 75](https://github.com/pytroll/trollmoves/pull/75))
+
+In this release 2 issues were closed.
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 76](https://github.com/pytroll/trollmoves/pull/76) - Fix keyword argument naming for publisher ([77](https://github.com/pytroll/trollmoves/issues/77))
+* [PR 75](https://github.com/pytroll/trollmoves/pull/75) - Fix missing default option making the dispatcher crash ([74](https://github.com/pytroll/trollmoves/issues/74))
+
+#### Features added
+
+* [PR 78](https://github.com/pytroll/trollmoves/pull/78) - Get username and password from .netrc file if available
+
+In this release 3 pull requests were closed.
+
 ## Version 0.6.0 (2020/06/03)
 
 ### Issues Closed
