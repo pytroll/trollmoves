@@ -34,8 +34,8 @@ from threading import Event, Lock, Thread, current_thread
 import netrc
 
 from six import string_types
-#from six.moves.urllib.parse import urlparse
-from furl import furl as urlparse
+from six.moves.urllib.parse import urlparse
+
 
 from trollmoves.utils import clean_url
 from paramiko import SSHClient, SSHException, AutoAddPolicy
@@ -94,8 +94,8 @@ class Mover(object):
         else:
             self.destination = destination
 
-        self.dest_username = None
-        self.dest_password = None
+        self._dest_username = self.destination.username
+        self._dest_password = self.destination.password
 
         LOGGER.debug("Destination: %s", str(destination))
         self.origin = origin
@@ -115,9 +115,9 @@ class Mover(object):
         """Get the connection."""
         with self.active_connection_lock:
             LOGGER.debug("Destination username and passwd: %s %s",
-                         self.destination.username, self.destination.password)
+                         self._dest_username, self._dest_password)
             LOGGER.debug('Getting connection to %s@%s:%s',
-                         self.destination.username, self.destination.hostname, port)
+                         username, hostname, port)
             try:
                 connection, timer = self.active_connections[(hostname, port, username)]
                 if not self.is_connected(connection):
@@ -138,7 +138,7 @@ class Mover(object):
     def delete_connection(self, connection):
         with self.active_connection_lock:
             LOGGER.debug('Closing connection to %s@%s:%s',
-                         self.destination.username, self.destination.hostname, self.destination.port)
+                         self._dest_username, self.destination.hostname, self.destination.port)
             try:
                 if current_thread().finished.is_set():
                     return
@@ -224,21 +224,8 @@ class FtpMover(Mover):
         LOGGER.debug("Check if hostname matches any listed in the netrc file")
         if self.destination.hostname in list(secrets.hosts.keys()):
             LOGGER.debug("Destination hostname: %s", self.destination.hostname)
-            username, account, password = secrets.authenticators(self.destination.hostname)
+            self._dest_username, account, self._dest_password = secrets.authenticators(self.destination.hostname)
             LOGGER.debug("Destination hostname: %s", self.destination.hostname)
-            try:
-                self.destination.username = username
-            except Exception:
-                LOGGER.debug("Failed setting username!")
-                LOGGER.debug(type(self.destination))
-                raise Exception
-            try:
-                self.destination.password = password
-                LOGGER.debug(type(self.destination))
-            except Exception:
-                LOGGER.debug("Failed setting password!")
-                raise Exception
-
             LOGGER.debug('Got username and password from netrc file!')
 
     def open_connection(self):
@@ -249,14 +236,13 @@ class FtpMover(Mover):
         connection.connect(self.destination.hostname,
                            self.destination.port or 21)
 
-        if not self.destination.username or not self.destination.password:
+        if not self._dest_username or not self._dest_password:
             # Check if usernams, password is stored in the $(HOME)/.netrc file:
             self._get_netrc_authentication()
             LOGGER.debug("Authentication retrieved from netrc file!")
 
-        if self.destination.username and self.destination.password:
-            connection.login(self.destination.username,
-                             self.destination.password)
+        if self._dest_username and self._dest_password:
+            connection.login(self._dest_username, self._dest_password)
         else:
             connection.login()
 
@@ -288,7 +274,7 @@ class FtpMover(Mover):
     def copy(self):
         """Push it !
         """
-        connection = self.get_connection(self.destination.hostname, self.destination.port, self.destination.username)
+        connection = self.get_connection(self.destination.hostname, self.destination.port, self._dest_username)
 
         def cd_tree(current_dir):
             if current_dir != "":
@@ -324,13 +310,13 @@ class ScpMover(Mover):
                 ssh_connection.set_missing_host_key_policy(AutoAddPolicy())
                 ssh_connection.load_system_host_keys()
                 ssh_connection.connect(self.destination.hostname,
-                                       username=self.destination.username,
+                                       username=self._dest_username,
                                        port=self.destination.port or 22,
                                        key_filename=ssh_key_filename)
                 LOGGER.debug("Successfully connected to %s:%s as %s",
                              self.destination.hostname,
                              self.destination.port or 22,
-                             self.destination.username)
+                             self._dest_username)
             except SSHException as sshe:
                 LOGGER.error("Failed to init SSHClient: %s", str(sshe))
             except Exception as err:
@@ -372,7 +358,7 @@ class ScpMover(Mover):
 
         ssh_connection = self.get_connection(self.destination.hostname,
                                              self.destination.port or 22,
-                                             self.destination.username)
+                                             self._dest_username)
 
         try:
             scp = SCPClient(ssh_connection.get_transport())
@@ -434,7 +420,7 @@ class SftpMover(Mover):
             LOGGER.debug('Trying ssh key %s',
                          key.get_fingerprint().encode('hex'))
             try:
-                transport.auth_publickey(self.destination.username, key)
+                transport.auth_publickey(self._dest_username, key)
                 LOGGER.debug('... ssh key success!')
                 return
             except paramiko.SSHException:
