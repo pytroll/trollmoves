@@ -37,10 +37,10 @@ def test_open_connection(netrc):
 
     origin = '/path/to/mydata/filename.ext'
 
-    def raise_my_error():
+    def raise_filenotfound_error():
         raise FileNotFoundError
 
-    netrc.side_effect = raise_my_error
+    netrc.side_effect = raise_filenotfound_error
 
     with patch('trollmoves.movers.FTP') as mymock:
         destination = 'ftp://localhost.smhi.se/data/satellite/archive/'

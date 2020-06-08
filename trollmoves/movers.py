@@ -213,19 +213,17 @@ class FtpMover(Mover):
 
     def _get_netrc_authentication(self):
         """Get login authentications from netrc file if available"""
-        LOGGER.debug("HOME = %s", os.environ.get('HOME'))
         try:
             secrets = netrc.netrc()
         except (netrc.NetrcParseError, FileNotFoundError) as e__:
-            LOGGER.warning('Failed retrieve authentification details from netrc file! Exception: ', str(e__))
+            LOGGER.warning('Failed retrieve authentification details from netrc file! Exception: %s', str(e__))
             return
 
+        LOGGER.debug("Destination hostname: %s", self.destination.hostname)
         LOGGER.debug("hosts: %s", str(list(secrets.hosts.keys())))
         LOGGER.debug("Check if hostname matches any listed in the netrc file")
         if self.destination.hostname in list(secrets.hosts.keys()):
-            LOGGER.debug("Destination hostname: %s", self.destination.hostname)
             self._dest_username, account, self._dest_password = secrets.authenticators(self.destination.hostname)
-            LOGGER.debug("Destination hostname: %s", self.destination.hostname)
             LOGGER.debug('Got username and password from netrc file!')
 
     def open_connection(self):
