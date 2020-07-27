@@ -53,7 +53,7 @@ from six.moves.urllib.parse import urlparse
 from trollmoves.client import DEFAULT_REQ_TIMEOUT
 from trollmoves.movers import move_it
 from trollmoves.utils import (clean_url, gen_dict_contains, gen_dict_extract,
-                              get_local_ips, is_file_local)
+                              is_file_local)
 from trollsift import globify, parse
 
 LOGGER = logging.getLogger(__name__)
@@ -292,7 +292,16 @@ class RequestManager(Thread):
                 try:
                     address, _, payload = multiparts
                 except ValueError:
-                    LOGGER.warning("Invalid request, ignoring.")
+                    LOGGER.warning("Invalid request.")
+                    try:
+                        address = multiparts[0]
+                    except (TypeError, IndexError):
+                        LOGGER.warning("Address unknow, not sending an error message back.")
+                    else:
+                        message = Message('error', 'error', "Invalid message recieved")
+                        Thread(target=self.reply_and_send,
+                               args=(self.unknown, address, message)).start()
+                        LOGGER.warning("Sent error message back.")
                     continue
 
                 message = Message(rawstr=payload)
