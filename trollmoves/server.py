@@ -498,7 +498,9 @@ def create_watchdog_notifier(attrs, publisher):
     pattern = globify(attrs["origin"])
     opath = os.path.dirname(pattern)
 
-    observer = PollingObserver()
+    timeout = float(attrs.get("watchdog_timeout", 1.))
+    LOGGER.debug("Watchdog timeout: %.1f", timeout)
+    observer = PollingObserver(timeout=timeout)
     handler = WatchdogHandler(process_notify, publisher, pattern, attrs)
 
     observer.schedule(handler, opath)
