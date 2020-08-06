@@ -63,7 +63,6 @@ def test_create_watchdog_notifier_timeout(process_notify,
                                           PollingObserver,
                                           WatchdogHandler):
     """Test creating a watchdog notifier."""
-    import time
     from trollmoves.server import create_watchdog_notifier
 
     attrs = {"origin": "/tmp"}
