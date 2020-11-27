@@ -44,20 +44,20 @@ file_registry = {}
 class MoveItMirror(MoveItBase):
 
     def __init__(self, cmd_args):
-        super(MoveItMirror, self).__init__(cmd_args, "mirror")
-        self.cache_lock = Lock()
         LOGGER.info("Starting publisher on port %s.", str(cmd_args.port))
-        self.pub = Publisher("tcp://*:" + str(cmd_args.port), "move_it_mirror")
+        publisher = Publisher("tcp://*:" + str(cmd_args.port), "move_it_mirror")
+        super(MoveItMirror, self).__init__(cmd_args, "mirror", publisher=publisher)
+        self.cache_lock = Lock()
 
     def reload_cfg_file(self, filename):
         reload_config(filename, self.chains, self.create_listener_notifier,
-                      MirrorRequestManager, self.pub)
+                      MirrorRequestManager, publisher=self.sync_publisher)
 
     def signal_reload_cfg_file(self, *args):
         del args
         reload_config(self.cmd_args.config_file, self.chains,
                       self.create_listener_notifier,
-                      MirrorRequestManager, self.pub)
+                      MirrorRequestManager, self.sync_publisher)
 
     def create_listener_notifier(self, attrs, publisher):
 

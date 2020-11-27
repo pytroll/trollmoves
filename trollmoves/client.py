@@ -624,6 +624,7 @@ class Chain(Thread):
         self.listeners = {}
         self.listener_died_event = Event()
         self.running = True
+        self.sync_publisher = None
 
         # Setup publisher
         try:

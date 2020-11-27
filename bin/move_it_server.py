@@ -109,9 +109,9 @@ class MoveItServer(MoveItBase):
 
     def __init__(self, cmd_args):
         """Initialize server."""
-        super(MoveItServer, self).__init__(cmd_args, "server")
         LOGGER.info("Starting publisher on port %s.", str(cmd_args.port))
-        self.sync_publisher = Publisher("tcp://*:" + str(cmd_args.port), "move_it_server")
+        publisher = Publisher("tcp://*:" + str(cmd_args.port), "move_it_server")
+        super(MoveItServer, self).__init__(cmd_args, "server", publisher=publisher)
 
     def run(self):
         """Start the transfer chains."""

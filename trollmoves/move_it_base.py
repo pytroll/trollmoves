@@ -38,14 +38,14 @@ LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
 class MoveItBase(object):
     """Base class for Trollmoves."""
 
-    def __init__(self, cmd_args, chain_type):
+    def __init__(self, cmd_args, chain_type, publisher=None):
         """Initialize the class."""
         self.cmd_args = cmd_args
         self.chain_type = chain_type
         self.running = False
         self.notifier = None
         self.watchman = None
-        self.sync_publisher = None
+        self.sync_publisher = publisher
         self._np = None
         self.chains = {}
         setup_logging(cmd_args, chain_type)
