@@ -577,7 +577,7 @@ def create_notifier(attrs):
                 if attrs["delete"]:
                     try:
                         os.remove(pathname)
-                        if 'delete_hook' in attrs and attrs["delete_hook"]:
+                        if attrs.get("delete_hook"):
                             attrs["delete_hook"](pathname)
                         LOGGER.debug("Removed %s", pathname)
                     except OSError as e__:
