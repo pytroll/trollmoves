@@ -45,5 +45,5 @@ class TestMirrorRequestManager(unittest.TestCase):
 
         with patch("trollmoves.mirror.MirrorDeleter", autospec=True) as md:
             with patch.multiple("trollmoves.server", Poller=DEFAULT, get_context=DEFAULT):
-                    MirrorRequestManager("some_port", attrs)  # noqa
-                    assert md.call_args[0][0] == attrs
+                MirrorRequestManager("some_port", attrs)  # noqa
+                assert md.call_args[0][0] == attrs
