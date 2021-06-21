@@ -53,7 +53,7 @@ from six.moves.urllib.parse import urlparse
 from trollmoves.client import DEFAULT_REQ_TIMEOUT
 from trollmoves.movers import move_it
 from trollmoves.utils import (clean_url, gen_dict_contains, gen_dict_extract,
-                              get_local_ips, is_file_local)
+                              is_file_local)
 from trollsift import globify, parse
 
 LOGGER = logging.getLogger(__name__)
@@ -79,7 +79,7 @@ class Deleter(Thread):
         self.queue = Queue()
         self.timer = None
         self.loop = True
-        self._attrs = attrs
+        self._attrs = attrs or dict()
 
     def add(self, filename):
         """Schedule file for deletion."""

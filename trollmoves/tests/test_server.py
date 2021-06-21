@@ -23,6 +23,7 @@
 """Test Trollmoves server."""
 
 from unittest.mock import MagicMock, patch
+import unittest
 from tempfile import TemporaryDirectory
 import os
 
@@ -123,3 +124,12 @@ def test_process_notify(Message):
         with file_cache_lock:
             assert "/topic/20200428_1000_foo.tif" in file_cache
             assert len(file_cache) == 1
+
+
+class TestDeleter(unittest.TestCase):
+    """Test the deleter."""
+
+    def test_empty_init_arguments_does_not_crash_add(self):
+        """Test that empty init arguments still work."""
+        from trollmoves.server import Deleter
+        Deleter().add('bla')
