@@ -34,6 +34,12 @@ class TestMirrorDeleter(unittest.TestCase):
         from trollmoves.mirror import MirrorDeleter
         MirrorDeleter()  # noqa
 
+    def test_calling_delete_with_just_filename_does_not_crash(self):
+        """Test that calling delete with just the filename does not crash."""
+        from trollmoves.mirror import MirrorDeleter
+        deleter = MirrorDeleter()
+        deleter.delete("some_filename")
+
 
 class TestMirrorRequestManager(unittest.TestCase):
     """Test the MRM."""

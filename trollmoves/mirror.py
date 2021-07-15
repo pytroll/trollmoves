@@ -25,6 +25,7 @@
 import os
 
 from six.moves.urllib.parse import urlparse
+
 from trollmoves.client import request_push
 from trollmoves.server import RequestManager, Deleter
 
@@ -64,8 +65,8 @@ class MirrorDeleter(Deleter):
         super().__init__(attrs)
 
     @staticmethod
-    def delete(filename, cache_lock, file_cache):
+    def delete(filename):
         """Delete the file."""
         Deleter.delete(filename)
-        with cache_lock:
-            file_cache.pop(os.path.basename(filename), None)
+        # Pop is atomic, so we don't need a lock.
+        file_registry.pop(os.path.basename(filename), None)

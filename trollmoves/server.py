@@ -108,12 +108,16 @@ class Deleter(Thread):
 
     @staticmethod
     def delete(filename):
-        """Delete the given file."""
+        """Delete the given file.
+
+        If the file is not present, this function does *not* raise an error.
+        """
         try:
             os.remove(filename)
         except OSError as err:
             if err.errno != errno.ENOENT:
                 raise
+            LOGGER.debug("File already deleted: %s", filename)
 
     def stop(self):
         """Stop the deleter."""
