@@ -553,6 +553,7 @@ def request_push(msg, destination, login=None, sync_publisher=None, publisher=No
     if already_received(msg):
         timeout = float(kwargs["req_timeout"])
         send_ack(msg, timeout)
+        _ = clean_ongoing_transfer(huid)
         return
 
     for msg in iterate_messages(huid):

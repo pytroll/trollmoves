@@ -570,21 +570,19 @@ def test_add_to_file_cache(lock):
     assert MSG_FILE2.data['uid'] in file_cache
 
 
-@patch('trollmoves.client.add_to_ongoing')
-@patch('trollmoves.client.ongoing_transfers')
-@patch('trollmoves.client.terminate_transfers')
+@patch('trollmoves.client.clean_ongoing_transfer')
 @patch('trollmoves.client.send_request')
 @patch('trollmoves.client.send_ack')
-def test_request_push(send_ack, send_request, terminate_transfers,
-                      ongoing_transfers, add_to_ongoing):
+def test_request_push(send_ack, send_request, clean_ongoing_transfer):
     """Test trollmoves.client.request_push()."""
-    from trollmoves.client import request_push, file_cache
+    from trollmoves.client import request_push, file_cache, ongoing_transfers
     from tempfile import gettempdir
 
-    # Clear file cache, the other tests have added stuff in it
+    # Clear file cache and ongoing transfers, the other tests have added stuff in it
     file_cache.clear()
+    ongoing_transfers.clear()
 
-    ongoing_transfers[UID_FILE2].pop.return_value = MSG_FILE2
+    clean_ongoing_transfer.return_value = [MSG_FILE2]
     send_request.return_value = [MSG_FILE2, 'localhost']
     publisher = MagicMock()
     kwargs = {'transfer_req_timeout': 1.0, 'req_timeout': 1.0}
@@ -593,22 +591,26 @@ def test_request_push(send_ack, send_request, terminate_transfers,
                  **kwargs)
 
     send_request.assert_called_once()
-    send_ack.assert_not_called()
+    send_ack.assert_called_once()
     # The file should be added to ongoing transfers
-    add_to_ongoing.assert_called_once()
+    assert UID_FILE2 in ongoing_transfers
     # And removed
-    ongoing_transfers[UID_FILE2].pop.assert_called_once()
+    clean_ongoing_transfer.assert_called_once_with(UID_FILE2)
+    # Clear the ongoing transfers as it would've been without mocking
+    ongoing_transfers.clear()
     # The transferred file should be in the cache
     assert MSG_FILE2.data['uid'] in file_cache
     assert len(file_cache) == 1
 
     # Request the same file again. Now the transfer should not be
-    # started again, and `send_ack()` should be called.
+    # started again, and `send_ack()` should have been called again.
     request_push(MSG_FILE2, gettempdir(), 'login', publisher=publisher,
                  **kwargs)
 
-    send_ack.assert_called_once()
+    assert send_ack.call_count == 2
     send_request.assert_called_once()
+    # The new "ongoing" transfer should be cleared
+    assert clean_ongoing_transfer.call_count == 2
 
 
 def test_read_config():
