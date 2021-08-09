@@ -27,7 +27,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -U codecov pytest pytest-cov pyyaml trollsift posttroll inotify paramiko scp
+          pip install -U codecov pytest pytest-cov pyyaml trollsift posttroll inotify pyinotify paramiko scp
 
       - name: Install trollmoves
         run: |
