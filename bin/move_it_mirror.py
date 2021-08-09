@@ -20,59 +20,63 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+"""Move it Mirror."""
 
-import logging
 import logging.handlers
-import os
 from threading import Lock, Timer
-from six.moves.urllib.parse import urlparse, urlunparse
+from urllib.parse import urlunparse
 import argparse
 
 from posttroll.message import Message
 from posttroll.publisher import Publisher, get_own_ip
 from trollmoves.move_it_base import MoveItBase
-from trollmoves.client import Listener, request_push
-from trollmoves.server import Deleter, RequestManager, reload_config
+from trollmoves.client import Listener
+from trollmoves.server import reload_config
+from trollmoves.mirror import MirrorRequestManager, file_registry
 
 LOGGER = logging.getLogger("move_it_mirror")
 LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
 
-# FIXME: don't use globals
-file_registry = {}
-
 
 class MoveItMirror(MoveItBase):
+    """Mirror for move_it."""
 
     def __init__(self, cmd_args):
+        """Set up the mirror."""
         super(MoveItMirror, self).__init__(cmd_args, "mirror")
         self.cache_lock = Lock()
         LOGGER.info("Starting publisher on port %s.", str(cmd_args.port))
         self.pub = Publisher("tcp://*:" + str(cmd_args.port), "move_it_mirror")
 
     def reload_cfg_file(self, filename):
+        """Reload the config file."""
         reload_config(filename, self.chains, self.create_listener_notifier,
                       MirrorRequestManager, self.pub)
 
     def signal_reload_cfg_file(self, *args):
+        """Reload the config file when we get a signal."""
         del args
         reload_config(self.cmd_args.config_file, self.chains,
                       self.create_listener_notifier,
                       MirrorRequestManager, self.pub)
 
     def create_listener_notifier(self, attrs, publisher):
-
+        """Create a listener notifier."""
         request_address = attrs.get("request_address",
                                     get_own_ip()) + ":" + attrs["request_port"]
 
         delay = float(attrs.get('delay', 0))
         if delay > 0:
             def send(msg):
+                """Delay the sending."""
                 Timer(delay, publisher.send, [msg]).start()
         else:
             def send(msg):
+                """Use the regular publisher to send."""
                 publisher.send(msg)
 
         def publish_callback(msg, *args, **kwargs):
+            """Forward an updated message."""
             del args
             del kwargs
             # save to file_cache
@@ -98,12 +102,15 @@ class MoveItMirror(MoveItBase):
 
 
 def foo(*args, **kwargs):
+    """Do not do anything."""
     pass
 
 
 class Listeners(object):
+    """Class for multiple listeners."""
 
     def __init__(self, callback, client_topic, providers, **attrs):
+        """Set up the listeners."""
         self.listeners = []
         if client_topic is None:
             client_topic = []
@@ -124,45 +131,18 @@ class Listeners(object):
                 callback, **attrs))
 
     def start(self):
+        """Start the listeners."""
         for listener in self.listeners:
             listener.start()
 
     def stop(self):
+        """Stop the listeners."""
         for listener in self.listeners:
             listener.stop()
 
 
-class MirrorRequestManager(RequestManager):
-
-    def __init__(self, *args, **kwargs):
-        RequestManager.__init__(self, *args, **kwargs)
-        self._deleter = MirrorDeleter()
-
-    def push(self, message):
-        new_uri = None
-        for source_message in file_registry.get(message.data['uid'], []):
-            request_push(source_message, publisher=None, **self._attrs)
-            destination = urlparse(self._attrs['destination']).path
-            new_uri = os.path.join(destination, message.data['uid'])
-            if os.path.exists(new_uri):
-                break
-        if new_uri is None:
-            raise KeyError('No source message found for %s',
-                           str(message.data['uid']))
-        message.data['uri'] = new_uri
-        return RequestManager.push(self, message)
-
-
-class MirrorDeleter(Deleter):
-
-    @staticmethod
-    def delete(filename, cache_lock, file_cache):
-        Deleter.delete(filename)
-        with cache_lock:
-            file_cache.pop(os.path.basename(filename), None)
-
-
 def parse_args():
+    """Parse the command line arguments."""
     parser = argparse.ArgumentParser()
     parser.add_argument("config_file",
                         help="The configuration file to run on.")
@@ -180,7 +160,7 @@ def parse_args():
 
 
 def main():
-
+    """Start the mirroring."""
     cmd_args = parse_args()
     mirror = MoveItMirror(cmd_args)
 
