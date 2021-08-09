@@ -132,4 +132,4 @@ class TestDeleter(unittest.TestCase):
     def test_empty_init_arguments_does_not_crash_add(self):
         """Test that empty init arguments still work."""
         from trollmoves.server import Deleter
-        Deleter().add('bla')
+        Deleter(dict()).add('bla')
