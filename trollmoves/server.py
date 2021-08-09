@@ -47,8 +47,8 @@ from posttroll import get_context
 from posttroll.message import Message
 from posttroll.publisher import get_own_ip
 from posttroll.subscriber import Subscribe
-from six.moves.configparser import RawConfigParser
-from six.moves.queue import Empty, Queue
+from configparser import RawConfigParser
+from queue import Empty, Queue
 from six.moves.urllib.parse import urlparse
 from trollmoves.client import DEFAULT_REQ_TIMEOUT
 from trollmoves.movers import move_it

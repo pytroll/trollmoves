@@ -24,7 +24,7 @@
 
 import os
 
-from six.moves.urllib.parse import urlparse
+from urllib.parse import urlparse
 
 from trollmoves.client import request_push
 from trollmoves.server import RequestManager, Deleter

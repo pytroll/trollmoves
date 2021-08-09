@@ -22,10 +22,9 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """Move it Mirror."""
 
-import logging
 import logging.handlers
 from threading import Lock, Timer
-from six.moves.urllib.parse import urlunparse
+from urllib.parse import urlunparse
 import argparse
 
 from posttroll.message import Message
