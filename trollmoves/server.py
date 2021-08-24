@@ -47,13 +47,13 @@ from posttroll import get_context
 from posttroll.message import Message
 from posttroll.publisher import get_own_ip
 from posttroll.subscriber import Subscribe
-from six.moves.configparser import RawConfigParser
-from six.moves.queue import Empty, Queue
+from configparser import RawConfigParser
+from queue import Empty, Queue
 from six.moves.urllib.parse import urlparse
 from trollmoves.client import DEFAULT_REQ_TIMEOUT
 from trollmoves.movers import move_it
 from trollmoves.utils import (clean_url, gen_dict_contains, gen_dict_extract,
-                              get_local_ips, is_file_local)
+                              is_file_local)
 from trollsift import globify, parse
 
 LOGGER = logging.getLogger(__name__)
@@ -79,7 +79,7 @@ class Deleter(Thread):
         self.queue = Queue()
         self.timer = None
         self.loop = True
-        self._attrs = attrs
+        self._attrs = attrs or dict()
 
     def add(self, filename):
         """Schedule file for deletion."""
@@ -108,12 +108,16 @@ class Deleter(Thread):
 
     @staticmethod
     def delete(filename):
-        """Delete the given file."""
+        """Delete the given file.
+
+        If the file is not present, this function does *not* raise an error.
+        """
         try:
             os.remove(filename)
         except OSError as err:
             if err.errno != errno.ENOENT:
                 raise
+            LOGGER.debug("File already deleted: %s", filename)
 
     def stop(self):
         """Stop the deleter."""
@@ -498,7 +502,9 @@ def create_watchdog_notifier(attrs, publisher):
     pattern = globify(attrs["origin"])
     opath = os.path.dirname(pattern)
 
-    observer = PollingObserver()
+    timeout = float(attrs.get("watchdog_timeout", 1.))
+    LOGGER.debug("Watchdog timeout: %.1f", timeout)
+    observer = PollingObserver(timeout=timeout)
     handler = WatchdogHandler(process_notify, publisher, pattern, attrs)
 
     observer.schedule(handler, opath)
