@@ -298,7 +298,7 @@ class RequestManager(Thread):
                     except (TypeError, IndexError):
                         LOGGER.warning("Address unknow, not sending an error message back.")
                     else:
-                        message = Message('error', 'error', "Invalid message recieved")
+                        message = Message('error', 'error', "Invalid message received")
                         Thread(target=self.reply_and_send,
                                args=(self.unknown, address, message)).start()
                         LOGGER.warning("Sent error message back.")
