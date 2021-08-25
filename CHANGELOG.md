@@ -1,3 +1,39 @@
+## Version v0.7.0 (2021/08/25)
+
+### Issues Closed
+
+* [Issue 88](https://github.com/pytroll/trollmoves/issues/88) - Trollmoves Client leaks memory ([PR 89](https://github.com/pytroll/trollmoves/pull/89) by [@pnuu](https://github.com/pnuu))
+* [Issue 86](https://github.com/pytroll/trollmoves/issues/86) - Re-establishing connection for Trollmoves Client after network glitches
+* [Issue 81](https://github.com/pytroll/trollmoves/issues/81) - Not answering an invalid request could lock the client ([PR 82](https://github.com/pytroll/trollmoves/pull/82) by [@mraspaud](https://github.com/mraspaud))
+
+In this release 3 issues were closed.
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 94](https://github.com/pytroll/trollmoves/pull/94) - Fix attribute passing to the mirror deleter
+* [PR 89](https://github.com/pytroll/trollmoves/pull/89) - Ensure transfers are cleared from ongoing transfers after duplicate messages ([88](https://github.com/pytroll/trollmoves/issues/88))
+* [PR 84](https://github.com/pytroll/trollmoves/pull/84) - Fix publisher handling
+
+#### Features added
+
+* [PR 83](https://github.com/pytroll/trollmoves/pull/83) - Add configurable poll interval (timeout) to watchdog poller
+* [PR 82](https://github.com/pytroll/trollmoves/pull/82) - Try to reply to invalid messages ([81](https://github.com/pytroll/trollmoves/issues/81))
+
+In this release 5 pull requests were closed.
+
+
+## Version 0.6.2 (2020/12/02)
+
+### Pull Requests Merged
+
+#### Bugs fixed
+* [PR 79](https://github.com/pytroll/trollmoves/pull/79) - Fix publisher name for MoveItServer
+
+In this release 1 pull request was closed.
+
+
 ## Version 0.6.1 (2020/06/08)
 
 ### Issues Closed
