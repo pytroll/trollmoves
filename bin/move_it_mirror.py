@@ -29,7 +29,8 @@ import argparse
 
 from posttroll.message import Message
 from posttroll.publisher import Publisher, get_own_ip
-from trollmoves.move_it_base import MoveItBase
+
+from trollmoves.move_it_base import MoveItBase, create_publisher
 from trollmoves.client import Listener
 from trollmoves.server import reload_config
 from trollmoves.mirror import MirrorRequestManager, file_registry
@@ -43,22 +44,19 @@ class MoveItMirror(MoveItBase):
 
     def __init__(self, cmd_args):
         """Set up the mirror."""
-        super(MoveItMirror, self).__init__(cmd_args, "mirror")
+        publisher = create_publisher(cmd_args.port, "move_it_mirror")
+        super(MoveItMirror, self).__init__(cmd_args, "mirror", publisher=publisher)
         self.cache_lock = Lock()
-        LOGGER.info("Starting publisher on port %s.", str(cmd_args.port))
-        self.pub = Publisher("tcp://*:" + str(cmd_args.port), "move_it_mirror")
 
     def reload_cfg_file(self, filename):
         """Reload the config file."""
         reload_config(filename, self.chains, self.create_listener_notifier,
-                      MirrorRequestManager, self.pub)
+                      MirrorRequestManager, publisher=self.sync_publisher)
 
     def signal_reload_cfg_file(self, *args):
         """Reload the config file when we get a signal."""
         del args
-        reload_config(self.cmd_args.config_file, self.chains,
-                      self.create_listener_notifier,
-                      MirrorRequestManager, self.pub)
+        self.reload_cfg_file(self.cmd_args.config_file)
 
     def create_listener_notifier(self, attrs, publisher):
         """Create a listener notifier."""

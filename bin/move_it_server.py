@@ -97,8 +97,7 @@ import logging.handlers
 import argparse
 import signal
 import time
-from posttroll.publisher import Publisher
-from trollmoves.move_it_base import MoveItBase
+from trollmoves.move_it_base import MoveItBase, create_publisher
 
 LOGGER = logging.getLogger("move_it_server")
 LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
@@ -109,9 +108,8 @@ class MoveItServer(MoveItBase):
 
     def __init__(self, cmd_args):
         """Initialize server."""
-        super(MoveItServer, self).__init__(cmd_args, "server")
-        LOGGER.info("Starting publisher on port %s.", str(cmd_args.port))
-        self.sync_publisher = Publisher("tcp://*:" + str(cmd_args.port), "move_it_server")
+        publisher = create_publisher(cmd_args.port, "move_it_server")
+        super(MoveItServer, self).__init__(cmd_args, "server", publisher=publisher)
 
     def run(self):
         """Start the transfer chains."""
