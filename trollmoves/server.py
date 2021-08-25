@@ -296,7 +296,16 @@ class RequestManager(Thread):
                 try:
                     address, _, payload = multiparts
                 except ValueError:
-                    LOGGER.warning("Invalid request, ignoring.")
+                    LOGGER.warning("Invalid request.")
+                    try:
+                        address = multiparts[0]
+                    except (TypeError, IndexError):
+                        LOGGER.warning("Address unknown, not sending an error message back.")
+                    else:
+                        message = Message('error', 'error', "Invalid message received")
+                        Thread(target=self.reply_and_send,
+                               args=(self.unknown, address, message)).start()
+                        LOGGER.warning("Sent error message back.")
                     continue
 
                 message = Message(rawstr=payload)
