@@ -296,7 +296,7 @@ class RequestManager(Thread):
                     try:
                         address = multiparts[0]
                     except (TypeError, IndexError):
-                        LOGGER.warning("Address unknow, not sending an error message back.")
+                        LOGGER.warning("Address unknown, not sending an error message back.")
                     else:
                         message = Message('error', 'error', "Invalid message received")
                         Thread(target=self.reply_and_send,
