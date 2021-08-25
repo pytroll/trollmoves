@@ -266,8 +266,7 @@ def unpack_tar(filename, **kwargs):
     fnames = tuple(os.path.join(destdir, member.name) for member in members)
     if len(fnames) == 1:
         return fnames[0]
-    else:
-        return fnames
+    return fnames
 
 
 def unpack_xrit(filename, **kwargs):
@@ -343,9 +342,9 @@ def resend_if_local(msg, publisher):
         urlobj = urlparse(uri)
         if not publisher or not socket.gethostbyname(urlobj.netloc) in get_local_ips():
             return
-    else:
-        LOGGER.debug('Sending: %s', str(msg))
-        publisher.send(str(msg))
+
+    LOGGER.debug('Sending: %s', str(msg))
+    publisher.send(str(msg))
 
 
 def create_push_req_message(msg, destination, login):
@@ -530,9 +529,8 @@ def add_to_ongoing(msg):
         if huid in ongoing_transfers:
             ongoing_transfers[huid].append(msg)
             return None
-        else:
-            ongoing_transfers[huid] = [msg]
-            return huid
+        ongoing_transfers[huid] = [msg]
+        return huid
 
 
 def add_to_file_cache(msg):
@@ -544,15 +542,16 @@ def add_to_file_cache(msg):
                 file_cache.append(uid)
 
 
-def request_push(msg, destination, login=None, sync_publisher=None, publisher=None, **kwargs):
+def request_push(msg_in, destination, login=None, sync_publisher=None, publisher=None, **kwargs):
     """Request a push for data."""
-    huid = add_to_ongoing(msg)
+    huid = add_to_ongoing(msg_in)
     if huid is None:
         return
 
-    if already_received(msg):
+    if already_received(msg_in):
         timeout = float(kwargs["req_timeout"])
-        send_ack(msg, timeout)
+        send_ack(msg_in, timeout)
+        _ = clean_ongoing_transfer(huid)
         return
 
     for msg in iterate_messages(huid):

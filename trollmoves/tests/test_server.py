@@ -23,6 +23,7 @@
 """Test Trollmoves server."""
 
 from unittest.mock import MagicMock, patch
+import unittest
 from tempfile import TemporaryDirectory
 import os
 
@@ -54,6 +55,32 @@ def test_create_watchdog_notifier(process_notify):
         observer.join()
 
     fun.assert_called_with(file_path, publisher, globify(pattern_path), attrs)
+
+
+@patch("trollmoves.server.WatchdogHandler")
+@patch("trollmoves.server.PollingObserver")
+@patch("trollmoves.server.process_notify")
+def test_create_watchdog_notifier_timeout(process_notify,
+                                          PollingObserver,
+                                          WatchdogHandler):
+    """Test creating a watchdog notifier."""
+    from trollmoves.server import create_watchdog_notifier
+
+    attrs = {"origin": "/tmp"}
+    publisher = ""
+    # No timeout, the default should be used
+    observer, fun = create_watchdog_notifier(attrs, publisher)
+    PollingObserver.assert_called_with(timeout=1.0)
+
+    # User-supplied timeout
+    attrs["watchdog_timeout"] = 2.0
+    observer, fun = create_watchdog_notifier(attrs, publisher)
+    PollingObserver.assert_called_with(timeout=2.0)
+
+    # The timeout is actually a string from the config, so lets test that
+    attrs["watchdog_timeout"] = "3.0"
+    observer, fun = create_watchdog_notifier(attrs, publisher)
+    PollingObserver.assert_called_with(timeout=3.0)
 
 
 @patch("trollmoves.server.Message")
@@ -106,3 +133,12 @@ def test_create_publisher():
     pub = create_publisher(40000, "test_move_it_server")
     assert pub.name == "test_move_it_server"
     assert pub.port_number == 40000
+
+
+class TestDeleter(unittest.TestCase):
+    """Test the deleter."""
+
+    def test_empty_init_arguments_does_not_crash_add(self):
+        """Test that empty init arguments still work."""
+        from trollmoves.server import Deleter
+        Deleter(dict()).add('bla')
