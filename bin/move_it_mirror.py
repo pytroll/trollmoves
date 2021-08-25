@@ -54,9 +54,7 @@ class MoveItMirror(MoveItBase):
 
     def signal_reload_cfg_file(self, *args):
         del args
-        reload_config(self.cmd_args.config_file, self.chains,
-                      self.create_listener_notifier,
-                      MirrorRequestManager, self.sync_publisher)
+        self.reload_cfg_file(self.cmd_args.config_file)
 
     def create_listener_notifier(self, attrs, publisher):
 
