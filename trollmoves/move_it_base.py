@@ -28,6 +28,7 @@ import logging.handlers
 import os
 
 import pyinotify
+from posttroll.publisher import Publisher
 
 from trollmoves.server import EventHandler
 
@@ -135,3 +136,9 @@ def setup_logging(cmd_args, chain_type):
         logger_name = "move_it_mirror"
     LOGGER = logging.getLogger(logger_name)
     pyinotify.log.handlers = [fh_]
+
+
+def create_publisher(port, publisher_name):
+    """Create a publisher using port *port*."""
+    LOGGER.info("Starting publisher on port %s.", str(port))
+    return Publisher("tcp://*:" + str(port), publisher_name)

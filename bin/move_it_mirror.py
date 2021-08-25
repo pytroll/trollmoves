@@ -30,7 +30,7 @@ import argparse
 
 from posttroll.message import Message
 from posttroll.publisher import Publisher, get_own_ip
-from trollmoves.move_it_base import MoveItBase
+from trollmoves.move_it_base import MoveItBase, create_publisher
 from trollmoves.client import Listener, request_push
 from trollmoves.server import Deleter, RequestManager, reload_config
 
@@ -44,8 +44,7 @@ file_registry = {}
 class MoveItMirror(MoveItBase):
 
     def __init__(self, cmd_args):
-        LOGGER.info("Starting publisher on port %s.", str(cmd_args.port))
-        publisher = Publisher("tcp://*:" + str(cmd_args.port), "move_it_mirror")
+        publisher = create_publisher(cmd_args.port, "move_it_mirror")
         super(MoveItMirror, self).__init__(cmd_args, "mirror", publisher=publisher)
         self.cache_lock = Lock()
 
