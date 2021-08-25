@@ -126,15 +126,6 @@ def test_process_notify(Message):
             assert len(file_cache) == 1
 
 
-def test_create_publisher():
-    """Test that publisher is created"""
-    from trollmoves.move_it_base import create_publisher
-
-    pub = create_publisher(40000, "test_move_it_server")
-    assert pub.name == "test_move_it_server"
-    assert pub.port_number == 40000
-
-
 class TestDeleter(unittest.TestCase):
     """Test the deleter."""
 
