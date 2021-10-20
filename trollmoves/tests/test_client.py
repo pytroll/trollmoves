@@ -653,7 +653,7 @@ def test_reload_config(Listener, NoisyPublisher):
 
     try:
         reload_config(config_fname_1, chains, callback=callback,
-                      sync_publisher='pub')
+                      publisher='pub')
         section_name = "eumetcast_hrit_0deg_scp_hot_spare"
         assert section_name in chains
         listeners = chains[section_name].listeners
@@ -667,7 +667,7 @@ def test_reload_config(Listener, NoisyPublisher):
         chains[section_name].stop()
         # Reload the same config again, nothing should happen
         reload_config(config_fname_1, chains, callback=callback,
-                      sync_publisher='pub')
+                      publisher='pub')
         for key in listeners:
             assert listeners[key].start.call_count == 4
         NoisyPublisher.assert_called_once()
@@ -676,7 +676,7 @@ def test_reload_config(Listener, NoisyPublisher):
 
         # Load a new config with one new item
         reload_config(config_fname_2, chains, callback=callback,
-                      sync_publisher='pub')
+                      publisher='pub')
         assert len(chains) == 2
         assert "foo" in chains
         # One additional call to publisher and listener
@@ -687,7 +687,7 @@ def test_reload_config(Listener, NoisyPublisher):
 
         # Load the first config again, the other chain should have been removed
         reload_config(config_fname_1, chains, callback=callback,
-                      sync_publisher='pub')
+                      publisher='pub')
         assert "foo" not in chains
         # No new calls to publisher nor listener
         assert NoisyPublisher.call_count == 2
@@ -766,8 +766,8 @@ def test_chain(Listener, NoisyPublisher, caplog):
 
     # Setup listeners
     callback = MagicMock()
-    sync_pub_instance = MagicMock()
-    chain.setup_listeners(callback, sync_pub_instance)
+    pub_instance = MagicMock()
+    chain.setup_listeners(callback, pub_instance)
     assert len(chain.listeners) == 4
 
     # Check running with alive listeners

@@ -46,7 +46,7 @@ class MoveItBase(object):
         self.running = False
         self.notifier = None
         self.watchman = None
-        self.sync_publisher = publisher
+        self.publisher = publisher
         self._np = None
         self.chains = {}
         setup_logging(cmd_args, chain_type)
@@ -57,12 +57,12 @@ class MoveItBase(object):
         """Reload configuration file."""
         if self.chain_type == "client":
             from trollmoves.client import reload_config
-            reload_config(filename, self.chains, *args, sync_publisher=self.sync_publisher,
+            reload_config(filename, self.chains, *args, publisher=self.publisher,
                           **kwargs)
         else:
             # Also Mirror uses the reload_config from the Server
             from trollmoves.server import reload_config
-            reload_config(filename, self.chains, *args, publisher=self.sync_publisher,
+            reload_config(filename, self.chains, *args, publisher=self.publisher,
                           use_watchdog=self.cmd_args.watchdog,
                           disable_backlog=self.cmd_args.disable_backlog)
 
@@ -72,11 +72,11 @@ class MoveItBase(object):
         if self.chain_type == "client":
             from trollmoves.client import reload_config
             reload_config(self.cmd_args.config_file, self.chains,
-                          sync_publisher=self.sync_publisher)
+                          publisher=self.publisher)
         else:
             from trollmoves.server import reload_config
             reload_config(self.cmd_args.config_file, self.chains,
-                          publisher=self.sync_publisher,
+                          publisher=self.publisher,
                           use_watchdog=self.cmd_args.watchdog,
                           disable_backlog=self.cmd_args.disable_backlog)
 

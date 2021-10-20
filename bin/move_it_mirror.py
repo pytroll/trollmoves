@@ -51,7 +51,7 @@ class MoveItMirror(MoveItBase):
     def reload_cfg_file(self, filename):
         """Reload the config file."""
         reload_config(filename, self.chains, self.create_listener_notifier,
-                      MirrorRequestManager, publisher=self.sync_publisher)
+                      MirrorRequestManager, publisher=self.publisher)
 
     def signal_reload_cfg_file(self, *args):
         """Reload the config file when we get a signal."""

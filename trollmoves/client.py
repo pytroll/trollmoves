@@ -552,7 +552,7 @@ def add_to_file_cache(msg):
                 file_cache.append(uid)
 
 
-def request_push(msg_in, destination, login=None, sync_publisher=None, publisher=None, **kwargs):
+def request_push(msg_in, destination, login=None, publisher=None, **kwargs):
     """Request a push for data."""
     huid = add_to_ongoing(msg_in)
     if huid is None:
@@ -581,20 +581,18 @@ def request_push(msg_in, destination, login=None, sync_publisher=None, publisher
         timeout = float(kwargs["transfer_req_timeout"])
         local_dir = create_local_dir(_destination, kwargs.get('ftp_root', '/'))
 
-        if sync_publisher:
-            sync_publisher.send(str(fake_req))
+        publisher.send(str(fake_req))
         response, hostname = send_request(msg, req, timeout)
 
         if response and response.type in ['file', 'collection', 'dataset']:
             LOGGER.debug("Server done sending file")
             add_to_file_cache(msg)
-            if sync_publisher:
-                # Send an 'ack' message so that possible hot spares know
-                # the primary has completed the request
-                msg = Message(msg.subject, 'ack', msg.data)
-                LOGGER.debug("Sending a public 'ack' of completed transfer: %s",
-                             str(msg))
-                sync_publisher.send(str(msg))
+            # Send an 'ack' message so that possible hot spares know
+            # the primary has completed the request
+            msg = Message(msg.subject, 'ack', msg.data)
+            LOGGER.debug("Sending a public 'ack' of completed transfer: %s",
+                         str(msg))
+            publisher.send(str(msg))
             try:
                 lmsg = unpack_and_create_local_message(response, local_dir,
                                                        **kwargs)
@@ -633,25 +631,26 @@ class Chain(Thread):
         self.listeners = {}
         self.listener_died_event = Event()
         self.running = True
-        self.sync_publisher = None
 
         # Setup publisher
         try:
             nameservers = self._config["nameservers"]
             if nameservers:
                 nameservers = nameservers.split()
-            self.publisher = NoisyPublisher(
+            self._np = NoisyPublisher(
                 "move_it_" + self._name,
                 port=self._config["publish_port"],
                 nameservers=nameservers)
-            self.publisher.start()
+            self.publisher = self._np.start()
         except (KeyError, NameError):
             pass
 
-    def setup_listeners(self, callback, sync_publisher):
+
+    def setup_listeners(self, callback, publisher):
         """Set up the listeners."""
         self.callback = callback
-        self.sync_publisher = sync_publisher
+        if self.publisher is None and publisher is not None:
+            self.publisher = publisher
         try:
             topics = []
             if "topic" in self._config:
@@ -676,7 +675,6 @@ class Chain(Thread):
                     provider,
                     topics,
                     callback,
-                    sync_publisher=sync_publisher,
                     publisher=self.publisher,
                     die_event=self.listener_died_event,
                     **self._config)
@@ -737,20 +735,20 @@ class Chain(Thread):
     def stop(self):
         """Stop the chain."""
         self.running = False
-        if self.publisher:
-            self.publisher.stop()
+        if self._np:
+            self._np.stop()
         self.reset_listeners()
 
     def restart(self):
         """Restart the chain, return a new running instance."""
         self.stop()
         new_chain = self.__class__(self._name, self._config)
-        new_chain.setup_listeners(self.callback, self.sync_publisher)
+        new_chain.setup_listeners(self.callback, self.publisher)
         new_chain.start()
         return new_chain
 
 
-def reload_config(filename, chains, callback=request_push, sync_publisher=None):
+def reload_config(filename, chains, callback=request_push, publisher=None):
     """Rebuild chains if needed (if the configuration changed) from *filename*."""
     LOGGER.debug("New config file detected: %s", filename)
 
@@ -770,7 +768,7 @@ def reload_config(filename, chains, callback=request_push, sync_publisher=None):
             verb = "Added"
             LOGGER.debug("Adding %s", key)
         chains[key] = Chain(key, new_config)
-        chains[key].setup_listeners(callback, sync_publisher)
+        chains[key].setup_listeners(callback, publisher)
         chains[key].start()
 
         LOGGER.debug("%s %s", verb, key)

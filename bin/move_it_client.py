@@ -96,9 +96,6 @@ class MoveItClient(MoveItBase):
     def __init__(self, cmd_args):
         """Initialize client."""
         super(MoveItClient, self).__init__(cmd_args, "client")
-        self._np = NoisyPublisher("move_it_client")
-        self.sync_publisher = self._np.start()
-        self.setup_watchers(cmd_args)
 
     def run(self):
         """Start the transfer chains."""
@@ -108,10 +105,10 @@ class MoveItClient(MoveItBase):
         self.running = True
         while self.running:
             time.sleep(1)
-            self.sync_publisher.heartbeat(30)
             for chain_name in self.chains:
                 if not self.chains[chain_name].is_alive():
                     self.chains[chain_name] = self.chains[chain_name].restart()
+                self.chains[chain_name].publisher.heartbeat(30)
 
 
 def parse_args():
