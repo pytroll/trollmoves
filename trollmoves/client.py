@@ -213,12 +213,22 @@ class Listener(Thread):
                             # client and are not cleared
                             LOGGER.debug("Primary client published 'push'")
                             add_to_ongoing(msg)
+                            continue
 
                         # Handle public "ack" messages as a hot spare client
                         if msg.type == "ack":
                             LOGGER.debug("Primary client finished transfer")
                             _ = add_to_file_cache(msg)
                             _ = clean_ongoing_transfer(get_msg_uid(msg))
+                            continue
+
+                        # Ignore "file" messages which don't have a request address
+                        if msg.type == "file" and "request_address" not in msg.data:
+                            LOGGER.debug("Ignoring 'file' message from primary client.")
+                            add_to_ongoing(msg)
+                            _ = add_to_file_cache(msg)
+                            _ = clean_ongoing_transfer(get_msg_uid(msg))
+                            continue
 
                         # If this is a hot spare client, wait for a while
                         # for a public "push" message which will update
