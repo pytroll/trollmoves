@@ -206,6 +206,7 @@ class Listener(Thread):
                         if msg.type == "beat":
                             self.death_count = 0
                             continue
+
                         # Handle public "push" messages as a hot spare client
                         if msg.type == "push":
                             # TODO: these need to be checked and acted if
@@ -627,6 +628,7 @@ class Chain(Thread):
         super(Chain, self).__init__()
         self._config = config
         self._name = name
+        self._np = None
         self.publisher = None
         self.listeners = {}
         self.listener_died_event = Event()
@@ -646,11 +648,9 @@ class Chain(Thread):
             pass
 
 
-    def setup_listeners(self, callback, publisher):
+    def setup_listeners(self, callback):
         """Set up the listeners."""
         self.callback = callback
-        if self.publisher is None and publisher is not None:
-            self.publisher = publisher
         try:
             topics = []
             if "topic" in self._config:
@@ -743,12 +743,12 @@ class Chain(Thread):
         """Restart the chain, return a new running instance."""
         self.stop()
         new_chain = self.__class__(self._name, self._config)
-        new_chain.setup_listeners(self.callback, self.publisher)
+        new_chain.setup_listeners(self.callback)
         new_chain.start()
         return new_chain
 
 
-def reload_config(filename, chains, callback=request_push, publisher=None):
+def reload_config(filename, chains, callback=request_push):
     """Rebuild chains if needed (if the configuration changed) from *filename*."""
     LOGGER.debug("New config file detected: %s", filename)
 
@@ -768,7 +768,7 @@ def reload_config(filename, chains, callback=request_push, publisher=None):
             verb = "Added"
             LOGGER.debug("Adding %s", key)
         chains[key] = Chain(key, new_config)
-        chains[key].setup_listeners(callback, publisher)
+        chains[key].setup_listeners(callback)
         chains[key].start()
 
         LOGGER.debug("%s %s", verb, key)

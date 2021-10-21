@@ -57,8 +57,7 @@ class MoveItBase(object):
         """Reload configuration file."""
         if self.chain_type == "client":
             from trollmoves.client import reload_config
-            reload_config(filename, self.chains, *args, publisher=self.publisher,
-                          **kwargs)
+            reload_config(filename, self.chains, *args, **kwargs)
         else:
             # Also Mirror uses the reload_config from the Server
             from trollmoves.server import reload_config
