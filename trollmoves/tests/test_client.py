@@ -27,7 +27,9 @@ from unittest.mock import MagicMock, patch, call
 from tempfile import NamedTemporaryFile
 import os
 import time
+from threading import Thread
 
+import pytest
 from posttroll.message import Message
 
 
@@ -367,134 +369,148 @@ publish_port = 0
 """
 
 
-@patch('trollmoves.client.hot_spare_timer_lock')
-@patch('trollmoves.client.CTimer')
-@patch('trollmoves.heartbeat_monitor.Monitor')
-@patch('trollmoves.client.Subscriber')
-def test_listener(Subscriber, Monitor, CTimer, hot_spare_timer_lock):
-    """Test listener."""
-    from trollmoves.client import (Listener, ongoing_transfers, file_cache,
-                                   ongoing_hot_spare_timers)
-
-    # Mock subscriber returning messages
-    subscriber = MagicMock()
-    Subscriber.return_value = subscriber
-
-    # Mock heartbeat monitor
-    beat_monitor = MagicMock()
-    Monitor.return_value.__enter__.return_value = beat_monitor
-    # Mock callback
+@pytest.fixture
+def listener():
     callback = MagicMock()
-    # Mock timer lock
-    timer_lock = MagicMock()
-    hot_spare_timer_lock.return_value.__enter__.return_value = timer_lock
+    with patch('trollmoves.client.CTimer'):
+        with patch('trollmoves.heartbeat_monitor.Monitor'):
+            with patch('trollmoves.client.Subscriber'):
+                from trollmoves.client import Listener
+                listener = Listener('127.0.0.1:0', ['/topic'], callback, 'arg1', 'arg2',
+                                    kwarg1='kwarg1', kwarg2='kwarg2')
+                yield listener
 
-    # Mock timer
-    timer = MagicMock()
-    CTimer.return_value = timer
 
-    # Create the listener that is configured with small processing
-    # delay so it works as it would in client meant to be a hot spare
-    listener = Listener('127.0.0.1:0', ['/topic'], callback, 'arg1', 'arg2',
-                        processing_delay=0.02,
-                        kwarg1='kwarg1', kwarg2='kwarg2')
+@pytest.fixture
+def delayed_listener():
+    callback = MagicMock()
+    with patch('trollmoves.client.CTimer'):
+        with patch('trollmoves.heartbeat_monitor.Monitor'):
+            with patch('trollmoves.client.Subscriber'):
+                from trollmoves.client import Listener
+                listener = Listener('127.0.0.1:0', ['/topic'], callback, 'arg1', 'arg2',
+                                    processing_delay=0.02,
+                                    kwarg1='kwarg1', kwarg2='kwarg2')
+                yield listener
 
-    # Test __init__
-    assert listener.topics == ['/topic']
-    assert listener.callback is callback
-    assert listener.subscriber is None
-    assert listener.address == '127.0.0.1:0'
-    assert listener.running is False
-    assert listener.cargs == ('arg1', 'arg2')
+
+def test_listener_init(delayed_listener):
+    """Test listener init."""
+    assert delayed_listener.topics == ['/topic']
+    assert delayed_listener.callback is not None
+    assert delayed_listener.subscriber is None
+    assert delayed_listener.address == '127.0.0.1:0'
+    assert delayed_listener.running is False
+    assert delayed_listener.cargs == ('arg1', 'arg2')
     kwargs = {'processing_delay': 0.02, 'kwarg1': 'kwarg1', 'kwarg2': 'kwarg2'}
-    for key, itm in listener.ckwargs.items():
+    for key, itm in delayed_listener.ckwargs.items():
         assert kwargs[key] == itm
 
-    # "Receive" a 'push' message
-    subscriber.return_value = [MSG_PUSH]
-    # Raise something to stop listener
-    timer.start.side_effect = [StopIteration]
-    try:
-        listener.run()
-    except StopIteration:
-        pass
-    assert len(file_cache) == 0
-    assert len(ongoing_transfers) == 1
-    CTimer.assert_called_once_with(0.02, callback,
-                                   args=[MSG_PUSH, 'arg1', 'arg2'],
-                                   kwargs=kwargs)
-    assert UID_FILE1 in ongoing_hot_spare_timers
-    ongoing_hot_spare_timers[UID_FILE1].start.assert_called_once()
-    assert listener.subscriber is subscriber
-    assert listener.running
-    beat_monitor.assert_called()
-    # Reset
-    ongoing_transfers = dict()
 
-    # "Receive" 'push' and 'ack' messages
-    subscriber.return_value = [MSG_PUSH, MSG_ACK]
-    # Raise something to stop listener
-    timer.start.side_effect = [None, StopIteration]
-    try:
-        listener.run()
-    except StopIteration:
-        pass
-    assert len(file_cache) == 1
-    assert len(ongoing_transfers) == 0
-    assert len(timer.start.mock_calls) == 3
+@patch('trollmoves.client.add_to_ongoing')
+@patch('trollmoves.client.add_to_file_cache')
+def test_listener_push_message(add_to_file_cache, add_to_ongoing, delayed_listener):
+    """Test listener push message."""
+    delayed_listener.create_subscriber()
+    delayed_listener.subscriber.return_value = [MSG_PUSH]
 
-    # Receive also a 'file' and 'beat' messages
-    subscriber.return_value = [MSG_PUSH, MSG_ACK, MSG_BEAT, MSG_FILE1]
-    timer.start.side_effect = [None, None, StopIteration]
-    try:
-        listener.run()
-    except StopIteration:
-        pass
-    assert len(file_cache) == 1
-    assert len(ongoing_transfers) == 0
-    # Messages with type 'beat' don't increment call-count
-    assert len(timer.start.mock_calls) == 6
+    _run_listener_in_thread(delayed_listener)
 
-    # Test listener.stop()
+    add_to_file_cache.assert_not_called()
+    add_to_ongoing.assert_called_with(MSG_PUSH)
+
+
+@patch('trollmoves.client.clean_ongoing_transfer')
+@patch('trollmoves.client.add_to_file_cache')
+def test_listener_ack_message(add_to_file_cache, clean_ongoing_transfer, delayed_listener):
+    """Test listener with ack message."""
+    delayed_listener.create_subscriber()
+    delayed_listener.subscriber.return_value = [MSG_ACK]
+
+    _run_listener_in_thread(delayed_listener)
+
+    clean_ongoing_transfer.assert_called_with("826e8142e6baabe8af779f5f490cf5f5")
+    add_to_file_cache.assert_called_with(MSG_ACK)
+
+
+@patch('trollmoves.client.add_timer')
+@patch('trollmoves.client.add_to_ongoing')
+@patch('trollmoves.client.clean_ongoing_transfer')
+@patch('trollmoves.client.add_to_file_cache')
+def test_listener_beat_message(add_to_file_cache, clean_ongoing_transfer, add_to_ongoing, add_timer, delayed_listener):
+    """Test listener with beat message."""
+    delayed_listener.create_subscriber()
+    delayed_listener.subscriber.return_value = [MSG_BEAT]
+
+    _run_listener_in_thread(delayed_listener)
+
+    add_to_file_cache.assert_not_called()
+    add_to_ongoing.assert_not_called()
+    add_timer.assert_not_called()
+    clean_ongoing_transfer.assert_not_called()
+
+
+@patch('trollmoves.client.add_timer')
+@patch('trollmoves.client.add_to_ongoing')
+@patch('trollmoves.client.clean_ongoing_transfer')
+@patch('trollmoves.client.add_to_file_cache')
+@patch('trollmoves.client.CTimer')
+def test_listener_sync_file_message(
+        CTimer, add_to_file_cache, clean_ongoing_transfer, add_to_ongoing, add_timer, delayed_listener):
+    """Test listener with a file message from another client."""
+    from trollmoves.client import get_msg_uid
+
+    delayed_listener.create_subscriber()
+    delayed_listener.subscriber.return_value = [MSG_FILE1]
+
+    _run_listener_in_thread(delayed_listener)
+
+    CTimer.assert_not_called()
+    add_to_file_cache.assert_called_with(MSG_FILE1)
+    clean_ongoing_transfer.assert_called_with(get_msg_uid(MSG_FILE1))
+    add_to_ongoing.assert_called_with(MSG_FILE1)
+    add_timer.assert_not_called()
+
+
+@patch('trollmoves.client.CTimer')
+def test_listener_file_message(CTimer, delayed_listener):
+    """Test listener with a file message from Trollmoves Server."""
+    delayed_listener.create_subscriber()
+    delayed_listener.subscriber.return_value = [MSG_FILE2]
+    _run_listener_in_thread(delayed_listener)
+
+    CTimer.assert_called()
+
+
+@patch('trollmoves.client.add_timer')
+def test_listener_no_delay_file_message(add_timer, listener):
+    """Test listener without a delay receiving a file message."""
+    listener.create_subscriber()
+    listener.subscriber.return_value = [MSG_FILE2]
+
+    _run_listener_in_thread(listener)
+
+    listener.callback.assert_called_with(MSG_FILE2, 'arg1', 'arg2',
+                                         kwarg1='kwarg1', kwarg2='kwarg2')
+    add_timer.assert_not_called()
+
+
+def test_listener_stop(listener):
+    """Test stopping the listener."""
+    listener.create_subscriber()
+    assert listener.subscriber is not None
     listener.stop()
+    time.sleep(1.5)
     assert listener.running is False
-    subscriber.close.assert_called_once()
     assert listener.subscriber is None
 
-    # Reset
-    ongoing_hot_spare_timers = dict()
 
-    # Run without processing delay
-    listener = Listener('127.0.0.1:0', ['/topic'], callback, 'arg1', 'arg2',
-                        kwarg1='kwarg1', kwarg2='kwarg2')
-    # "Receive" a 'file' message
-    subscriber.return_value = [MSG_FILE1]
-    # Raise something to stop listener
-    callback.side_effect = [StopIteration]
-    try:
-        listener.run()
-    except StopIteration:
-        pass
-    callback.assert_called_once_with(MSG_FILE1, 'arg1', 'arg2',
-                                     kwarg1='kwarg1', kwarg2='kwarg2')
-    assert len(ongoing_hot_spare_timers) == 0
-    assert MSG_FILE1.data['uid'] in file_cache
-
-    running = True
-
-    def slow_messages(timeout):
-        while running:
-            time.sleep(timeout)
-            yield MSG_ACK
-
-    subscriber.side_effect = slow_messages
-    new_listener = listener.restart()
-    assert not listener.is_alive()
-    assert new_listener.is_alive()
-    assert new_listener.death_count == 1
-    running = False
-    new_listener.stop()
-    assert not new_listener.is_alive()
+def _run_listener_in_thread(listener_instance):
+    thr = Thread(target=listener_instance.run)
+    thr.start()
+    time.sleep(0.1)
+    listener_instance.running = False
+    thr.join(2)
 
 
 @patch('trollmoves.client.ongoing_transfers_lock')
@@ -652,8 +668,7 @@ def test_reload_config(Listener, NoisyPublisher):
     callback = MagicMock()
 
     try:
-        reload_config(config_fname_1, chains, callback=callback,
-                      publisher='pub')
+        reload_config(config_fname_1, chains, callback=callback)
         section_name = "eumetcast_hrit_0deg_scp_hot_spare"
         assert section_name in chains
         listeners = chains[section_name].listeners
@@ -663,20 +678,18 @@ def test_reload_config(Listener, NoisyPublisher):
         for key in listeners:
             assert listeners[key].start.call_count == 4
         NoisyPublisher.assert_called_once()
-        chains[section_name].publisher.start.assert_called_once()
+        chains[section_name]._np.start.assert_called_once()
         chains[section_name].stop()
         # Reload the same config again, nothing should happen
-        reload_config(config_fname_1, chains, callback=callback,
-                      publisher='pub')
+        reload_config(config_fname_1, chains, callback=callback)
         for key in listeners:
             assert listeners[key].start.call_count == 4
         NoisyPublisher.assert_called_once()
-        chains[section_name].publisher.start.assert_called_once()
+        chains[section_name]._np.start.assert_called_once()
         chains[section_name].stop()
 
         # Load a new config with one new item
-        reload_config(config_fname_2, chains, callback=callback,
-                      publisher='pub')
+        reload_config(config_fname_2, chains, callback=callback)
         assert len(chains) == 2
         assert "foo" in chains
         # One additional call to publisher and listener
@@ -686,8 +699,7 @@ def test_reload_config(Listener, NoisyPublisher):
             chains[section_name].stop()
 
         # Load the first config again, the other chain should have been removed
-        reload_config(config_fname_1, chains, callback=callback,
-                      publisher='pub')
+        reload_config(config_fname_1, chains, callback=callback)
         assert "foo" not in chains
         # No new calls to publisher nor listener
         assert NoisyPublisher.call_count == 2
@@ -766,8 +778,7 @@ def test_chain(Listener, NoisyPublisher, caplog):
 
     # Setup listeners
     callback = MagicMock()
-    pub_instance = MagicMock()
-    chain.setup_listeners(callback, pub_instance)
+    chain.setup_listeners(callback)
     assert len(chain.listeners) == 4
 
     # Check running with alive listeners

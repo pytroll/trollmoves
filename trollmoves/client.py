@@ -180,7 +180,6 @@ class Listener(Thread):
 
                 while self.running:
                     # Loop for restart.
-
                     LOGGER.debug("Starting listener %s", str(self.address))
                     self.create_subscriber()
 
