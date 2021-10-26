@@ -647,7 +647,6 @@ class Chain(Thread):
         except (KeyError, NameError):
             pass
 
-
     def setup_listeners(self, callback):
         """Set up the listeners."""
         self.callback = callback
