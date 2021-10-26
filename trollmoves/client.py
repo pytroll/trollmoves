@@ -63,6 +63,7 @@ ongoing_hot_spare_timers = dict()
 
 DEFAULT_REQ_TIMEOUT = 1
 SERVER_HEARTBEAT_TOPIC = "/heartbeat/move_it_server"
+CLIENT_HEARTBEAT_TOPIC_BASE = "/heartbeat/move_it"
 
 COMPRESSED_ENDINGS = {'xrit': ['C_'],
                       'tar': ['.tar', '.tar.gz', '.tgz', '.tar.bz2'],
@@ -656,6 +657,8 @@ class Chain(Thread):
                 topics.append(self._config["topic"])
             if self._config.get("heartbeat", False):
                 topics.append(SERVER_HEARTBEAT_TOPIC)
+                # Subscribe also to heartbeat messages of other clients
+                topics.append(CLIENT_HEARTBEAT_TOPIC_BASE + '_' + self._name)
             for provider in self._config["providers"]:
                 if '/' in provider.split(':')[-1]:
                     parts = urlparse(provider)
