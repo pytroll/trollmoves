@@ -82,8 +82,6 @@ import argparse
 import signal
 import time
 
-from posttroll.publisher import NoisyPublisher
-
 from trollmoves.move_it_base import MoveItBase
 from trollmoves.client import StatCollector
 
