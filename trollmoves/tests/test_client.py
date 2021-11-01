@@ -350,6 +350,28 @@ publish_port = 0
 processing_delay = 0.02
 """
 
+CLIENT_CONFIG_1_NON_PUB_ITEM_MODIFIED = """
+# Example acting as a hot spare
+[eumetcast_hrit_0deg_scp_hot_spare]
+providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
+destination = scp:///tmp/bar
+login = user
+topic = /1b/hrit-segment/0deg
+publish_port = 0
+processing_delay = 0.02
+"""
+
+CLIENT_CONFIG_1_PUB_ITEM_MODIFIED = """
+# Example acting as a hot spare
+[eumetcast_hrit_0deg_scp_hot_spare]
+providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
+destination = scp:///tmp/foo
+login = user
+topic = /1b/hrit-segment/0deg
+publish_port = 12345
+processing_delay = 0.02
+"""
+
 CLIENT_CONFIG_2_ITEMS = """
 # Example acting as a hot spare
 [eumetcast_hrit_0deg_scp_hot_spare]
@@ -711,6 +733,68 @@ def test_reload_config(Listener, NoisyPublisher):
         os.remove(config_fname_2)
 
 
+@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.Listener')
+def test_reload_config_publisher_items_not_changed(Listener, NoisyPublisher):
+    """Test trollmoves.client.reload_config() when other than publisher related items are changed."""
+    from trollmoves.client import reload_config
+
+    with NamedTemporaryFile('w', delete=False) as fid:
+        config_fname_a = fid.name
+        fid.write(CLIENT_CONFIG_1_ITEM)
+    with NamedTemporaryFile('w', delete=False) as fid:
+        config_fname_b = fid.name
+        fid.write(CLIENT_CONFIG_1_NON_PUB_ITEM_MODIFIED)
+
+    chains = {}
+    callback = MagicMock()
+
+    try:
+        reload_config(config_fname_a, chains, callback=callback)
+        NoisyPublisher.assert_called_once()
+        reload_config(config_fname_b, chains, callback=callback)
+        NoisyPublisher.assert_called_once()
+    finally:
+        for key in chains:
+            try:
+                chains[key].stop()
+            except AttributeError:
+                pass
+        os.remove(config_fname_a)
+        os.remove(config_fname_b)
+
+
+@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.Listener')
+def test_reload_config_publisher_items_changed(Listener, NoisyPublisher):
+    """Test trollmoves.client.reload_config() when publisher related items are changed."""
+    from trollmoves.client import reload_config
+
+    with NamedTemporaryFile('w', delete=False) as fid:
+        config_fname_a = fid.name
+        fid.write(CLIENT_CONFIG_1_ITEM)
+    with NamedTemporaryFile('w', delete=False) as fid:
+        config_fname_b = fid.name
+        fid.write(CLIENT_CONFIG_1_PUB_ITEM_MODIFIED)
+
+    chains = {}
+    callback = MagicMock()
+
+    try:
+        reload_config(config_fname_a, chains, callback=callback)
+        NoisyPublisher.assert_called_once()
+        reload_config(config_fname_b, chains, callback=callback)
+        assert NoisyPublisher.call_count == 2
+    finally:
+        for key in chains:
+            try:
+                chains[key].stop()
+            except AttributeError:
+                pass
+        os.remove(config_fname_a)
+        os.remove(config_fname_b)
+
+
 @patch('trollmoves.client.hot_spare_timer_lock')
 @patch('trollmoves.client.CTimer')
 def test_add_timer(CTimer, hot_spare_timer_lock):
@@ -828,3 +912,65 @@ def test_chain(Listener, NoisyPublisher, caplog):
             assert "Listener for tcp://satmottag2:9010 switched off: OMG, they killed the listener!" in caplog.text
         finally:
             chain.stop()
+
+
+CHAIN_BASIC_CONFIG = {"login": "user:pass", "topic": "/foo", "publish_port": 12345, "nameservers": None}
+
+
+@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.Listener')
+def test_chain_publisher_needs_restarting_no_change(Listener, NoisyPublisher):
+    """Test the publisher_needs_restarting() method of Chain object when nothing changes."""
+    from trollmoves.client import Chain
+
+    config = CHAIN_BASIC_CONFIG.copy()
+    chain = Chain("foo", config.copy())
+    assert chain.publisher_needs_restarting(config.copy()) is False
+
+
+@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.Listener')
+def test_chain_publisher_needs_restarting_non_publisher_value_modified(Listener, NoisyPublisher):
+    """Test the publisher_needs_restarting() method of Chain object when a value not related to Publisher is changed."""
+    from trollmoves.client import Chain
+
+    config = CHAIN_BASIC_CONFIG.copy()
+    chain = Chain("foo", config.copy())
+    config["login"] = "user2:pass2"
+    assert chain.publisher_needs_restarting(config.copy()) is False
+
+
+@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.Listener')
+def test_chain_publisher_needs_restarting_non_publisher_value_added(Listener, NoisyPublisher):
+    """Test the publisher_needs_restarting() method of Chain object when a value not related to Publisher is added."""
+    from trollmoves.client import Chain
+
+    config = CHAIN_BASIC_CONFIG.copy()
+    chain = Chain("foo", config.copy())
+    config["destination"] = "file:///tmp/"
+    assert chain.publisher_needs_restarting(config.copy()) is False
+
+
+@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.Listener')
+def test_chain_publisher_needs_restarting_nameservers_modified(Listener, NoisyPublisher):
+    """Test the publisher_needs_restarting() method of Chain object when nameservers are modified."""
+    from trollmoves.client import Chain
+
+    config = CHAIN_BASIC_CONFIG.copy()
+    chain = Chain("foo", config.copy())
+    config["nameservers"] = ["host1", "host2"]
+    assert chain.publisher_needs_restarting(config.copy()) is True
+
+
+@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.Listener')
+def test_chain_publisher_needs_restarting_port_modified(Listener, NoisyPublisher):
+    """Test the publisher_needs_restarting() method of Chain object when publish port is modified."""
+    from trollmoves.client import Chain
+
+    config = CHAIN_BASIC_CONFIG.copy()
+    chain = Chain("foo", config.copy())
+    config["publish_port"] = 12346
+    assert chain.publisher_needs_restarting(config.copy()) is True
