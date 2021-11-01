@@ -119,7 +119,7 @@ class MoveItServer(MoveItBase):
         self.running = True
         while self.running:
             time.sleep(1)
-            self.sync_publisher.heartbeat(30)
+            self.publisher.heartbeat(30)
 
 
 def parse_args():
