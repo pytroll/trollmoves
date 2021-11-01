@@ -1,3 +1,19 @@
+## Version 0.8.0 (2021/11/01)
+
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 95](https://github.com/pytroll/trollmoves/pull/95) - Bugfix spare client requests
+
+#### Features added
+
+* [PR 95](https://github.com/pytroll/trollmoves/pull/95) - Bugfix spare client requests
+
+In this release 2 pull requests were closed.
+
+
 ## Version v0.7.0 (2021/08/25)
 
 ### Issues Closed
