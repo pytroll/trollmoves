@@ -1,3 +1,24 @@
+## Version 0.8.1 (2021/11/04)
+
+### Issues Closed
+
+* [Issue 85](https://github.com/pytroll/trollmoves/issues/85) - Trollmoves Client shutsdown when config is modified ([PR 96](https://github.com/pytroll/trollmoves/pull/96) by [@pnuu](https://github.com/pnuu))
+
+In this release 1 issue was closed.
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 96](https://github.com/pytroll/trollmoves/pull/96) - Stop Publisher restarting when publisher parameters are not changed ([85](https://github.com/pytroll/trollmoves/issues/85))
+
+#### Features added
+
+* [PR 96](https://github.com/pytroll/trollmoves/pull/96) - Stop Publisher restarting when publisher parameters are not changed ([85](https://github.com/pytroll/trollmoves/issues/85))
+
+In this release 2 pull requests were closed.
+
+
 ## Version 0.8.0 (2021/11/01)
 
 
