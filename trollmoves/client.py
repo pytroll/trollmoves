@@ -795,12 +795,7 @@ def reload_config(filename, chains, callback=request_push):
     new_configs = read_config(filename)
 
     # setup new chains
-
     for key, new_config in new_configs.items():
-        np_ = None
-        publisher = None
-        unchanged_providers = []
-        existing_listeners = {}
         if key in chains:
             if chains[key].config_equals(new_config):
                 continue

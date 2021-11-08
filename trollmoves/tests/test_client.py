@@ -902,7 +902,6 @@ def test_reload_config_providers_removed(Listener, NoisyPublisher, client_config
         num_providers = len(chains["eumetcast_hrit_0deg_scp_hot_spare"]._config['providers'])
         assert len(chains["eumetcast_hrit_0deg_scp_hot_spare"].listeners) == num_providers
         assert Listener.call_count == num_providers
-        old_listeners = chains["eumetcast_hrit_0deg_scp_hot_spare"].listeners
         reload_config(client_config_1_item_two_providers, chains, callback=callback)
         num_providers2 = len(chains["eumetcast_hrit_0deg_scp_hot_spare"]._config['providers'])
         assert num_providers2 != num_providers
