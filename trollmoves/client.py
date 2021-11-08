@@ -810,6 +810,8 @@ def reload_config(filename, chains, callback=request_push):
             verb = "Added"
             LOGGER.debug("Adding %s", key)
             chains[key] = Chain(key, new_config)
+            chains[key].start()
+
         chains[key].refresh(new_config, callback)
 
         LOGGER.debug("%s %s", verb, key)
