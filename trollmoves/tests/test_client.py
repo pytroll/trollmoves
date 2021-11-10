@@ -920,7 +920,7 @@ def test_reload_config_provider_topic_changed(Listener, NoisyPublisher, client_c
         reload_config(client_config_1_item, chains, callback=callback)
         num_providers = _check_providers_listeners_and_listener_calls(chains, Listener)
         reload_config(client_config_1_item_topic_changed, chains, callback=callback)
-        num_providers2 = _check_providers_listeners_and_listener_calls(chains, Listener, call_count = 2 * num_providers)
+        num_providers2 = _check_providers_listeners_and_listener_calls(chains, Listener, call_count=2 * num_providers)
         assert num_providers2 == num_providers
     finally:
         _stop_chains(chains)
