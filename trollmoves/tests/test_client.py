@@ -773,10 +773,17 @@ def test_reload_config(Listener, NoisyPublisher, client_config_1_item, client_co
         assert NoisyPublisher.call_count == 2
         assert Listener.call_count == 5
     finally:
+        _stop_chains(chains)
         os.remove(client_config_1_item)
         os.remove(client_config_2_items)
-        for section_name in chains:
-            chains[section_name].stop()
+
+
+def _stop_chains(chains):
+    for key in chains:
+        try:
+            chains[key].stop()
+        except AttributeError:
+            pass
 
 
 @patch('trollmoves.client.NoisyPublisher')
@@ -795,11 +802,7 @@ def test_reload_config_publisher_items_not_changed(Listener, NoisyPublisher, cli
         reload_config(client_config_1_item_non_pub_provider_item_modified, chains, callback=callback)
         NoisyPublisher.assert_called_once()
     finally:
-        for key in chains:
-            try:
-                chains[key].stop()
-            except AttributeError:
-                pass
+        _stop_chains(chains)
         os.remove(client_config_1_item)
         os.remove(client_config_1_item_non_pub_provider_item_modified)
 
@@ -820,11 +823,7 @@ def test_reload_config_publisher_items_changed(Listener, NoisyPublisher, client_
         reload_config(client_config_1_pub_item_modified, chains, callback=callback)
         assert NoisyPublisher.call_count == 2
     finally:
-        for key in chains:
-            try:
-                chains[key].stop()
-            except AttributeError:
-                pass
+        _stop_chains(chains)
         os.remove(client_config_1_item)
         os.remove(client_config_1_pub_item_modified)
 
@@ -846,11 +845,7 @@ def test_reload_config_providers_not_changed(Listener, NoisyPublisher, client_co
         reload_config(client_config_1_item_non_pub_provider_item_modified, chains, callback=callback)
         assert Listener.call_count == num_providers
     finally:
-        for key in chains:
-            try:
-                chains[key].stop()
-            except AttributeError:
-                pass
+        _stop_chains(chains)
         os.remove(client_config_1_item)
         os.remove(client_config_1_item_non_pub_provider_item_modified)
 
@@ -867,21 +862,22 @@ def test_reload_config_providers_added(Listener, NoisyPublisher, client_config_1
 
     try:
         reload_config(client_config_1_item_two_providers, chains, callback=callback)
-        num_providers = len(chains["eumetcast_hrit_0deg_scp_hot_spare"]._config['providers'])
-        assert len(chains["eumetcast_hrit_0deg_scp_hot_spare"].listeners) == num_providers
-        assert Listener.call_count == num_providers
+        _ = _check_providers_listeners_and_listener_calls(chains, Listener)
         reload_config(client_config_1_item, chains, callback=callback)
-        num_providers2 = len(chains["eumetcast_hrit_0deg_scp_hot_spare"]._config['providers'])
-        assert len(chains["eumetcast_hrit_0deg_scp_hot_spare"].listeners) == num_providers2
-        assert Listener.call_count == num_providers2
+        _ = _check_providers_listeners_and_listener_calls(chains, Listener)
     finally:
-        for key in chains:
-            try:
-                chains[key].stop()
-            except AttributeError:
-                pass
+        _stop_chains(chains)
         os.remove(client_config_1_item_two_providers)
         os.remove(client_config_1_item)
+
+
+def _check_providers_listeners_and_listener_calls(chains, Listener, call_count=None):
+    num_providers = len(chains["eumetcast_hrit_0deg_scp_hot_spare"]._config['providers'])
+    if call_count is None:
+        call_count = num_providers
+    assert len(chains["eumetcast_hrit_0deg_scp_hot_spare"].listeners) == num_providers
+    assert Listener.call_count == call_count
+    return num_providers
 
 
 @patch('trollmoves.client.NoisyPublisher')
@@ -899,21 +895,13 @@ def test_reload_config_providers_removed(Listener, NoisyPublisher, client_config
 
     try:
         reload_config(client_config_1_item, chains, callback=callback)
-        num_providers = len(chains["eumetcast_hrit_0deg_scp_hot_spare"]._config['providers'])
-        assert len(chains["eumetcast_hrit_0deg_scp_hot_spare"].listeners) == num_providers
-        assert Listener.call_count == num_providers
+        num_providers = _check_providers_listeners_and_listener_calls(chains, Listener)
         reload_config(client_config_1_item_two_providers, chains, callback=callback)
-        num_providers2 = len(chains["eumetcast_hrit_0deg_scp_hot_spare"]._config['providers'])
+        num_providers2 = _check_providers_listeners_and_listener_calls(chains, Listener, call_count=num_providers)
         assert num_providers2 != num_providers
-        assert len(chains["eumetcast_hrit_0deg_scp_hot_spare"].listeners) == num_providers2
-        assert Listener.call_count == num_providers
         assert listener.stop.call_count == num_providers - num_providers2
     finally:
-        for key in chains:
-            try:
-                chains[key].stop()
-            except AttributeError:
-                pass
+        _stop_chains(chains)
         os.remove(client_config_1_item)
         os.remove(client_config_1_item_two_providers)
 
@@ -930,26 +918,19 @@ def test_reload_config_provider_topic_changed(Listener, NoisyPublisher, client_c
 
     try:
         reload_config(client_config_1_item, chains, callback=callback)
-        num_providers = len(chains["eumetcast_hrit_0deg_scp_hot_spare"]._config['providers'])
-        assert Listener.call_count == num_providers
+        num_providers = _check_providers_listeners_and_listener_calls(chains, Listener)
         reload_config(client_config_1_item_topic_changed, chains, callback=callback)
-        assert Listener.call_count == 2 * num_providers
-        num_providers2 = len(chains["eumetcast_hrit_0deg_scp_hot_spare"]._config['providers'])
+        num_providers2 = _check_providers_listeners_and_listener_calls(chains, Listener, call_count = 2 * num_providers)
         assert num_providers2 == num_providers
-        assert len(chains["eumetcast_hrit_0deg_scp_hot_spare"].listeners) == num_providers2
     finally:
-        for key in chains:
-            try:
-                chains[key].stop()
-            except AttributeError:
-                pass
+        _stop_chains(chains)
         os.remove(client_config_1_item)
         os.remove(client_config_1_item_topic_changed)
 
 
 @patch('trollmoves.client.Chain')
 def test_reload_config_chain_not_recreated(Chain, client_config_1_item, client_config_1_pub_item_modified):
-    """Test that Chain is not recreated when existing chain is modified."""
+    """Test that the chain is not recreated when config is modified."""
     from trollmoves.client import reload_config
 
     config_equals = MagicMock()
