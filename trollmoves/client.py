@@ -752,11 +752,19 @@ class Chain(Thread):
         publisher_needs_restarting = self.publisher_needs_restarting(new_config)
         unchanged_providers = self.get_unchanged_providers(new_config)
         self._config = new_config
-        self.stop(stop_publisher=publisher_needs_restarting, keep_providers=unchanged_providers)
-        self.setup_publisher()
-        self.setup_listeners(callback, keep_providers=unchanged_providers)
+        if publisher_needs_restarting:
+            self._refresh_publisher()
+        self._refresh_listeners(callback, unchanged_providers)
         if not self.running:
             self.start()
+
+    def _refresh_publisher(self):
+        self._stop_publisher()
+        self.setup_publisher()
+
+    def _refresh_listeners(self, callback, unchanged_providers):
+        self.reset_listeners(keep_providers=unchanged_providers)
+        self.setup_listeners(callback, keep_providers=unchanged_providers)
 
     def reset_listeners(self, keep_providers=None):
         """Reset the listeners."""
@@ -769,15 +777,16 @@ class Chain(Thread):
             listener.stop()
         self.listeners = kept_listeners
 
-    def stop(self, stop_publisher=True, keep_providers=None):
+    def stop(self):
         """Stop the chain."""
-        keep_providers = keep_providers or []
-        if stop_publisher and not keep_providers:
-            self.running = False
-        if self._np and stop_publisher:
+        self._stop_publisher()
+        self.running = False
+        self.reset_listeners()
+
+    def _stop_publisher(self):
+        if self._np:
             self._np.stop()
             self._np = None
-        self.reset_listeners(keep_providers)
 
     def restart(self):
         """Restart the chain, return a new running instance."""
