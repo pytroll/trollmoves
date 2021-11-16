@@ -623,18 +623,20 @@ def request_push(msg_in, destination, login=None, publisher=None, **kwargs):
 class Chain(Thread):
     """The Chain class."""
 
-    def __init__(self, name, config, np_=None, publisher=None):
+    def __init__(self, name, config):
         """Init a chain object."""
         super(Chain, self).__init__()
         self._config = config
         self._name = name
-        self._np = np_
-        self.publisher = publisher
+        self._np = None
+        self.publisher = None
         self.listeners = {}
         self.listener_died_event = Event()
         self.running = True
+        self.setup_publisher()
 
-        # Setup publisher if not provided
+    def setup_publisher(self):
+        """Initialize publisher."""
         if self._np is None:
             try:
                 nameservers = self._config["nameservers"]
@@ -648,9 +650,10 @@ class Chain(Thread):
             except (KeyError, NameError):
                 pass
 
-    def setup_listeners(self, callback):
+    def setup_listeners(self, callback, keep_providers=None):
         """Set up the listeners."""
         self.callback = callback
+        keep_providers = keep_providers or []
         try:
             topics = []
             if "topic" in self._config:
@@ -660,6 +663,9 @@ class Chain(Thread):
                 # Subscribe also to heartbeat messages of other clients
                 topics.append(CLIENT_HEARTBEAT_TOPIC_BASE + '_' + self._name)
             for provider in self._config["providers"]:
+                if provider in keep_providers and provider in self.listeners:
+                    LOGGER.debug("Not restarting Listener to %s, config not changed.", provider)
+                    continue
                 if '/' in provider.split(':')[-1]:
                     parts = urlparse(provider)
                     if parts.scheme != '':
@@ -728,6 +734,12 @@ class Chain(Thread):
                 return False
         return True
 
+    def get_unchanged_providers(self, other_config):
+        """Get a list of providers that have not changed between this and other config."""
+        if self._config["topic"] != other_config["topic"]:
+            return []
+        return list(set(self._config["providers"]).intersection(set(other_config["providers"])))
+
     def publisher_needs_restarting(self, other_config):
         """Check that current config is the same as `other_config`."""
         for key in ["nameservers", "publish_port"]:
@@ -735,18 +747,46 @@ class Chain(Thread):
                 return True
         return False
 
-    def reset_listeners(self):
-        """Reset the listeners."""
-        for listener in self.listeners.values():
-            listener.stop()
-        self.listeners = {}
+    def refresh(self, new_config, callback):
+        """Refresh the chain with new config."""
+        publisher_needs_restarting = self.publisher_needs_restarting(new_config)
+        unchanged_providers = self.get_unchanged_providers(new_config)
+        self._config = new_config
+        if publisher_needs_restarting:
+            self._refresh_publisher()
+        self._refresh_listeners(callback, unchanged_providers)
+        if not self.running:
+            self.start()
 
-    def stop(self, stop_publisher=True):
+    def _refresh_publisher(self):
+        self._stop_publisher()
+        self.setup_publisher()
+
+    def _refresh_listeners(self, callback, unchanged_providers):
+        self.reset_listeners(keep_providers=unchanged_providers)
+        self.setup_listeners(callback, keep_providers=unchanged_providers)
+
+    def reset_listeners(self, keep_providers=None):
+        """Reset the listeners."""
+        keep_providers = keep_providers or []
+        kept_listeners = {}
+        for key, listener in self.listeners.items():
+            if key in keep_providers:
+                kept_listeners[key] = listener
+                continue
+            listener.stop()
+        self.listeners = kept_listeners
+
+    def stop(self):
         """Stop the chain."""
+        self._stop_publisher()
         self.running = False
-        if self._np and stop_publisher:
-            self._np.stop()
         self.reset_listeners()
+
+    def _stop_publisher(self):
+        if self._np:
+            self._np.stop()
+            self._np = None
 
     def restart(self):
         """Restart the chain, return a new running instance."""
@@ -764,28 +804,19 @@ def reload_config(filename, chains, callback=request_push):
     new_configs = read_config(filename)
 
     # setup new chains
-
     for key, new_config in new_configs.items():
-        np_ = None
-        publisher = None
         if key in chains:
             if chains[key].config_equals(new_config):
                 continue
-
-            publisher_needs_restarting = chains[key].publisher_needs_restarting(new_config)
-            if not publisher_needs_restarting:
-                np_ = chains[key]._np
-                publisher = chains[key].publisher
-
-            chains[key].stop(stop_publisher=publisher_needs_restarting)
             verb = "Updated"
             LOGGER.debug("Updating %s", key)
         else:
             verb = "Added"
             LOGGER.debug("Adding %s", key)
-        chains[key] = Chain(key, new_config, np_=np_, publisher=publisher)
-        chains[key].setup_listeners(callback)
-        chains[key].start()
+            chains[key] = Chain(key, new_config)
+            chains[key].start()
+
+        chains[key].refresh(new_config, callback)
 
         LOGGER.debug("%s %s", verb, key)
 

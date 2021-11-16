@@ -62,6 +62,157 @@ topic = /topic
 compression = xrit
 """
 
+# The different messages that are handled.  For further tests `data`
+# can be populated with more values.
+MSG_PUSH = Message('/topic', 'push', data={'uid': 'file1'})
+MSG_ACK = Message('/topic', 'ack', data={'uid': 'file1'})
+MSG_FILE1 = Message('/topic', 'file', data={'uid': 'file1'})
+UID_FILE1 = "826e8142e6baabe8af779f5f490cf5f5"
+MSG_FILE2 = Message('/topic', 'file', data={'uid': 'file2',
+                                            'request_address': '127.0.0.1:0'})
+UID_FILE2 = '1c1c96fd2cf8330db0bfa936ce82f3b9'
+MSG_BEAT = Message('/topic', 'beat', data={'uid': 'file1'})
+
+CLIENT_CONFIG_1_ITEM = """
+# Example acting as a hot spare
+[eumetcast_hrit_0deg_scp_hot_spare]
+providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
+destination = scp:///tmp/foo
+login = user
+topic = /1b/hrit-segment/0deg
+publish_port = 0
+processing_delay = 0.02
+"""
+
+CLIENT_CONFIG_1_ITEM_NON_PUB_PROVIDER_ITEM_MODIFIED = """
+# Example acting as a hot spare
+[eumetcast_hrit_0deg_scp_hot_spare]
+providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
+destination = scp:///tmp/bar
+login = user
+topic = /1b/hrit-segment/0deg
+publish_port = 0
+processing_delay = 0.02
+"""
+
+CLIENT_CONFIG_1_PUB_ITEM_MODIFIED = """
+# Example acting as a hot spare
+[eumetcast_hrit_0deg_scp_hot_spare]
+providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
+destination = scp:///tmp/foo
+login = user
+topic = /1b/hrit-segment/0deg
+publish_port = 12345
+processing_delay = 0.02
+"""
+
+CLIENT_CONFIG_1_ITEM_TWO_PROVIDERS = """
+# Example acting as a hot spare
+[eumetcast_hrit_0deg_scp_hot_spare]
+providers = satmottag2:9010 satmottag:9010
+destination = scp:///tmp/foo
+login = user
+topic = /1b/hrit-segment/0deg
+publish_port = 0
+processing_delay = 0.02
+"""
+
+CLIENT_CONFIG_1_ITEM_TOPIC_CHANGED = """
+# Example acting as a hot spare
+[eumetcast_hrit_0deg_scp_hot_spare]
+providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
+destination = scp:///tmp/foo
+login = user
+topic = /1b/hrit-segment/zero_degrees
+publish_port = 0
+processing_delay = 0.02
+"""
+
+CLIENT_CONFIG_2_ITEMS = """
+# Example acting as a hot spare
+[eumetcast_hrit_0deg_scp_hot_spare]
+providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
+destination = scp:///tmp/foo
+login = user
+topic = /1b/hrit-segment/0deg
+publish_port = 0
+processing_delay = 0.02
+
+[foo]
+providers = bar
+destination = scp:///tmp/foo
+login = user
+topic = /1b/hrit-segment/0deg
+publish_port = 0
+"""
+
+
+@pytest.fixture
+def listener():
+    callback = MagicMock()
+    with patch('trollmoves.client.CTimer'):
+        with patch('trollmoves.heartbeat_monitor.Monitor'):
+            with patch('trollmoves.client.Subscriber'):
+                from trollmoves.client import Listener
+                listener = Listener('127.0.0.1:0', ['/topic'], callback, 'arg1', 'arg2',
+                                    kwarg1='kwarg1', kwarg2='kwarg2')
+                yield listener
+
+
+@pytest.fixture
+def delayed_listener():
+    callback = MagicMock()
+    with patch('trollmoves.client.CTimer'):
+        with patch('trollmoves.heartbeat_monitor.Monitor'):
+            with patch('trollmoves.client.Subscriber'):
+                from trollmoves.client import Listener
+                listener = Listener('127.0.0.1:0', ['/topic'], callback, 'arg1', 'arg2',
+                                    processing_delay=0.02,
+                                    kwarg1='kwarg1', kwarg2='kwarg2')
+                yield listener
+
+
+def _write_named_temporary_config(data):
+    with NamedTemporaryFile('w', delete=False) as fid:
+        config_fname = fid.name
+        fid.write(data)
+    return config_fname
+
+
+@pytest.fixture
+def client_config_1_item():
+    yield _write_named_temporary_config(CLIENT_CONFIG_1_ITEM)
+
+
+@pytest.fixture
+def client_config_1_item_non_pub_provider_item_modified():
+    yield _write_named_temporary_config(CLIENT_CONFIG_1_ITEM_NON_PUB_PROVIDER_ITEM_MODIFIED)
+
+
+@pytest.fixture
+def client_config_1_item_two_providers():
+    yield _write_named_temporary_config(CLIENT_CONFIG_1_ITEM_TWO_PROVIDERS)
+
+
+@pytest.fixture
+def client_config_1_item_topic_changed():
+    yield _write_named_temporary_config(CLIENT_CONFIG_1_ITEM_TOPIC_CHANGED)
+
+
+@pytest.fixture
+def client_config_1_pub_item_modified():
+    yield _write_named_temporary_config(CLIENT_CONFIG_1_PUB_ITEM_MODIFIED)
+
+
+@pytest.fixture
+def client_config_2_items():
+    yield _write_named_temporary_config(CLIENT_CONFIG_2_ITEMS)
+
+
+@pytest.fixture
+def compression_config():
+    yield _write_named_temporary_config(COMPRESSION_CONFIG)
+
 
 @patch('os.remove')
 @patch('trollmoves.client.check_output')
@@ -196,7 +347,7 @@ def test_unpack_tar():
 
 
 @patch('trollmoves.client.unpackers')
-def test_unpack_and_create_local_message(unpackers):
+def test_unpack_and_create_local_message(unpackers, compression_config):
     """Test unpacking and updating the message with new filenames."""
     from trollmoves.client import unpack_and_create_local_message as unp
 
@@ -298,13 +449,9 @@ def test_unpack_and_create_local_message(unpackers):
     assert call('/local/file1.tar.bz2', **kwargs) in unpackers['tar'].mock_calls
 
     # Test with config file
-    with NamedTemporaryFile('w', delete=False) as fid:
-        config_fname = fid.name
-        fid.write(COMPRESSION_CONFIG)
-
     try:
         from trollmoves.client import read_config
-        config = read_config(config_fname)
+        config = read_config(compression_config)
 
         # No compression
         kwargs = config['empty_decompression']
@@ -325,95 +472,7 @@ def test_unpack_and_create_local_message(unpackers):
         assert res.subject == MSG_FILE_XRIT.subject
         assert res.type == MSG_FILE_XRIT.type
     finally:
-        os.remove(config_fname)
-
-
-# The different messages that are handled.  For further tests `data`
-# can be populated with more values.
-MSG_PUSH = Message('/topic', 'push', data={'uid': 'file1'})
-MSG_ACK = Message('/topic', 'ack', data={'uid': 'file1'})
-MSG_FILE1 = Message('/topic', 'file', data={'uid': 'file1'})
-UID_FILE1 = "826e8142e6baabe8af779f5f490cf5f5"
-MSG_FILE2 = Message('/topic', 'file', data={'uid': 'file2',
-                                            'request_address': '127.0.0.1:0'})
-UID_FILE2 = '1c1c96fd2cf8330db0bfa936ce82f3b9'
-MSG_BEAT = Message('/topic', 'beat', data={'uid': 'file1'})
-
-CLIENT_CONFIG_1_ITEM = """
-# Example acting as a hot spare
-[eumetcast_hrit_0deg_scp_hot_spare]
-providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
-destination = scp:///tmp/foo
-login = user
-topic = /1b/hrit-segment/0deg
-publish_port = 0
-processing_delay = 0.02
-"""
-
-CLIENT_CONFIG_1_NON_PUB_ITEM_MODIFIED = """
-# Example acting as a hot spare
-[eumetcast_hrit_0deg_scp_hot_spare]
-providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
-destination = scp:///tmp/bar
-login = user
-topic = /1b/hrit-segment/0deg
-publish_port = 0
-processing_delay = 0.02
-"""
-
-CLIENT_CONFIG_1_PUB_ITEM_MODIFIED = """
-# Example acting as a hot spare
-[eumetcast_hrit_0deg_scp_hot_spare]
-providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
-destination = scp:///tmp/foo
-login = user
-topic = /1b/hrit-segment/0deg
-publish_port = 12345
-processing_delay = 0.02
-"""
-
-CLIENT_CONFIG_2_ITEMS = """
-# Example acting as a hot spare
-[eumetcast_hrit_0deg_scp_hot_spare]
-providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
-destination = scp:///tmp/foo
-login = user
-topic = /1b/hrit-segment/0deg
-publish_port = 0
-processing_delay = 0.02
-
-[foo]
-providers = bar
-destination = scp:///tmp/foo
-login = user
-topic = /1b/hrit-segment/0deg
-publish_port = 0
-"""
-
-
-@pytest.fixture
-def listener():
-    callback = MagicMock()
-    with patch('trollmoves.client.CTimer'):
-        with patch('trollmoves.heartbeat_monitor.Monitor'):
-            with patch('trollmoves.client.Subscriber'):
-                from trollmoves.client import Listener
-                listener = Listener('127.0.0.1:0', ['/topic'], callback, 'arg1', 'arg2',
-                                    kwarg1='kwarg1', kwarg2='kwarg2')
-                yield listener
-
-
-@pytest.fixture
-def delayed_listener():
-    callback = MagicMock()
-    with patch('trollmoves.client.CTimer'):
-        with patch('trollmoves.heartbeat_monitor.Monitor'):
-            with patch('trollmoves.client.Subscriber'):
-                from trollmoves.client import Listener
-                listener = Listener('127.0.0.1:0', ['/topic'], callback, 'arg1', 'arg2',
-                                    processing_delay=0.02,
-                                    kwarg1='kwarg1', kwarg2='kwarg2')
-                yield listener
+        os.remove(compression_config)
 
 
 def test_listener_init(delayed_listener):
@@ -651,16 +710,14 @@ def test_request_push(send_ack, send_request, clean_ongoing_transfer):
     assert clean_ongoing_transfer.call_count == 2
 
 
-def test_read_config():
+def test_read_config(client_config_1_item):
     """Test config handling."""
     from trollmoves.client import read_config
-    with NamedTemporaryFile('w', delete=False) as fid:
-        config_fname = fid.name
-        fid.write(CLIENT_CONFIG_1_ITEM)
+
     try:
-        conf = read_config(config_fname)
+        conf = read_config(client_config_1_item)
     finally:
-        os.remove(config_fname)
+        os.remove(client_config_1_item)
 
     # Test that required things are present
     section_name = "eumetcast_hrit_0deg_scp_hot_spare"
@@ -675,22 +732,15 @@ def test_read_config():
 
 @patch('trollmoves.client.NoisyPublisher')
 @patch('trollmoves.client.Listener')
-def test_reload_config(Listener, NoisyPublisher):
+def test_reload_config(Listener, NoisyPublisher, client_config_1_item, client_config_2_items):
     """Test trollmoves.client.reload_config(), which also builds the chains."""
     from trollmoves.client import reload_config
-
-    with NamedTemporaryFile('w', delete=False) as fid:
-        config_fname_1 = fid.name
-        fid.write(CLIENT_CONFIG_1_ITEM)
-    with NamedTemporaryFile('w', delete=False) as fid:
-        config_fname_2 = fid.name
-        fid.write(CLIENT_CONFIG_2_ITEMS)
 
     chains = {}
     callback = MagicMock()
 
     try:
-        reload_config(config_fname_1, chains, callback=callback)
+        reload_config(client_config_1_item, chains, callback=callback)
         section_name = "eumetcast_hrit_0deg_scp_hot_spare"
         assert section_name in chains
         listeners = chains[section_name].listeners
@@ -701,98 +751,204 @@ def test_reload_config(Listener, NoisyPublisher):
             assert listeners[key].start.call_count == 4
         NoisyPublisher.assert_called_once()
         chains[section_name]._np.start.assert_called_once()
-        chains[section_name].stop()
         # Reload the same config again, nothing should happen
-        reload_config(config_fname_1, chains, callback=callback)
+        reload_config(client_config_1_item, chains, callback=callback)
         for key in listeners:
             assert listeners[key].start.call_count == 4
         NoisyPublisher.assert_called_once()
         chains[section_name]._np.start.assert_called_once()
-        chains[section_name].stop()
 
         # Load a new config with one new item
-        reload_config(config_fname_2, chains, callback=callback)
+        reload_config(client_config_2_items, chains, callback=callback)
         assert len(chains) == 2
         assert "foo" in chains
         # One additional call to publisher and listener
         assert NoisyPublisher.call_count == 2
         assert Listener.call_count == 5
-        for section_name in chains:
-            chains[section_name].stop()
 
         # Load the first config again, the other chain should have been removed
-        reload_config(config_fname_1, chains, callback=callback)
+        reload_config(client_config_1_item, chains, callback=callback)
         assert "foo" not in chains
         # No new calls to publisher nor listener
         assert NoisyPublisher.call_count == 2
         assert Listener.call_count == 5
-        for section_name in chains:
-            chains[section_name].stop()
     finally:
-        os.remove(config_fname_1)
-        os.remove(config_fname_2)
+        _stop_chains(chains)
+        os.remove(client_config_1_item)
+        os.remove(client_config_2_items)
+
+
+def _stop_chains(chains):
+    for key in chains:
+        try:
+            chains[key].stop()
+        except AttributeError:
+            pass
 
 
 @patch('trollmoves.client.NoisyPublisher')
 @patch('trollmoves.client.Listener')
-def test_reload_config_publisher_items_not_changed(Listener, NoisyPublisher):
+def test_reload_config_publisher_items_not_changed(Listener, NoisyPublisher, client_config_1_item,
+                                                   client_config_1_item_non_pub_provider_item_modified):
     """Test trollmoves.client.reload_config() when other than publisher related items are changed."""
     from trollmoves.client import reload_config
 
-    with NamedTemporaryFile('w', delete=False) as fid:
-        config_fname_a = fid.name
-        fid.write(CLIENT_CONFIG_1_ITEM)
-    with NamedTemporaryFile('w', delete=False) as fid:
-        config_fname_b = fid.name
-        fid.write(CLIENT_CONFIG_1_NON_PUB_ITEM_MODIFIED)
-
     chains = {}
     callback = MagicMock()
 
     try:
-        reload_config(config_fname_a, chains, callback=callback)
+        reload_config(client_config_1_item, chains, callback=callback)
         NoisyPublisher.assert_called_once()
-        reload_config(config_fname_b, chains, callback=callback)
+        reload_config(client_config_1_item_non_pub_provider_item_modified, chains, callback=callback)
         NoisyPublisher.assert_called_once()
     finally:
-        for key in chains:
-            try:
-                chains[key].stop()
-            except AttributeError:
-                pass
-        os.remove(config_fname_a)
-        os.remove(config_fname_b)
+        _stop_chains(chains)
+        os.remove(client_config_1_item)
+        os.remove(client_config_1_item_non_pub_provider_item_modified)
 
 
 @patch('trollmoves.client.NoisyPublisher')
 @patch('trollmoves.client.Listener')
-def test_reload_config_publisher_items_changed(Listener, NoisyPublisher):
+def test_reload_config_publisher_items_changed(Listener, NoisyPublisher, client_config_1_item,
+                                               client_config_1_pub_item_modified):
     """Test trollmoves.client.reload_config() when publisher related items are changed."""
     from trollmoves.client import reload_config
-
-    with NamedTemporaryFile('w', delete=False) as fid:
-        config_fname_a = fid.name
-        fid.write(CLIENT_CONFIG_1_ITEM)
-    with NamedTemporaryFile('w', delete=False) as fid:
-        config_fname_b = fid.name
-        fid.write(CLIENT_CONFIG_1_PUB_ITEM_MODIFIED)
 
     chains = {}
     callback = MagicMock()
 
     try:
-        reload_config(config_fname_a, chains, callback=callback)
+        reload_config(client_config_1_item, chains, callback=callback)
         NoisyPublisher.assert_called_once()
-        reload_config(config_fname_b, chains, callback=callback)
+        reload_config(client_config_1_pub_item_modified, chains, callback=callback)
         assert NoisyPublisher.call_count == 2
     finally:
-        for key in chains:
-            try:
-                chains[key].stop()
-            except AttributeError:
-                pass
-        os.remove(config_fname_a)
-        os.remove(config_fname_b)
+        _stop_chains(chains)
+        os.remove(client_config_1_item)
+        os.remove(client_config_1_pub_item_modified)
+
+
+@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.Listener')
+def test_reload_config_providers_not_changed(Listener, NoisyPublisher, client_config_1_item,
+                                             client_config_1_item_non_pub_provider_item_modified):
+    """Test trollmoves.client.reload_config() when other than provider related options are changed."""
+    from trollmoves.client import reload_config
+
+    chains = {}
+    callback = MagicMock()
+
+    try:
+        reload_config(client_config_1_item, chains, callback=callback)
+        num_providers = len(chains["eumetcast_hrit_0deg_scp_hot_spare"]._config['providers'])
+        assert Listener.call_count == num_providers
+        reload_config(client_config_1_item_non_pub_provider_item_modified, chains, callback=callback)
+        assert Listener.call_count == num_providers
+    finally:
+        _stop_chains(chains)
+        os.remove(client_config_1_item)
+        os.remove(client_config_1_item_non_pub_provider_item_modified)
+
+
+@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.Listener')
+def test_reload_config_providers_added(Listener, NoisyPublisher, client_config_1_item,
+                                       client_config_1_item_two_providers):
+    """Test trollmoves.client.reload_config() when providers are added."""
+    from trollmoves.client import reload_config
+
+    chains = {}
+    callback = MagicMock()
+
+    try:
+        reload_config(client_config_1_item_two_providers, chains, callback=callback)
+        _ = _check_providers_listeners_and_listener_calls(chains, Listener)
+        reload_config(client_config_1_item, chains, callback=callback)
+        _ = _check_providers_listeners_and_listener_calls(chains, Listener)
+    finally:
+        _stop_chains(chains)
+        os.remove(client_config_1_item_two_providers)
+        os.remove(client_config_1_item)
+
+
+def _check_providers_listeners_and_listener_calls(chains, Listener, call_count=None):
+    num_providers = len(chains["eumetcast_hrit_0deg_scp_hot_spare"]._config['providers'])
+    if call_count is None:
+        call_count = num_providers
+    assert len(chains["eumetcast_hrit_0deg_scp_hot_spare"].listeners) == num_providers
+    assert Listener.call_count == call_count
+    return num_providers
+
+
+@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.Listener')
+def test_reload_config_providers_removed(Listener, NoisyPublisher, client_config_1_item,
+                                         client_config_1_item_two_providers):
+    """Test trollmoves.client.reload_config() when providers are removed."""
+    from trollmoves.client import reload_config
+
+    listener = MagicMock()
+    Listener.return_value = listener
+
+    chains = {}
+    callback = MagicMock()
+
+    try:
+        reload_config(client_config_1_item, chains, callback=callback)
+        num_providers = _check_providers_listeners_and_listener_calls(chains, Listener)
+        reload_config(client_config_1_item_two_providers, chains, callback=callback)
+        num_providers2 = _check_providers_listeners_and_listener_calls(chains, Listener, call_count=num_providers)
+        assert num_providers2 != num_providers
+        assert listener.stop.call_count == num_providers - num_providers2
+    finally:
+        _stop_chains(chains)
+        os.remove(client_config_1_item)
+        os.remove(client_config_1_item_two_providers)
+
+
+@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.Listener')
+def test_reload_config_provider_topic_changed(Listener, NoisyPublisher, client_config_1_item,
+                                              client_config_1_item_topic_changed):
+    """Test trollmoves.client.reload_config() when the message topic is changed."""
+    from trollmoves.client import reload_config
+
+    chains = {}
+    callback = MagicMock()
+
+    try:
+        reload_config(client_config_1_item, chains, callback=callback)
+        num_providers = _check_providers_listeners_and_listener_calls(chains, Listener)
+        reload_config(client_config_1_item_topic_changed, chains, callback=callback)
+        num_providers2 = _check_providers_listeners_and_listener_calls(chains, Listener, call_count=2 * num_providers)
+        assert num_providers2 == num_providers
+    finally:
+        _stop_chains(chains)
+        os.remove(client_config_1_item)
+        os.remove(client_config_1_item_topic_changed)
+
+
+@patch('trollmoves.client.Chain')
+def test_reload_config_chain_not_recreated(Chain, client_config_1_item, client_config_1_pub_item_modified):
+    """Test that the chain is not recreated when config is modified."""
+    from trollmoves.client import reload_config
+
+    config_equals = MagicMock()
+    config_equals.return_value = False
+    chain = MagicMock()
+    chain.config_equals = config_equals
+    Chain.return_value = chain
+    chains = {}
+    callback = MagicMock()
+
+    try:
+        reload_config(client_config_1_item, chains, callback=callback)
+        Chain.assert_called_once()
+        reload_config(client_config_1_pub_item_modified, chains, callback=callback)
+        Chain.assert_called_once()
+    finally:
+        os.remove(client_config_1_item)
+        os.remove(client_config_1_pub_item_modified)
 
 
 @patch('trollmoves.client.hot_spare_timer_lock')
@@ -830,16 +986,14 @@ def test_iterate_messages(lock):
 
 @patch('trollmoves.client.NoisyPublisher')
 @patch('trollmoves.client.Listener')
-def test_chain(Listener, NoisyPublisher, caplog):
+def test_chain(Listener, NoisyPublisher, caplog, client_config_1_item):
     """Test the Chain object."""
     from trollmoves.client import Chain, read_config
-    with NamedTemporaryFile('w', delete=False) as fid:
-        config_fname = fid.name
-        fid.write(CLIENT_CONFIG_1_ITEM)
+
     try:
-        conf = read_config(config_fname)
+        conf = read_config(client_config_1_item)
     finally:
-        os.remove(config_fname)
+        os.remove(client_config_1_item)
 
     def restart():
         return Listener()
@@ -914,7 +1068,38 @@ def test_chain(Listener, NoisyPublisher, caplog):
             chain.stop()
 
 
-CHAIN_BASIC_CONFIG = {"login": "user:pass", "topic": "/foo", "publish_port": 12345, "nameservers": None}
+CHAIN_BASIC_CONFIG = {"login": "user:pass", "topic": "/foo", "publish_port": 12345, "nameservers": None,
+                      "providers": ["tcp://provider:1", "tcp://provider:2", "tcp://provider:3"]}
+
+
+@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.Listener')
+def test_chain_get_unchanged_providers(Listener, NoisyPublisher):
+    """Test the get_unchanged_providers() method in Chain object."""
+    from trollmoves.client import Chain
+
+    config = CHAIN_BASIC_CONFIG.copy()
+    config2 = CHAIN_BASIC_CONFIG.copy()
+    _ = config2["providers"].pop(1)
+
+    chain = Chain("foo", config)
+    res = chain.get_unchanged_providers(config2)
+    assert isinstance(res, list)
+    assert set(res).difference(config2["providers"]) == set()
+
+
+@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.Listener')
+def test_chain_get_unchanged_providers_topic_changed(Listener, NoisyPublisher):
+    """Test the get_unchanged_providers() method in Chain object when topic changes."""
+    from trollmoves.client import Chain
+
+    config = CHAIN_BASIC_CONFIG.copy()
+    config2 = CHAIN_BASIC_CONFIG.copy()
+    config2["topic"] = "/bar"
+
+    chain = Chain("foo", config)
+    assert chain.get_unchanged_providers(config2) == []
 
 
 @patch('trollmoves.client.NoisyPublisher')
