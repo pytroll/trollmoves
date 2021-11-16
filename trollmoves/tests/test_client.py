@@ -479,6 +479,12 @@ def test_unpack_and_create_local_message_xrit_compression_with_delete(unpackers)
     del kwargs['delete']
 
 
+def _check_unpack_result_message_files(res, new_files):
+    for i in range(len(new_files)):
+        assert res['dataset'][i]['uid'] == new_files[i]
+        assert res['dataset'][i]['uri'] == os.path.join(LOCAL_DIR, new_files[i])
+
+
 @patch('trollmoves.client.unpackers')
 def test_unpack_and_create_local_message_tar_multiple_files_file_message(unpackers):
     """Test unpacking and updating the message with new filenames.
@@ -488,12 +494,10 @@ def test_unpack_and_create_local_message_tar_multiple_files_file_message(unpacke
     from trollmoves.client import unpack_and_create_local_message as unp
 
     kwargs = {'compression': 'tar'}
-    unpackers['tar'].return_value = ('new_file1.png', 'new_file2.png')
+    new_files = ('new_file1.png', 'new_file2.png')
+    unpackers['tar'].return_value = new_files
     res = unp(copy.copy(MSG_FILE_TAR), LOCAL_DIR, **kwargs)
-    assert res.data['dataset'][0]['uid'] == 'new_file1.png'
-    assert res.data['dataset'][0]['uri'] == '/local/new_file1.png'
-    assert res.data['dataset'][1]['uid'] == 'new_file2.png'
-    assert res.data['dataset'][1]['uri'] == '/local/new_file2.png'
+    _check_unpack_result_message_files(res.data, new_files)
     assert res.subject == MSG_FILE_TAR.subject
     assert res.type == "dataset"
     unpackers['tar'].assert_called_with(os.path.join(LOCAL_DIR, MSG_FILE_TAR.data['uid']), **kwargs)
@@ -509,12 +513,10 @@ def test_unpack_and_create_local_message_tar_multiple_files_dataset_message(unpa
 
     kwargs = {'compression': 'tar'}
     unpackers['tar'].return_value = None
-    unpackers['tar'].side_effect = ['new_file1.png', 'new_file2.png']
+    new_files = ('new_file1.png', 'new_file2.png')
+    unpackers['tar'].side_effect = new_files
     res = unp(copy.copy(MSG_DATASET_TAR), LOCAL_DIR, **kwargs)
-    assert res.data['dataset'][0]['uid'] == 'new_file1.png'
-    assert res.data['dataset'][0]['uri'] == '/local/new_file1.png'
-    assert res.data['dataset'][1]['uid'] == 'new_file2.png'
-    assert res.data['dataset'][1]['uri'] == '/local/new_file2.png'
+    _check_unpack_result_message_files(res.data, new_files)
     assert res.subject == MSG_DATASET_TAR.subject
     assert res.type == MSG_DATASET_TAR.type
     for dset in MSG_DATASET_TAR.data['dataset']:
@@ -531,10 +533,10 @@ def test_unpack_and_create_local_message_tar_multiple_files_collection_message(u
 
     kwargs = {'compression': 'tar'}
     unpackers['tar'].return_value = None
-    unpackers['tar'].side_effect = ['new_file1.png']
+    new_files = ['new_file1.png']
+    unpackers['tar'].side_effect = new_files
     res = unp(copy.copy(MSG_COLLECTION_TAR), LOCAL_DIR, **kwargs)
-    assert res.data['collection'][0]['dataset'][0]['uid'] == 'new_file1.png'
-    assert res.data['collection'][0]['dataset'][0]['uri'] == '/local/new_file1.png'
+    _check_unpack_result_message_files(res.data['collection'][0], new_files)
     assert res.subject == MSG_COLLECTION_TAR.subject
     assert res.type == MSG_COLLECTION_TAR.type
     file_path = os.path.join(LOCAL_DIR, MSG_COLLECTION_TAR.data['collection'][0]['dataset'][0]['uid'])
