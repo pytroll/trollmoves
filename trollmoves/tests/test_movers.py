@@ -1,65 +1,69 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
+#
 # Copyright (c) 2020 Pytroll
-
+#
 # Author(s):
-
+#
 #   Adam.Dybbroe <adam.dybbroe@smhi.se>
-
+#
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-
+#
 # GNU General Public License for more details.
-
+#
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-"""Test the movers
-"""
+"""Test the movers."""
 
 from unittest.mock import patch
 
+ORIGIN = '/path/to/mydata/filename.ext'
+USERNAME = 'username'
+PASSWORD = 'passwd'
+ACCOUNT = None
 
-@patch('netrc.netrc')
-def test_open_connection(netrc):
-    """Check getting the netrc authentication."""
+
+def _get_ftp(destination):
     from trollmoves.movers import FtpMover
 
-    username = 'myusername'
-    password = 'mypasswd'
-    account = None
+    with patch('trollmoves.movers.FTP') as ftp:
+        ftp_mover = FtpMover(ORIGIN, destination)
+        ftp_mover.open_connection()
 
-    origin = '/path/to/mydata/filename.ext'
+    return ftp
 
+
+@patch('netrc.netrc')
+def test_open_ftp_connection_with_netrc_no_netrc(netrc):
+    """Check getting ftp connection when .netrc is missing."""
     netrc.side_effect = FileNotFoundError('Failed retrieve authentification details from netrc file')
 
-    with patch('trollmoves.movers.FTP') as mymock:
-        destination = 'ftp://localhost.smhi.se/data/satellite/archive/'
-        ftp_mover = FtpMover(origin, destination)
-        ftp_mover.open_connection()
+    ftp = _get_ftp('ftp://localhost.smhi.se/data/satellite/archive/')
 
-        mymock.return_value.login.assert_called_once_with()
+    ftp.return_value.login.assert_called_once_with()
 
-    netrc.return_value.hosts = {'localhost.smhi.se': ('myusername', None, 'mypasswd')}
-    netrc.return_value.authenticators.return_value = (username, account, password)
+
+@patch('netrc.netrc')
+def test_open_ftp_connection_with_netrc(netrc):
+    """Check getting the netrc authentication for ftp connection."""
+    netrc.return_value.hosts = {'localhost.smhi.se': (USERNAME, ACCOUNT, PASSWORD)}
+    netrc.return_value.authenticators.return_value = (USERNAME, ACCOUNT, PASSWORD)
     netrc.side_effect = None
 
-    with patch('trollmoves.movers.FTP') as mymock:
-        destination = 'ftp://localhost.smhi.se/data/satellite/archive/'
-        ftp_mover = FtpMover(origin, destination)
-        ftp_mover.open_connection()
+    ftp = _get_ftp('ftp://localhost.smhi.se/data/satellite/archive/')
 
-        mymock.return_value.login.assert_called_once_with(username, password)
+    ftp.return_value.login.assert_called_once_with(USERNAME, PASSWORD)
 
-    with patch('trollmoves.movers.FTP') as mymock:
-        destination = 'ftp://auser:apasswd@localhost.smhi.se/data/satellite/archive/'
-        ftp_mover = FtpMover(origin, destination)
-        ftp_mover.open_connection()
 
-        mymock.return_value.login.assert_called_once_with('auser', 'apasswd')
+def test_open_ftp_connection_credentials_in_url():
+    """Check getting ftp connection with credentials in the URL."""
+    ftp = _get_ftp('ftp://auser:apasswd@localhost.smhi.se/data/satellite/archive/')
+
+    ftp.return_value.login.assert_called_once_with('auser', 'apasswd')
