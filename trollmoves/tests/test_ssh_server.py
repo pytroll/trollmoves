@@ -25,30 +25,35 @@ import shutil
 from unittest.mock import Mock, MagicMock, patch
 import unittest
 from tempfile import NamedTemporaryFile, mkdtemp
-from six.moves.urllib.parse import urlparse
-
 import errno
 
-import trollmoves
-
-# from paramiko import SSHClient
+from six.moves.urllib.parse import urlparse
 from paramiko import SSHException
+import pytest
 
-# from trollmoves.movers import ScpMover
+import trollmoves
 
 
 class TestSSHMovers(unittest.TestCase):
 
     def setUp(self):
         self.origin_dir = mkdtemp()
-        with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
-            self.origin = the_file.name
+        with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as temporary_file:
+            self.origin = temporary_file.name
 
         self.dest_dir = mkdtemp()
 
         self.hostname = 'localhost'
         self.login = 'user'
         self.port = 22
+
+        self.destination_no_login = 'scp://' + self.hostname + ':' + str(self.port) + '/' + self.dest_dir
+        self.destination_with_login = 'scp://' + self.login + '@' + self.hostname + ':' + str(self.port) + '/' + self.dest_dir  # noqa
+        self.destination_no_port = 'scp://' + self.login + '@' + self.hostname + '/' + self.dest_dir
+        self.destination_no_login_no_port = 'scp://' + self.hostname + ':' + str(self.port) + '/' + self.dest_dir
+
+        self._attrs_empty = {}
+        self._attrs_connection_uptime = {'connection_uptime': 0}
 
     def tearDown(self):
         try:
@@ -59,53 +64,42 @@ class TestSSHMovers(unittest.TestCase):
 
     def test_scp(self):
         """Check ScpMover init."""
-        with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
-            origin = the_file.name
-        destination = 'scp://' + self.hostname + ':' + str(self.port) + '/' + self.dest_dir
-        _attrs = {}
-
         with patch('trollmoves.movers.ScpMover') as sm:
             sm_instanse = sm.return_value
             sm_instanse.run.return_value = {u'dataObjectID': u'test1'}
 
-            trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
-            sm.assert_called_once_with(origin, destination, attrs=_attrs)
+            trollmoves.movers.ScpMover(self.origin, self.destination_no_login, attrs=self._attrs_empty)
+
+            sm.assert_called_once_with(self.origin, self.destination_no_login, attrs=self._attrs_empty)
 
     def test_scp_open_connection(self):
         """Check scp open_connection."""
-        with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
-            origin = the_file.name
-        destination = 'scp://' + self.hostname + ':' + str(self.port) + '/' + self.dest_dir
-        _attrs = {}
-
         with patch('trollmoves.movers.ScpMover') as smgc:
             smgc.return_value.open_connection.return_value = 'testing'
-            scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
+
+            scp_mover = trollmoves.movers.ScpMover(self.origin, self.destination_no_login, attrs=self._attrs_empty)
+
             self.assertEqual(scp_mover.open_connection(), 'testing')
 
     def test_scp_get_connection(self):
         """Check scp get_connection."""
-        with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
-            origin = the_file.name
-        destination = 'scp://' + self.hostname + ':' + str(self.port) + '/' + self.dest_dir
-        _attrs = {}
-
         with patch('trollmoves.movers.ScpMover') as smgc:
             smgc.return_value.get_connection.return_value = 'testing'
-            scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
+
+            scp_mover = trollmoves.movers.ScpMover(self.origin, self.destination_no_login_no_port,
+                                                   attrs=self._attrs_empty)
+
             self.assertEqual(scp_mover.get_connection(self.hostname, self.port, self.login), 'testing')
 
     @patch('trollmoves.movers.SSHClient', autospec=True)
-    def test_scp_open_connection_2(self, mock_sshclient):
-        """Check scp get_connection 2."""
-
+    def test_scp_open_connection_login_name(self, mock_sshclient):
+        """Check scp open_connection() with login name."""
         mocked_client = MagicMock()
         mock_sshclient.return_value = mocked_client
-        with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
-            origin = the_file.name
-        destination = 'scp://' + self.login + '@' + self.hostname + ':' + str(self.port) + '/' + self.dest_dir
-        _attrs = {'connection_uptime': 0}
-        scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
+
+        scp_mover = trollmoves.movers.ScpMover(self.origin, self.destination_with_login,
+                                               attrs=self._attrs_connection_uptime)
+
         scp_mover.open_connection()
 
         mocked_client.connect.assert_called_once_with(
@@ -115,168 +109,124 @@ class TestSSHMovers(unittest.TestCase):
             key_filename=None)
 
     @patch('trollmoves.movers.SSHClient', autospec=True)
-    def test_scp_open_connection_3(self, mock_sshclient3):
-        """Check scp get_connection 3 without ssh port in destination.
-        Using default ssh port 22"""
+    def test_scp_open_connection_without_ssh_port(self, mock_sshclient):
+        """Check scp open_connection() without ssh port in destination.
 
-        mocked_client3 = MagicMock()
-        mock_sshclient3.return_value = mocked_client3
-        with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
-            origin = the_file.name
-        destination = 'scp://' + self.login + '@' + self.hostname + '/' + self.dest_dir
-        _attrs = {'connection_uptime': 0}
-        scp_mover3 = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
-        scp_mover3.open_connection()
-        mocked_client3.connect.assert_called_once_with(
+        Should be using default ssh port 22"""
+        mocked_client = MagicMock()
+        mock_sshclient.return_value = mocked_client
+
+        scp_mover = trollmoves.movers.ScpMover(self.origin, self.destination_no_port,
+                                               attrs=self._attrs_connection_uptime)
+
+        scp_mover.open_connection()
+
+        mocked_client.connect.assert_called_once_with(
             self.hostname,
             port=22,
             username=self.login,
             key_filename=None)
 
     @patch('trollmoves.movers.SSHClient.connect', autospec=True)
-    def test_scp_open_connection_exception(self, mock_sshclient_connect):
-        """Check scp get_connection exception."""
+    def test_scp_open_connection_ssh_exception(self, mock_sshclient_connect):
+        """Check scp get_connection failing for SSHException."""
+        mocked_client = MagicMock(side_effect=SSHException)
+        mock_sshclient_connect.side_effect = mocked_client
 
-        try:
-            mocked_client = MagicMock(side_effect=SSHException)
-            mock_sshclient_connect.side_effect = mocked_client
-            with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
-                origin = the_file.name
-            destination = 'scp://' + self.login + '@' + self.hostname + '/' + self.dest_dir
-            _attrs = {'connection_uptime': 0}
-            scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
+        scp_mover = trollmoves.movers.ScpMover(self.origin, self.destination_no_port,
+                                               attrs=self._attrs_connection_uptime)
+
+        with pytest.raises(IOError, match='Failed to ssh connect after 3 attempts'):
             scp_mover.open_connection()
-        except IOError as ioe:
-            assert str(ioe) == 'Failed to ssh connect after 3 attempts'
 
     @patch('trollmoves.movers.SSHClient.connect', autospec=True)
-    def test_scp_open_connection_exception_2(self, mock_sshclient_connect):
-        """Check scp get_connection exception 2."""
+    def test_scp_open_connection_generic_exception(self, mock_sshclient_connect):
+        """Check scp open_connection() failure when a generic exception happens."""
+        mocked_client = MagicMock(side_effect=Exception)
+        mock_sshclient_connect.side_effect = mocked_client
 
-        try:
-            mocked_client = MagicMock(side_effect=Exception)
-            mock_sshclient_connect.side_effect = mocked_client
-            with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
-                origin = the_file.name
-            destination = 'scp://' + self.login + '@' + self.hostname + '/' + self.dest_dir
-            _attrs = {'connection_uptime': 0}
-            scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
+        scp_mover = trollmoves.movers.ScpMover(self.origin, self.destination_no_port,
+                                               attrs=self._attrs_connection_uptime)
+
+        with pytest.raises(IOError, match='Failed to ssh connect after 3 attempts'):
             scp_mover.open_connection()
-        except IOError as ioe:
-            assert str(ioe) == 'Failed to ssh connect after 3 attempts'
 
     @patch('trollmoves.movers.SSHClient.connect', autospec=True)
     def test_scp_is_connected_exception(self, mock_sshclient_connect):
-        """Check scp is_connected exception."""
-
+        """Check scp is_connected() exception resulting in no connection."""
         mocked_client = Mock()
         mock_sshclient_connect.return_value = mocked_client
-        with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
-            origin = the_file.name
-        destination = 'scp://' + self.login + '@' + self.hostname + '/' + self.dest_dir
-        _attrs = {'connection_uptime': 0}
-        scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
+
+        scp_mover = trollmoves.movers.ScpMover(self.origin, self.destination_no_port,
+                                               attrs=self._attrs_connection_uptime)
         connection = scp_mover.get_connection(self.hostname, 22, username=self.login)
         connection.get_transport.side_effect = AttributeError
+
         result = scp_mover.is_connected(connection)
+
         assert result is False
 
     @patch('trollmoves.movers.SSHClient', autospec=True)
     @patch('trollmoves.movers.SCPClient', autospec=True)
     def test_scp_copy(self, mock_scp_client, mock_sshclient):
-        """Check scp copy"""
-
+        """Check scp copy."""
         mocked_scp_client = MagicMock()
         mock_scp_client.return_value = mocked_scp_client
-        mocked_client = MagicMock()
-        mock_sshclient.return_value = mocked_client
-        with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
-            origin = the_file.name
-        destination = 'scp://' + self.login + '@' + self.hostname + '/' + self.dest_dir
-        _attrs = {}
-        scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
+
+        scp_mover = trollmoves.movers.ScpMover(self.origin, self.destination_no_port, attrs=self._attrs_empty)
         scp_mover.copy()
-        mocked_scp_client.put.assert_called_once_with(origin, urlparse(destination).path)
+
+        mocked_scp_client.put.assert_called_once_with(self.origin, urlparse(self.destination_no_port).path)
 
     @patch('trollmoves.movers.SSHClient', autospec=True)
     @patch('trollmoves.movers.SCPClient', autospec=True)
-    def test_scp_copy_exception(self, mock_scp_client, mock_sshclient):
-        """Check scp copy exception"""
+    def test_scp_copy_generic_exception(self, mock_scp_client, mock_sshclient):
+        """Check scp copy for generic exception."""
+        scp_mover = trollmoves.movers.ScpMover(self.origin, self.destination_no_port, attrs=self._attrs_empty)
+        mock_scp_client.side_effect = Exception
 
-        copy_exception = False
-        try:
-            with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
-                origin = the_file.name
-            destination = 'scp://' + self.login + '@' + self.hostname + '/' + self.dest_dir
-            _attrs = {}
-            scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
-            mock_scp_client.side_effect = Exception
+        with pytest.raises(Exception):
             scp_mover.copy()
-        except Exception:
-            copy_exception = True
-        assert copy_exception is True
 
     @patch('trollmoves.movers.SCPClient', autospec=True)
-    def test_scp_copy_exception2(self, mock_scp_client):
-        """Check scp copy exception OSError"""
+    def test_scp_copy_oserror_exception(self, mock_scp_client):
+        """Check scp copy for OSError."""
+        scp_mover = trollmoves.movers.ScpMover(self.origin, self.destination_no_port, attrs=self._attrs_empty)
+        mock_scp_client.return_value.put.side_effect = OSError
 
-        put_exception = False
-        try:
-            with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
-                origin = the_file.name
-            destination = 'scp://' + self.login + '@' + self.hostname + '/' + self.dest_dir
-            _attrs = {}
-            scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
-            mock_scp_client.return_value.put.side_effect = OSError
+        with pytest.raises(OSError):
             scp_mover.copy()
-        except OSError:
-            put_exception = True
-        assert put_exception is True
 
     @patch('trollmoves.movers.SCPClient', autospec=True)
-    def test_scp_copy_exception3(self, mock_scp_client):
-        """Check scp copy exception OSError errno 2"""
-
-        with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
-            origin = the_file.name
-        destination = 'scp://' + self.login + '@' + self.hostname + '/' + self.dest_dir
-        _attrs = {}
-        scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
+    def test_scp_copy_oserror_exception_errno_2(self, mock_scp_client):
+        """Check scp copy OSError errno 2."""
+        scp_mover = trollmoves.movers.ScpMover(self.origin, self.destination_no_port, attrs=self._attrs_empty)
         mock_scp_client.return_value.put.side_effect = OSError(errno.ENOENT, 'message')
+
         result = scp_mover.copy()
+
         assert result is None
 
     @patch('trollmoves.movers.SCPClient', autospec=True)
-    def test_scp_copy_exception4(self, mock_scp_client):
-        """Check scp copy exception Exception 2"""
+    def test_scp_copy_put_exception(self, mock_scp_client):
+        """Check scp client.put() raising Exception."""
+        scp_mover = trollmoves.movers.ScpMover(self.origin, self.destination_no_port, attrs=self._attrs_empty)
+        mock_scp_client.return_value.put.side_effect = Exception('Test message')
 
-        put_exception = False
-        try:
-            with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
-                origin = the_file.name
-            destination = 'scp://' + self.login + '@' + self.hostname + '/' + self.dest_dir
-            _attrs = {}
-            scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
-            mock_scp_client.return_value.put.side_effect = Exception('Test message')
+        with pytest.raises(Exception):
             scp_mover.copy()
-        except Exception:
-            put_exception = True
-        assert put_exception is True
 
     @patch('trollmoves.movers.SSHClient', autospec=True)
     @patch('trollmoves.movers.SCPClient', autospec=True)
     def test_scp_move(self, mock_scp_client, mock_sshclient):
-        """Check scp move"""
-
+        """Check scp move."""
         mocked_scp_client = MagicMock()
         mock_scp_client.return_value = mocked_scp_client
-        with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as the_file:
-            origin = the_file.name
-        destination = 'scp://' + self.login + '@' + self.hostname + '/' + self.dest_dir
-        _attrs = {}
-        scp_mover = trollmoves.movers.ScpMover(origin, destination, attrs=_attrs)
+
+        scp_mover = trollmoves.movers.ScpMover(self.origin, self.destination_no_port, attrs=self._attrs_empty)
         scp_mover.move()
-        mocked_scp_client.put.assert_called_once_with(origin, urlparse(destination).path)
+
+        mocked_scp_client.put.assert_called_once_with(self.origin, urlparse(self.destination_no_port).path)
 
 
 if __name__ == '__main__':
