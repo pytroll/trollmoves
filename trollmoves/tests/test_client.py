@@ -910,8 +910,8 @@ def test_read_config(client_config_1_item):
 
 @patch('trollmoves.client.NoisyPublisher')
 @patch('trollmoves.client.Listener')
-def test_reload_config_chain_added(Listener, NoisyPublisher, client_config_1_item, client_config_2_items):
-    """Test trollmoves.client.reload_config() when a chain is added."""
+def test_reload_config_single_chain(Listener, NoisyPublisher, client_config_1_item):
+    """Test trollmoves.client.reload_config() with a single chain."""
     from trollmoves.client import reload_config
 
     chains = {}
@@ -923,7 +923,22 @@ def test_reload_config_chain_added(Listener, NoisyPublisher, client_config_1_ite
         assert "eumetcast_hrit_0deg_scp_hot_spare" in chains
         assert NoisyPublisher.call_count == 1
         assert Listener.call_count == 4
+    finally:
+        _stop_chains(chains)
+        os.remove(client_config_1_item)
 
+
+@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.Listener')
+def test_reload_config_chain_added(Listener, NoisyPublisher, client_config_1_item, client_config_2_items):
+    """Test trollmoves.client.reload_config() when a chain is added."""
+    from trollmoves.client import reload_config
+
+    chains = {}
+    callback = MagicMock()
+
+    try:
+        reload_config(client_config_1_item, chains, callback=callback)
         reload_config(client_config_2_items, chains, callback=callback)
         assert len(chains) == 2
         assert "eumetcast_hrit_0deg_scp_hot_spare" in chains
@@ -944,14 +959,9 @@ def test_reload_config_chain_removed(Listener, NoisyPublisher, client_config_1_i
 
     chains = {}
     callback = MagicMock()
+
     try:
         reload_config(client_config_2_items, chains, callback=callback)
-        assert len(chains) == 2
-        assert "eumetcast_hrit_0deg_scp_hot_spare" in chains
-        assert "foo" in chains
-        assert NoisyPublisher.call_count == 2
-        assert Listener.call_count == 5
-
         reload_config(client_config_1_item, chains, callback=callback)
         assert len(chains) == 1
         assert "eumetcast_hrit_0deg_scp_hot_spare" in chains
