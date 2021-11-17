@@ -480,9 +480,9 @@ def test_unpack_and_create_local_message_xrit_compression_with_delete(unpackers)
 
 
 def _check_unpack_result_message_files(res, new_files):
-    for i in range(len(new_files)):
-        assert res['dataset'][i]['uid'] == new_files[i]
-        assert res['dataset'][i]['uri'] == os.path.join(LOCAL_DIR, new_files[i])
+    for i, new_file in enumerate(new_files):
+        assert res['dataset'][i]['uid'] == new_file
+        assert res['dataset'][i]['uri'] == os.path.join(LOCAL_DIR, new_file)
 
 
 @patch('trollmoves.client.unpackers')
