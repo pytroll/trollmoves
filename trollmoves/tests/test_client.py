@@ -28,6 +28,7 @@ from tempfile import NamedTemporaryFile
 import os
 import time
 from threading import Thread
+from collections import deque
 
 import pytest
 from posttroll.message import Message
@@ -146,6 +147,11 @@ topic = /1b/hrit-segment/0deg
 publish_port = 0
 """
 
+LOCAL_DIR = "/local"
+
+CHAIN_BASIC_CONFIG = {"login": "user:pass", "topic": "/foo", "publish_port": 12345, "nameservers": None,
+                      "providers": ["tcp://provider:1", "tcp://provider:2", "tcp://provider:3"]}
+
 
 @pytest.fixture
 def listener():
@@ -177,6 +183,24 @@ def _write_named_temporary_config(data):
         config_fname = fid.name
         fid.write(data)
     return config_fname
+
+
+def _write_to_tar(file_to_add, remove_in_file=False, filename=None):
+    from tempfile import gettempdir
+    import tarfile
+
+    mode = 'a'
+    if filename is None:
+        mode = 'w'
+        filename = os.path.join(gettempdir(), "unpack_test.tar")
+
+    with tarfile.open(filename, mode) as fid:
+        fid.add(file_to_add, arcname=os.path.basename(file_to_add))
+
+    if remove_in_file:
+        os.remove(file_to_add)
+
+    return filename
 
 
 @pytest.fixture
@@ -212,6 +236,28 @@ def client_config_2_items():
 @pytest.fixture
 def compression_config():
     yield _write_named_temporary_config(COMPRESSION_CONFIG)
+
+
+@pytest.fixture
+def test_txt_file_1():
+    yield _write_named_temporary_config("test 1\n")
+
+
+@pytest.fixture
+def test_txt_file_2():
+    yield _write_named_temporary_config("test 2\n")
+
+
+@pytest.fixture
+def chain_config_with_one_item(client_config_1_item):
+    from trollmoves.client import read_config
+
+    try:
+        conf = read_config(client_config_1_item)
+    finally:
+        os.remove(client_config_1_item)
+
+    yield conf
 
 
 @patch('os.remove')
@@ -300,62 +346,43 @@ def test_unpack_bzip():
         os.remove(fname_bz2)
 
 
-def test_unpack_tar():
+def test_unpack_tar(test_txt_file_1, test_txt_file_2):
     """Test unpacking of bzip2 files."""
-    from trollmoves.client import unpack_tar
-    from tempfile import gettempdir
-    import tarfile
-
     try:
-        # Write two test files
-        test_txt_file_1 = os.path.join(gettempdir(), "unpack_test_1.txt")
-        with open(test_txt_file_1, 'w') as fid:
-            fid.write('test 1\n')
-        test_txt_file_2 = os.path.join(gettempdir(), "unpack_test_2.txt")
-        with open(test_txt_file_2, 'w') as fid:
-            fid.write('test 2\n')
         # Write a test .tar file with single file
-        test_tar_file = os.path.join(gettempdir(), "unpack_test.tar")
-        with tarfile.open(test_tar_file, 'w') as fid:
-            fid.add(test_txt_file_1, arcname=os.path.basename(test_txt_file_1))
-        os.remove(test_txt_file_1)
-
-        new_files = unpack_tar(test_tar_file)
-        assert new_files == test_txt_file_1
-        assert os.path.exists(test_txt_file_1)
-        os.remove(test_txt_file_1)
+        test_tar_file = _write_to_tar(test_txt_file_1, remove_in_file=True)
+        _test_and_clean_unpack_tar(test_tar_file, [test_txt_file_1])
 
         # Add another file to the .tar
-        with tarfile.open(test_tar_file, 'a') as fid:
-            fid.add(test_txt_file_2, arcname=os.path.basename(test_txt_file_2))
-        os.remove(test_txt_file_2)
-
-        new_files = unpack_tar(test_tar_file)
-        assert isinstance(new_files, tuple)
-        assert test_txt_file_1 in new_files
-        assert test_txt_file_2 in new_files
-        assert os.path.exists(test_txt_file_1)
-        assert os.path.exists(test_txt_file_2)
+        _ = _write_to_tar(test_txt_file_2, remove_in_file=True, filename=test_tar_file)
+        _test_and_clean_unpack_tar(test_tar_file, [test_txt_file_1, test_txt_file_2])
 
     finally:
-        if os.path.exists(test_txt_file_1):
-            os.remove(test_txt_file_1)
-        if os.path.exists(test_txt_file_2):
-            os.remove(test_txt_file_2)
-        if os.path.exists(test_tar_file):
-            os.remove(test_tar_file)
+        os.remove(test_tar_file)
+
+
+def _test_and_clean_unpack_tar(test_tar_file, output_files):
+    from trollmoves.client import unpack_tar
+
+    new_files = unpack_tar(test_tar_file)
+    for f in output_files:
+        assert f in new_files
+        assert os.path.exists(f)
+        os.remove(f)
 
 
 @patch('trollmoves.client.unpackers')
-def test_unpack_and_create_local_message(unpackers, compression_config):
-    """Test unpacking and updating the message with new filenames."""
+def test_unpack_and_create_local_message_no_compression(unpackers):
+    """Test unpacking and updating the message with new filenames.
+
+    Case with no compression.
+    """
     from trollmoves.client import unpack_and_create_local_message as unp
 
-    local_dir = '/local'
     kwargs = {'kwarg': 'value'}
 
     # No compression defined
-    res = unp(copy.copy(MSG_FILE), local_dir, **kwargs)
+    res = unp(copy.copy(MSG_FILE), LOCAL_DIR, **kwargs)
     assert res.subject == MSG_FILE.subject
     assert res.data == MSG_FILE.data
     assert res.type == MSG_FILE.type
@@ -363,111 +390,196 @@ def test_unpack_and_create_local_message(unpackers, compression_config):
     assert res is not MSG_FILE
     unpackers.__getitem__.assert_not_called()
 
-    # One file with 'tar' compression
-    kwargs['compression'] = 'tar'
+
+@patch('trollmoves.client.unpackers')
+def test_unpack_and_create_local_message_one_tar_file(unpackers):
+    """Test unpacking and updating the message with new filenames.
+
+    Case with one tar file.
+    """
+    from trollmoves.client import unpack_and_create_local_message as unp
+
+    kwargs = {'compression': 'tar'}
     unpackers['tar'].return_value = 'new_file1.png'
-    res = unp(copy.copy(MSG_FILE_TAR), local_dir, **kwargs)
-    assert res.data['uri'] == os.path.join(local_dir, 'new_file1.png')
+    res = unp(copy.copy(MSG_FILE_TAR), LOCAL_DIR, **kwargs)
+    assert res.data['uri'] == os.path.join(LOCAL_DIR, 'new_file1.png')
     assert res.data['uid'] == 'new_file1.png'
     assert res.subject == MSG_FILE_TAR.subject
     assert res.type == MSG_FILE_TAR.type
-    unpackers['tar'].assert_called_with('/local/file1.tar', **kwargs)
+    unpackers['tar'].assert_called_with(os.path.join(LOCAL_DIR, MSG_FILE_TAR.data['uid']), **kwargs)
 
-    # The unpacker returns a full path for some reason
-    unpackers['tar'].return_value = os.path.join(local_dir, 'new_file1.png')
-    res = unp(copy.copy(MSG_FILE_TAR), local_dir, **kwargs)
-    assert res.data['uri'] == os.path.join(local_dir, 'new_file1.png')
+
+@patch('trollmoves.client.unpackers')
+def test_unpack_and_create_local_message_full_path(unpackers):
+    """Test unpacking and updating the message with new filenames.
+
+    Case with unpacker returning a full path
+    """
+    from trollmoves.client import unpack_and_create_local_message as unp
+
+    kwargs = {'compression': 'tar'}
+    unpackers['tar'].return_value = os.path.join(LOCAL_DIR, 'new_file1.png')
+    res = unp(copy.copy(MSG_FILE_TAR), LOCAL_DIR, **kwargs)
+    assert res.data['uri'] == os.path.join(LOCAL_DIR, 'new_file1.png')
     assert res.data['uid'] == 'new_file1.png'
 
-    # One file with 'bz2' compression
-    kwargs['compression'] = 'bzip'
+
+@patch('trollmoves.client.unpackers')
+def test_unpack_and_create_local_message_bz2_compression(unpackers):
+    """Test unpacking and updating the message with new filenames.
+
+    Case with bz2 compression
+    """
+    from trollmoves.client import unpack_and_create_local_message as unp
+
+    kwargs = {'compression': 'bzip'}
     unpackers['bzip'].return_value = 'file1.png'
-    res = unp(copy.copy(MSG_FILE_BZ2), local_dir, **kwargs)
-    assert res.data['uri'] == os.path.join(local_dir, 'file1.png')
+    res = unp(copy.copy(MSG_FILE_BZ2), LOCAL_DIR, **kwargs)
+    assert res.data['uri'] == os.path.join(LOCAL_DIR, 'file1.png')
     assert res.data['uid'] == 'file1.png'
     assert res.subject == MSG_FILE_BZ2.subject
     assert res.type == MSG_FILE_BZ2.type
-    unpackers['bzip'].assert_called_with('/local/file1.png.bz2', **kwargs)
+    unpackers['bzip'].assert_called_with(os.path.join(LOCAL_DIR, MSG_FILE_BZ2.data['uid']), **kwargs)
 
-    # One file with 'xrit' compression
-    kwargs['compression'] = 'xrit'
+
+@patch('trollmoves.client.unpackers')
+def test_unpack_and_create_local_message_xrit_compression_no_delete(unpackers):
+    """Test unpacking and updating the message with new filenames.
+
+    Case with xrit compression and file not being deleted
+    """
+    from trollmoves.client import unpack_and_create_local_message as unp
+
+    kwargs = {'compression': 'xrit'}
     unpackers['xrit'].return_value = 'new_file1.png'
     with patch('os.remove') as remove:
-        res = unp(copy.copy(MSG_FILE_XRIT), local_dir, **kwargs)
+        res = unp(copy.copy(MSG_FILE_XRIT), LOCAL_DIR, **kwargs)
     # Delete has not been setup, so it shouldn't been done
     remove.assert_not_called()
-    assert res.data['uri'] == os.path.join(local_dir, 'new_file1.png')
+    assert res.data['uri'] == os.path.join(LOCAL_DIR, 'new_file1.png')
     assert res.data['uid'] == 'new_file1.png'
     assert res.subject == MSG_FILE_XRIT.subject
     assert res.type == MSG_FILE_XRIT.type
-    unpackers['xrit'].assert_called_with('/local/file1-C_', **kwargs)
+    unpackers['xrit'].assert_called_with(os.path.join(LOCAL_DIR, MSG_FILE_XRIT.data['uid']), **kwargs)
 
-    # One file with 'xrit' compression, delete the compressed file
-    kwargs['delete'] = True
+
+@patch('trollmoves.client.unpackers')
+def test_unpack_and_create_local_message_xrit_compression_with_delete(unpackers):
+    """Test unpacking and updating the message with new filenames.
+
+    Case with xrit compression and deletion configured
+    """
+    from trollmoves.client import unpack_and_create_local_message as unp
+
+    kwargs = {'compression': 'xrit', 'delete': True}
     unpackers['xrit'].return_value = 'new_file1.png'
     with patch('os.remove') as remove:
-        res = unp(copy.copy(MSG_FILE_XRIT), local_dir, **kwargs)
-    assert remove.called_once_with('/local/file1-C_')
+        _ = unp(copy.copy(MSG_FILE_XRIT), LOCAL_DIR, **kwargs)
+    assert remove.called_once_with(os.path.join(LOCAL_DIR, MSG_FILE_XRIT.data['uid']))
     del kwargs['delete']
 
-    # Multiple files returned when decompression is applied. 'tar'
-    # compression, 'file' message
-    kwargs['compression'] = 'tar'
-    unpackers['tar'].return_value = ('new_file1.png', 'new_file2.png')
-    res = unp(copy.copy(MSG_FILE_TAR), local_dir, **kwargs)
-    assert res.data['dataset'][0]['uid'] == 'new_file1.png'
-    assert res.data['dataset'][0]['uri'] == '/local/new_file1.png'
-    assert res.data['dataset'][1]['uid'] == 'new_file2.png'
-    assert res.data['dataset'][1]['uri'] == '/local/new_file2.png'
+
+def _check_unpack_result_message_files(res, new_files):
+    for i, new_file in enumerate(new_files):
+        assert res['dataset'][i]['uid'] == new_file
+        assert res['dataset'][i]['uri'] == os.path.join(LOCAL_DIR, new_file)
+
+
+@patch('trollmoves.client.unpackers')
+def test_unpack_and_create_local_message_tar_multiple_files_file_message(unpackers):
+    """Test unpacking and updating the message with new filenames.
+
+    Case with tar having multiple files and message with type 'file'
+    """
+    from trollmoves.client import unpack_and_create_local_message as unp
+
+    kwargs = {'compression': 'tar'}
+    new_files = ('new_file1.png', 'new_file2.png')
+    unpackers['tar'].return_value = new_files
+    res = unp(copy.copy(MSG_FILE_TAR), LOCAL_DIR, **kwargs)
+    _check_unpack_result_message_files(res.data, new_files)
     assert res.subject == MSG_FILE_TAR.subject
     assert res.type == "dataset"
-    unpackers['tar'].assert_called_with('/local/file1.tar', **kwargs)
+    unpackers['tar'].assert_called_with(os.path.join(LOCAL_DIR, MSG_FILE_TAR.data['uid']), **kwargs)
 
-    # Dataset message, 'tar' compression
-    kwargs['compression'] = 'tar'
+
+@patch('trollmoves.client.unpackers')
+def test_unpack_and_create_local_message_tar_multiple_files_dataset_message(unpackers):
+    """Test unpacking and updating the message with new filenames.
+
+    Case with tar having multiple files and message with type 'dataset'
+    """
+    from trollmoves.client import unpack_and_create_local_message as unp
+
+    kwargs = {'compression': 'tar'}
     unpackers['tar'].return_value = None
-    unpackers['tar'].side_effect = ['new_file1.png', 'new_file2.png']
-    res = unp(copy.copy(MSG_DATASET_TAR), local_dir, **kwargs)
-    assert res.data['dataset'][0]['uid'] == 'new_file1.png'
-    assert res.data['dataset'][0]['uri'] == '/local/new_file1.png'
-    assert res.data['dataset'][1]['uid'] == 'new_file2.png'
-    assert res.data['dataset'][1]['uri'] == '/local/new_file2.png'
+    new_files = ('new_file1.png', 'new_file2.png')
+    unpackers['tar'].side_effect = new_files
+    res = unp(copy.copy(MSG_DATASET_TAR), LOCAL_DIR, **kwargs)
+    _check_unpack_result_message_files(res.data, new_files)
     assert res.subject == MSG_DATASET_TAR.subject
     assert res.type == MSG_DATASET_TAR.type
-    assert call('/local/file1.tgz', **kwargs) in unpackers['tar'].mock_calls
-    assert call('/local/file2.tar.gz', **kwargs) in unpackers['tar'].mock_calls
+    for dset in MSG_DATASET_TAR.data['dataset']:
+        assert call(os.path.join(LOCAL_DIR, dset['uid']), **kwargs) in unpackers['tar'].mock_calls
 
-    # Collection message, 'tar' compression
-    kwargs['compression'] = 'tar'
+
+@patch('trollmoves.client.unpackers')
+def test_unpack_and_create_local_message_tar_multiple_files_collection_message(unpackers):
+    """Test unpacking and updating the message with new filenames.
+
+    Case with tar having multiple files and message with type 'collection'
+    """
+    from trollmoves.client import unpack_and_create_local_message as unp
+
+    kwargs = {'compression': 'tar'}
     unpackers['tar'].return_value = None
-    unpackers['tar'].side_effect = ['new_file1.png']
-    res = unp(copy.copy(MSG_COLLECTION_TAR), local_dir, **kwargs)
-    assert res.data['collection'][0]['dataset'][0]['uid'] == 'new_file1.png'
-    assert res.data['collection'][0]['dataset'][0]['uri'] == '/local/new_file1.png'
+    new_files = ['new_file1.png']
+    unpackers['tar'].side_effect = new_files
+    res = unp(copy.copy(MSG_COLLECTION_TAR), LOCAL_DIR, **kwargs)
+    _check_unpack_result_message_files(res.data['collection'][0], new_files)
     assert res.subject == MSG_COLLECTION_TAR.subject
     assert res.type == MSG_COLLECTION_TAR.type
-    assert call('/local/file1.tar.bz2', **kwargs) in unpackers['tar'].mock_calls
+    file_path = os.path.join(LOCAL_DIR, MSG_COLLECTION_TAR.data['collection'][0]['dataset'][0]['uid'])
+    assert call(file_path, **kwargs) in unpackers['tar'].mock_calls
 
-    # Test with config file
+
+def test_unpack_and_create_local_message_config_no_compression(compression_config):
+    """Test unpacking and updating the message with new filenames.
+
+    Case with using a configuration file without compression
+    """
+    from trollmoves.client import unpack_and_create_local_message as unp
+    from trollmoves.client import read_config
+
     try:
-        from trollmoves.client import read_config
         config = read_config(compression_config)
-
-        # No compression
         kwargs = config['empty_decompression']
-        res = unp(copy.copy(MSG_FILE), local_dir, **kwargs)
+        res = unp(copy.copy(MSG_FILE), LOCAL_DIR, **kwargs)
         assert res.subject == MSG_FILE.subject
         assert res.data == MSG_FILE.data
         assert res.type == MSG_FILE.type
         # A new message is returned
         assert res is not MSG_FILE
+    finally:
+        os.remove(compression_config)
 
-        # One file with 'xrit' compression
+
+@patch('trollmoves.client.unpackers')
+def test_unpack_and_create_local_message_config_xrit_compression(unpackers, compression_config):
+    """Test unpacking and updating the message with new filenames.
+
+    Case with using a configuration file with xrit compression
+    """
+    from trollmoves.client import unpack_and_create_local_message as unp
+    from trollmoves.client import read_config
+
+    try:
+        config = read_config(compression_config)
         kwargs = config['xrit_decompression']
         unpackers['xrit'].side_effect = None
         unpackers['xrit'].return_value = 'new_file1.png'
-        res = unp(copy.copy(MSG_FILE_XRIT), local_dir, **kwargs)
-        assert res.data['uri'] == os.path.join(local_dir, 'new_file1.png')
+        res = unp(copy.copy(MSG_FILE_XRIT), LOCAL_DIR, **kwargs)
+        assert res.data['uri'] == os.path.join(LOCAL_DIR, 'new_file1.png')
         assert res.data['uid'] == 'new_file1.png'
         assert res.subject == MSG_FILE_XRIT.subject
         assert res.type == MSG_FILE_XRIT.type
@@ -594,11 +706,11 @@ def _run_listener_in_thread(listener_instance):
     thr.join(2)
 
 
+@patch('trollmoves.client.ongoing_transfers', new_callable=dict)
 @patch('trollmoves.client.ongoing_transfers_lock')
-def test_add_to_ongoing(lock):
-    """Test add_to_ongoing()."""
-    from trollmoves.client import (add_to_ongoing, ongoing_transfers,
-                                   ongoing_hot_spare_timers)
+def test_add_to_ongoing_one_message(lock, ongoing_transfers):
+    """Test add_to_ongoing() with a single message."""
+    from trollmoves.client import add_to_ongoing
 
     # Mock the lock context manager
     lock_cm = MagicMock()
@@ -612,36 +724,66 @@ def test_add_to_ongoing(lock):
     assert isinstance(ongoing_transfers[UID_FILE1], list)
     assert len(ongoing_transfers[UID_FILE1]) == 1
 
-    # Add the same message again
+
+@patch('trollmoves.client.ongoing_transfers', new_callable=dict)
+@patch('trollmoves.client.ongoing_transfers_lock')
+def test_add_to_ongoing_duplicate_message(lock, ongoing_transfers):
+    """Test add_to_ongoing() with duplicate messages."""
+    from trollmoves.client import add_to_ongoing
+
+    # Mock the lock context manager
+    lock_cm = MagicMock()
+    lock.__enter__ = lock_cm
+
+    _ = add_to_ongoing(MSG_FILE1)
     res = add_to_ongoing(MSG_FILE1)
     assert len(lock_cm.mock_calls) == 2
     assert res is None
     assert len(ongoing_transfers) == 1
     assert len(ongoing_transfers[UID_FILE1]) == 2
 
-    # Another message, a new ongoing transfer is added
+
+@patch('trollmoves.client.ongoing_transfers', new_callable=dict)
+@patch('trollmoves.client.ongoing_transfers_lock')
+def test_add_to_ongoing_two_messages(lock, ongoing_transfers):
+    """Test add_to_ongoing()."""
+    from trollmoves.client import add_to_ongoing
+
+    # Mock the lock context manager
+    lock_cm = MagicMock()
+    lock.__enter__ = lock_cm
+
+    _ = add_to_ongoing(MSG_FILE1)
     res = add_to_ongoing(MSG_FILE2)
-    assert len(lock_cm.mock_calls) == 3
+    assert len(lock_cm.mock_calls) == 2
     assert res is not None
     assert len(ongoing_transfers) == 2
 
-    # Clear transfers
-    ongoing_transfers = dict()
+
+@patch('trollmoves.client.ongoing_hot_spare_timers', new_callable=dict)
+@patch('trollmoves.client.ongoing_transfers', new_callable=dict)
+@patch('trollmoves.client.ongoing_transfers_lock')
+def test_add_to_ongoing_hot_spare_timer(lock, ongoing_transfers, ongoing_hot_spare_timers):
+    """Test add_to_ongoing()."""
+    from trollmoves.client import add_to_ongoing
+
+    # Mock the lock context manager
+    lock_cm = MagicMock()
+    lock.__enter__ = lock_cm
+
     # There's a timer running for hot-spare functionality
     timer = MagicMock()
     ongoing_hot_spare_timers[UID_FILE1] = timer
-    res = add_to_ongoing(MSG_FILE1)
+    _ = add_to_ongoing(MSG_FILE1)
     timer.cancel.assert_called_once()
     assert len(ongoing_hot_spare_timers) == 0
 
 
+@patch('trollmoves.client.file_cache', new_callable=deque)
 @patch('trollmoves.client.cache_lock')
-def test_add_to_file_cache(lock):
-    """Test trollmoves.client.add_to_file_cache()."""
-    from trollmoves.client import add_to_file_cache, file_cache
-
-    # Clear file cache, the other tests have added stuff in it
-    file_cache.clear()
+def test_add_to_file_cache_one_file(lock, file_cache):
+    """Test trollmoves.client.add_to_file_cache() with a single file."""
+    from trollmoves.client import add_to_file_cache
 
     # Mock the lock context manager
     lock_cm = MagicMock()
@@ -653,31 +795,50 @@ def test_add_to_file_cache(lock):
     assert len(file_cache) == 1
     assert MSG_FILE1.data['uid'] in file_cache
 
-    # Add the same file again
+
+@patch('trollmoves.client.file_cache', new_callable=deque)
+@patch('trollmoves.client.cache_lock')
+def test_add_to_file_cache_duplicate_file(lock, file_cache):
+    """Test trollmoves.client.add_to_file_cache() with two identical files."""
+    from trollmoves.client import add_to_file_cache
+
+    # Mock the lock context manager
+    lock_cm = MagicMock()
+    lock.__enter__ = lock_cm
+
+    add_to_file_cache(MSG_FILE1)
     add_to_file_cache(MSG_FILE1)
     assert len(lock_cm.mock_calls) == 2
-    # The file should be there only once
     assert len(file_cache) == 1
     assert MSG_FILE1.data['uid'] in file_cache
 
-    # Add another file
+
+@patch('trollmoves.client.file_cache', new_callable=deque)
+@patch('trollmoves.client.cache_lock')
+def test_add_to_file_cache_two_files(lock, file_cache):
+    """Test trollmoves.client.add_to_file_cache() with two separate files."""
+    from trollmoves.client import add_to_file_cache
+
+    # Mock the lock context manager
+    lock_cm = MagicMock()
+    lock.__enter__ = lock_cm
+
+    add_to_file_cache(MSG_FILE1)
     add_to_file_cache(MSG_FILE2)
-    assert len(lock_cm.mock_calls) == 3
+    assert len(lock_cm.mock_calls) == 2
     assert len(file_cache) == 2
     assert MSG_FILE2.data['uid'] in file_cache
 
 
+@patch('trollmoves.client.ongoing_transfers', new_callable=dict)
+@patch('trollmoves.client.file_cache', new_callable=deque)
 @patch('trollmoves.client.clean_ongoing_transfer')
 @patch('trollmoves.client.send_request')
 @patch('trollmoves.client.send_ack')
-def test_request_push(send_ack, send_request, clean_ongoing_transfer):
-    """Test trollmoves.client.request_push()."""
-    from trollmoves.client import request_push, file_cache, ongoing_transfers
+def test_request_push_single_call(send_ack, send_request, clean_ongoing_transfer, file_cache, ongoing_transfers):
+    """Test trollmoves.client.request_push() with a single file."""
+    from trollmoves.client import request_push
     from tempfile import gettempdir
-
-    # Clear file cache and ongoing transfers, the other tests have added stuff in it
-    file_cache.clear()
-    ongoing_transfers.clear()
 
     clean_ongoing_transfer.return_value = [MSG_FILE2]
     send_request.return_value = [MSG_FILE2, 'localhost']
@@ -693,14 +854,30 @@ def test_request_push(send_ack, send_request, clean_ongoing_transfer):
     assert UID_FILE2 in ongoing_transfers
     # And removed
     clean_ongoing_transfer.assert_called_once_with(UID_FILE2)
-    # Clear the ongoing transfers as it would've been without mocking
-    ongoing_transfers.clear()
     # The transferred file should be in the cache
     assert MSG_FILE2.data['uid'] in file_cache
     assert len(file_cache) == 1
 
-    # Request the same file again. Now the transfer should not be
-    # started again, and `send_ack()` should have been called again.
+
+@patch('trollmoves.client.ongoing_transfers', new_callable=dict)
+@patch('trollmoves.client.file_cache', new_callable=deque)
+@patch('trollmoves.client.clean_ongoing_transfer')
+@patch('trollmoves.client.send_request')
+@patch('trollmoves.client.send_ack')
+def test_request_push_duplicate_call(send_ack, send_request, clean_ongoing_transfer, file_cache, ongoing_transfers):
+    """Test trollmoves.client.request_push() with duplicate files."""
+    from trollmoves.client import request_push
+    from tempfile import gettempdir
+
+    clean_ongoing_transfer.return_value = [MSG_FILE2]
+    send_request.return_value = [MSG_FILE2, 'localhost']
+    publisher = MagicMock()
+    kwargs = {'transfer_req_timeout': 1.0, 'req_timeout': 1.0}
+
+    request_push(MSG_FILE2, gettempdir(), 'login', publisher=publisher,
+                 **kwargs)
+    # The transfer has been completed
+    ongoing_transfers.clear()
     request_push(MSG_FILE2, gettempdir(), 'login', publisher=publisher,
                  **kwargs)
 
@@ -708,6 +885,7 @@ def test_request_push(send_ack, send_request, clean_ongoing_transfer):
     send_request.assert_called_once()
     # The new "ongoing" transfer should be cleared
     assert clean_ongoing_transfer.call_count == 2
+    assert len(file_cache) == 1
 
 
 def test_read_config(client_config_1_item):
@@ -732,8 +910,8 @@ def test_read_config(client_config_1_item):
 
 @patch('trollmoves.client.NoisyPublisher')
 @patch('trollmoves.client.Listener')
-def test_reload_config(Listener, NoisyPublisher, client_config_1_item, client_config_2_items):
-    """Test trollmoves.client.reload_config(), which also builds the chains."""
+def test_reload_config_single_chain(Listener, NoisyPublisher, client_config_1_item):
+    """Test trollmoves.client.reload_config() with a single chain."""
     from trollmoves.client import reload_config
 
     chains = {}
@@ -741,35 +919,53 @@ def test_reload_config(Listener, NoisyPublisher, client_config_1_item, client_co
 
     try:
         reload_config(client_config_1_item, chains, callback=callback)
-        section_name = "eumetcast_hrit_0deg_scp_hot_spare"
-        assert section_name in chains
-        listeners = chains[section_name].listeners
-        assert len(listeners) == 4
-        # The same listener was used for all, so it should have been
-        # started four times
-        for key in listeners:
-            assert listeners[key].start.call_count == 4
-        NoisyPublisher.assert_called_once()
-        chains[section_name]._np.start.assert_called_once()
-        # Reload the same config again, nothing should happen
-        reload_config(client_config_1_item, chains, callback=callback)
-        for key in listeners:
-            assert listeners[key].start.call_count == 4
-        NoisyPublisher.assert_called_once()
-        chains[section_name]._np.start.assert_called_once()
+        assert len(chains) == 1
+        assert "eumetcast_hrit_0deg_scp_hot_spare" in chains
+        assert NoisyPublisher.call_count == 1
+        assert Listener.call_count == 4
+    finally:
+        _stop_chains(chains)
+        os.remove(client_config_1_item)
 
-        # Load a new config with one new item
+
+@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.Listener')
+def test_reload_config_chain_added(Listener, NoisyPublisher, client_config_1_item, client_config_2_items):
+    """Test trollmoves.client.reload_config() when a chain is added."""
+    from trollmoves.client import reload_config
+
+    chains = {}
+    callback = MagicMock()
+
+    try:
+        reload_config(client_config_1_item, chains, callback=callback)
         reload_config(client_config_2_items, chains, callback=callback)
         assert len(chains) == 2
+        assert "eumetcast_hrit_0deg_scp_hot_spare" in chains
         assert "foo" in chains
-        # One additional call to publisher and listener
         assert NoisyPublisher.call_count == 2
         assert Listener.call_count == 5
+    finally:
+        _stop_chains(chains)
+        os.remove(client_config_1_item)
+        os.remove(client_config_2_items)
 
-        # Load the first config again, the other chain should have been removed
+
+@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.Listener')
+def test_reload_config_chain_removed(Listener, NoisyPublisher, client_config_1_item, client_config_2_items):
+    """Test trollmoves.client.reload_config() when a chain is added."""
+    from trollmoves.client import reload_config
+
+    chains = {}
+    callback = MagicMock()
+
+    try:
+        reload_config(client_config_2_items, chains, callback=callback)
         reload_config(client_config_1_item, chains, callback=callback)
+        assert len(chains) == 1
+        assert "eumetcast_hrit_0deg_scp_hot_spare" in chains
         assert "foo" not in chains
-        # No new calls to publisher nor listener
         assert NoisyPublisher.call_count == 2
         assert Listener.call_count == 5
     finally:
@@ -984,17 +1180,7 @@ def test_iterate_messages(lock):
     assert len(lock.__enter__.mock_calls) == 3
 
 
-@patch('trollmoves.client.NoisyPublisher')
-@patch('trollmoves.client.Listener')
-def test_chain(Listener, NoisyPublisher, caplog, client_config_1_item):
-    """Test the Chain object."""
-    from trollmoves.client import Chain, read_config
-
-    try:
-        conf = read_config(client_config_1_item)
-    finally:
-        os.remove(client_config_1_item)
-
+def _mock_listener_for_chain_tests(Listener, is_alive=True):
     def restart():
         return Listener()
 
@@ -1002,25 +1188,62 @@ def test_chain(Listener, NoisyPublisher, caplog, client_config_1_item):
                    MagicMock(), MagicMock(), MagicMock(), MagicMock(),
                    MagicMock(), MagicMock(), MagicMock(), MagicMock()]
     for lis in side_effect:
-        lis.is_alive.return_value = True
-        lis.death_count = 0
+        lis.is_alive.return_value = is_alive
         lis.restart.side_effect = restart
+        if is_alive:
+            lis.death_count = 0
+        else:
+            lis.death_count = 3
+            lis.cause_of_death = RuntimeError('OMG, they killed the listener!')
     Listener.side_effect = side_effect
 
-    # Init
+    return side_effect
+
+
+@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.Listener')
+def test_chain_init(Listener, NoisyPublisher, chain_config_with_one_item):
+    """Test the Chain object."""
+    from trollmoves.client import Chain
+
     name = 'eumetcast_hrit_0deg_scp_hot_spare'
-    chain = Chain(name, conf[name])
+    chain = Chain(name, chain_config_with_one_item[name])
+
     NoisyPublisher.assert_called_once()
     assert chain.listeners == {}
     assert not chain.listener_died_event.is_set()
 
-    # Setup listeners
+
+@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.Listener')
+def test_chain_listeners(Listener, NoisyPublisher, chain_config_with_one_item):
+    """Test the Chain object."""
+    from trollmoves.client import Chain
+
+    _mock_listener_for_chain_tests(Listener)
     callback = MagicMock()
+
+    name = 'eumetcast_hrit_0deg_scp_hot_spare'
+    chain = Chain(name, chain_config_with_one_item[name])
     chain.setup_listeners(callback)
+
     assert len(chain.listeners) == 4
 
-    # Check running with alive listeners
+
+@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.Listener')
+def test_chain_restart_dead_listeners(Listener, NoisyPublisher, caplog, chain_config_with_one_item):
+    """Test the Chain object."""
+    from trollmoves.client import Chain
     import trollmoves.client
+
+    _mock_listener_for_chain_tests(Listener)
+    callback = MagicMock()
+
+    name = 'eumetcast_hrit_0deg_scp_hot_spare'
+    chain = Chain(name, chain_config_with_one_item[name])
+    chain.setup_listeners(callback)
+
     with patch('trollmoves.client.LISTENER_CHECK_INTERVAL', new=.1):
         trollmoves.client.LISTENER_CHECK_INTERVAL = .1
         chain.start()
@@ -1036,8 +1259,28 @@ def test_chain(Listener, NoisyPublisher, caplog, client_config_1_item):
             chain.listener_died_event.set()
             time.sleep(.2)
             assert not chain.listener_died_event.is_set()
+        finally:
+            chain.stop()
 
-            # Check with listener crashing once
+
+@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.Listener')
+def test_chain_listener_crashing_once(Listener, NoisyPublisher, caplog, chain_config_with_one_item):
+    """Test the Chain object."""
+    from trollmoves.client import Chain
+    import trollmoves.client
+
+    _mock_listener_for_chain_tests(Listener)
+    callback = MagicMock()
+
+    name = 'eumetcast_hrit_0deg_scp_hot_spare'
+    chain = Chain(name, chain_config_with_one_item[name])
+    chain.setup_listeners(callback)
+
+    with patch('trollmoves.client.LISTENER_CHECK_INTERVAL', new=.1):
+        trollmoves.client.LISTENER_CHECK_INTERVAL = .1
+        chain.start()
+        try:
             listener = chain.listeners['tcp://satmottag2:9010']
             listener.is_alive.return_value = False
             listener.cause_of_death = RuntimeError('OMG, they killed the listener!')
@@ -1046,30 +1289,36 @@ def test_chain(Listener, NoisyPublisher, caplog, client_config_1_item):
             listener.restart.assert_called_once()
             assert "Listener for tcp://satmottag2:9010 died 1 time: OMG, they killed the listener!" in caplog.text
             time.sleep(.6)
+        finally:
+            chain.stop()
 
-            # Check with listener crashing all the time
-            death_count = 0
-            for lis in side_effect[5:]:
-                death_count += 1
-                lis.is_alive.return_value = False
-                lis.cause_of_death = RuntimeError('OMG, they killed the listener!')
-                lis.death_count = death_count
 
-            listener = chain.listeners['tcp://satmottag2:9010']
-            listener.is_alive.return_value = False
-            listener.death_count = 0
-            listener.cause_of_death = RuntimeError('OMG, they killed the listener!')
-            listener.restart.side_effect = restart
+@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.Listener')
+def test_chain_listener_crashing_all_the_time(Listener, NoisyPublisher, caplog, chain_config_with_one_item):
+    """Test the Chain object."""
+    from trollmoves.client import Chain
+    import trollmoves.client
 
+    def restart():
+        return Listener
+
+    _mock_listener_for_chain_tests(Listener, is_alive=False)
+    callback = MagicMock()
+
+    name = 'eumetcast_hrit_0deg_scp_hot_spare'
+    chain = Chain(name, chain_config_with_one_item[name])
+    chain.setup_listeners(callback)
+
+    with patch('trollmoves.client.LISTENER_CHECK_INTERVAL', new=.1):
+        trollmoves.client.LISTENER_CHECK_INTERVAL = .1
+        chain.start()
+        try:
             chain.listener_died_event.set()
             time.sleep(2)
             assert "Listener for tcp://satmottag2:9010 switched off: OMG, they killed the listener!" in caplog.text
         finally:
             chain.stop()
-
-
-CHAIN_BASIC_CONFIG = {"login": "user:pass", "topic": "/foo", "publish_port": 12345, "nameservers": None,
-                      "providers": ["tcp://provider:1", "tcp://provider:2", "tcp://provider:3"]}
 
 
 @patch('trollmoves.client.NoisyPublisher')
