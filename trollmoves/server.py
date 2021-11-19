@@ -23,7 +23,6 @@
 
 """Classes and functions for Trollmoves server."""
 
-import bz2
 import datetime
 import errno
 import fnmatch
@@ -37,24 +36,25 @@ import tempfile
 import time
 from collections import deque
 from threading import Lock, Thread
+from configparser import RawConfigParser
+from queue import Empty, Queue
+from urllib.parse import urlparse
 
+import bz2
 import pyinotify
 from zmq import NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers.polling import PollingObserver
-
 from posttroll import get_context
 from posttroll.message import Message
 from posttroll.publisher import get_own_ip
 from posttroll.subscriber import Subscribe
-from configparser import RawConfigParser
-from queue import Empty, Queue
-from six.moves.urllib.parse import urlparse
+from trollsift import globify, parse
+
 from trollmoves.client import DEFAULT_REQ_TIMEOUT
 from trollmoves.movers import move_it
 from trollmoves.utils import (clean_url, gen_dict_contains, gen_dict_extract,
                               is_file_local)
-from trollsift import globify, parse
 
 LOGGER = logging.getLogger(__name__)
 

@@ -28,7 +28,7 @@ from urllib.parse import urlunparse
 import argparse
 
 from posttroll.message import Message
-from posttroll.publisher import Publisher, get_own_ip
+from posttroll.publisher import get_own_ip
 
 from trollmoves.move_it_base import MoveItBase, create_publisher
 from trollmoves.client import Listener

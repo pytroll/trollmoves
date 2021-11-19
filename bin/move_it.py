@@ -124,7 +124,6 @@ triggering of the chain on them. To avoid any race conditions, chain is
 executed tree seconds after the list of file is gathered.
 """
 
-import bz2
 import fnmatch
 import glob
 import logging
@@ -134,19 +133,15 @@ import shutil
 import subprocess
 import sys
 import time
-from six.moves.configparser import RawConfigParser
-from ftplib import FTP, all_errors
-from six.moves.urllib.parse import urlparse, urlunparse
+from configparser import RawConfigParser
+from urllib.parse import urlparse, urlunparse
 import argparse
 import signal
 
+import bz2
+from ftplib import FTP, all_errors
 import pyinotify
-
 from trollsift import globify, parse
-
-LOGGER = logging.getLogger("move_it")
-LOG_FORMAT = "[%(asctime)s %(levelname)-8s] %(message)s"
-
 # messaging is optional
 try:
     from posttroll.publisher import NoisyPublisher
@@ -154,6 +149,9 @@ try:
 except ImportError:
     print("\nNOTICE! Import of posttroll failed, "
           "messaging will not be used.\n")
+
+LOGGER = logging.getLogger("move_it")
+LOG_FORMAT = "[%(asctime)s %(levelname)-8s] %(message)s"
 
 
 chains = {}
@@ -348,8 +346,7 @@ def xrit(pathname, destination=None, cmd="./xRITDecompress"):
     destination = destination or "/tmp/"
     dest_url = urlparse(destination)
     if dest_url.scheme in ("", "file"):
-        res = check_output([cmd, pathname], cwd=(destination or opath))
-        del res
+        _ = check_output([cmd, pathname], cwd=(destination or opath))
     else:
         LOGGER.exception("Can not extract file %s to %s, destination has to be local.",
                          pathname, destination)
@@ -395,7 +392,7 @@ def move_it(pathname, destinations, hook=None):
         dest_url = urlparse(dest)
         try:
             mover = MOVERS[dest_url.scheme]
-        except KeyError as err:
+        except KeyError:
             LOGGER.error("Unsupported protocol '%s'. Could not copy %s to %s",
                          str(dest_url.scheme), pathname, str(dest))
             continue
@@ -403,7 +400,7 @@ def move_it(pathname, destinations, hook=None):
             mover(pathname, dest_url).copy()
             if hook:
                 hook(pathname, dest_url)
-        except Exception as err:
+        except Exception:
             LOGGER.exception("Something went wrong during copy of %s to %s",
                              pathname, str(dest))
             continue
@@ -561,7 +558,7 @@ def create_notifier(attrs):
                     else:
                         new_path = unpack_fun(pathname,
                                               attrs["working_directory"])
-                except:
+                except Exception:
                     LOGGER.exception("Could not decompress %s", pathname)
                     return
 
@@ -570,7 +567,7 @@ def create_notifier(attrs):
             try:
                 move_it(new_path, attrs["destinations"],
                         attrs.get("copy_hook", None))
-            except Exception as err:
+            except Exception:
                 LOGGER.error("Something went wrong during copy of %s",
                              pathname)
             else:

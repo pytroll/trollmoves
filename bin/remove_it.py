@@ -22,7 +22,7 @@
 
 """Remove files, and send messages about it."""
 
-from six.moves.configparser import RawConfigParser, NoOptionError
+from configparser import RawConfigParser, NoOptionError
 from datetime import datetime, timedelta
 from glob import glob
 import os
@@ -82,7 +82,7 @@ class BufferingSMTPHandler(logging.handlers.BufferingHandler):
                     msg = msg + s + "\r\n"
                 smtp.sendmail(self.fromaddr, self.toaddrs, msg)
                 smtp.quit()
-            except:
+            except Exception:
                 self.handleError(None)  # no particular record
             self.buffer = []
 
