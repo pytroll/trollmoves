@@ -87,9 +87,9 @@ class Mover(object):
     """Base mover object. Doesn't do anything as it has to be subclassed."""
 
     def __init__(self, origin, destination, attrs=None):
-        if isinstance(destination, str):
+        try:
             self.destination = urlparse(destination)
-        else:
+        except AttributeError:
             self.destination = destination
 
         self._dest_username = self.destination.username
