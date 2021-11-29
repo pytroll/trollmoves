@@ -83,7 +83,6 @@ import signal
 import time
 
 from trollmoves.move_it_base import MoveItBase
-from trollmoves.client import StatCollector
 
 LOGGER = logging.getLogger("move_it_client")
 LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
@@ -117,8 +116,6 @@ def parse_args():
                         help="The configuration file to run on.")
     parser.add_argument("-l", "--log",
                         help="The file to log to. stdout otherwise.")
-    parser.add_argument("-s", "--stats",
-                        help="Save stats to this file")
     parser.add_argument("-v", "--verbose", default=False, action="store_true",
                         help="Toggle verbose logging")
     return parser.parse_args()
@@ -130,11 +127,7 @@ def main():
     client = MoveItClient(cmd_args)
 
     try:
-        if cmd_args.stats:
-            stat = StatCollector(cmd_args.stats)
-            client.reload_cfg_file(cmd_args.config_file, callback=stat.collect)
-        else:
-            client.reload_cfg_file(cmd_args.config_file)
+        client.reload_cfg_file(cmd_args.config_file)
         client.run()
     except KeyboardInterrupt:
         LOGGER.debug("Interrupting")

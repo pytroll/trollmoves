@@ -947,19 +947,6 @@ class EventHandler(pyinotify.ProcessEvent):
         self._fun(event.pathname)
 
 
-class StatCollector(object):
-    """StatCollector class."""
-
-    def __init__(self, statfile):
-        """Initialize collector."""
-        self.statfile = statfile
-
-    def collect(self, msg, *args, **kwargs):
-        """Collect."""
-        with open(self.statfile, 'a') as fd:
-            fd.write(time.asctime() + " - " + str(msg) + "\n")
-
-
 def terminate(chains):
     """Terminate client chains."""
     for chain in chains.values():
