@@ -71,7 +71,6 @@ BUNZIP_BLOCK_SIZE = 1024
 LISTENER_CHECK_INTERVAL = 1
 
 
-# Config management
 def read_config(filename):
     """Read the config file called *filename*."""
     cp_ = RawConfigParser()
@@ -81,56 +80,80 @@ def read_config(filename):
 
     for section in cp_.sections():
         res[section] = dict(cp_.items(section))
-        res[section].setdefault("delete", False)
-        if res[section]["delete"] in ["", "False", "false", "0", "off"]:
-            res[section]["delete"] = False
-        if res[section]["delete"] in ["True", "true", "on", "1"]:
-            res[section]["delete"] = True
-        res[section].setdefault("working_directory", None)
-        res[section].setdefault("compression", False)
-        res[section].setdefault("xritdecompressor", None)
-        res[section].setdefault("heartbeat", True)
-        res[section].setdefault("req_timeout", DEFAULT_REQ_TIMEOUT)
-        res[section].setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
-        res[section].setdefault("nameservers", None)
-        if res[section]["heartbeat"] in ["", "False", "false", "0", "off"]:
-            res[section]["heartbeat"] = False
-
-        if "providers" not in res[section]:
-            LOGGER.warning("Incomplete section %s: add an 'providers' item.",
-                           section)
-            LOGGER.info("Ignoring section %s: incomplete.",
-                        section)
-            del res[section]
+        _set_config_defaults(res[section])
+        _parse_boolean_config_items(res[section])
+        if not _check_provider_config(res, section):
             continue
-        else:
-            res[section]["providers"] = [
-                "tcp://" + item.split('/', 1)[0] for item in res[section]["providers"].split()
-            ]
-
-        if "destination" not in res[section]:
-            LOGGER.warning("Incomplete section %s: add an 'destination' item.",
-                           section)
-            LOGGER.info("Ignoring section %s: incomplete.", section)
-            del res[section]
+        if not _check_destination(res, section):
             continue
-
-        if "topic" in res[section]:
-            try:
-                res[section]["publish_port"] = int(res[section][
-                    "publish_port"])
-            except (KeyError, ValueError):
-                res[section]["publish_port"] = 0
-        elif not res[section]["heartbeat"]:
-            # We have no topics and therefor no subscriber (if you want to
-            # subscribe everything, then explicit specify an empty topic).
-            LOGGER.warning("Incomplete section %s: add an 'topic' "
-                           "item or enable heartbeat.", section)
-            LOGGER.info("Ignoring section %s: incomplete.", section)
-            del res[section]
+        if not _check_subscribing(res, section):
             continue
 
     return res
+
+
+def _set_config_defaults(conf):
+    conf.setdefault("delete", False)
+    conf.setdefault("working_directory", None)
+    conf.setdefault("compression", False)
+    conf.setdefault("xritdecompressor", None)
+    conf.setdefault("heartbeat", True)
+    conf.setdefault("req_timeout", DEFAULT_REQ_TIMEOUT)
+    conf.setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
+    conf.setdefault("nameservers", None)
+
+
+def _parse_boolean_config_items(conf):
+    if conf["delete"] in ["", "False", "false", "0", "off"]:
+        conf["delete"] = False
+    if conf["delete"] in ["True", "true", "on", "1"]:
+        conf["delete"] = True
+    if conf["heartbeat"] in ["", "False", "false", "0", "off"]:
+        conf["heartbeat"] = False
+
+
+def _check_provider_config(conf, section):
+    if "providers" not in conf[section]:
+        LOGGER.warning("Incomplete section %s: add an 'providers' item.",
+                       section)
+        LOGGER.info("Ignoring section %s: incomplete.",
+                    section)
+        del conf[section]
+        return False
+
+    conf[section]["providers"] = [
+        "tcp://" + item.split('/', 1)[0] for item in conf[section]["providers"].split()
+    ]
+    return True
+
+
+def _check_subscribing(res, section):
+    if "topic" in res[section]:
+        try:
+            res[section]["publish_port"] = int(res[section][
+                "publish_port"])
+        except (KeyError, ValueError):
+            res[section]["publish_port"] = 0
+    elif not res[section]["heartbeat"]:
+        # We have no topics and therefor no subscriber (if you want to
+        # subscribe everything, then explicit specify an empty topic).
+        LOGGER.warning("Incomplete section %s: add an 'topic' "
+                        "item or enable heartbeat.", section)
+        LOGGER.info("Ignoring section %s: incomplete.", section)
+        del res[section]
+        return False
+    return True
+
+
+def _check_destination(res, section):
+    if "destination" not in res[section]:
+        LOGGER.warning("Incomplete section %s: add an 'destination' item.",
+                       section)
+        LOGGER.info("Ignoring section %s: incomplete.", section)
+        del res[section]
+        return False
+    else:
+        return True
 
 
 class Listener(Thread):
