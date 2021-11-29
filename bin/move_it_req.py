@@ -59,12 +59,13 @@ def parse_args():
 
 def get_request_data(args):
     """Get request data."""
+    import ast
     req_data = {}
     if args.extra:
         for k_v in args.extra.split(","):
             k, v = k_v.split(":")
             try:
-                req_data[k] = eval(v)  # kwak !
+                req_data[k] = ast.literal_eval(v)
             except Exception:
                 req_data[k] = v
 
