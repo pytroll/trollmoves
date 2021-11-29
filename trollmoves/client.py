@@ -605,50 +605,35 @@ def request_push(msg_in, destination, login=None, publisher=None, **kwargs):
         _ = clean_ongoing_transfer(huid)
         return
 
+    _request_files(huid, destination, login, publisher, **kwargs)
+
+
+def _request_files(huid, destination, login, publisher, **kwargs):
     for msg in iterate_messages(huid):
-        try:
-            _destination = compose(destination, msg.data)
-        except KeyError as ke:
-            LOGGER.error("Format identifier is missing from the msg.data: %s", str(ke))
-            raise
-        except ValueError as ve:
-            LOGGER.error("Type of format identifier doesn't match the type in m msg.data: %s", str(ve))
-            raise
-        except AttributeError as ae:
-            LOGGER.error("msg or msg.data is None: %s", str(ae))
-            raise
+        _destination = _compose_destination(destination, msg)
+
         req, fake_req = create_push_req_message(msg, _destination, login)
         LOGGER.info("Requesting: %s", str(fake_req))
-        timeout = float(kwargs["transfer_req_timeout"])
         local_dir = create_local_dir(_destination, kwargs.get('ftp_root', '/'))
 
         publisher.send(str(fake_req))
-        response, hostname = send_request(msg, req, timeout)
+
+        response, hostname = send_request(msg, req, float(kwargs["transfer_req_timeout"]))
 
         if response and response.type in ['file', 'collection', 'dataset']:
             LOGGER.debug("Server done sending file")
             add_to_file_cache(msg)
-            # Send an 'ack' message so that possible hot spares know
-            # the primary has completed the request
-            msg = Message(msg.subject, 'ack', msg.data)
-            LOGGER.debug("Sending a public 'ack' of completed transfer: %s",
-                         str(msg))
-            publisher.send(str(msg))
+            _send_ack_message(msg, publisher)
+
             try:
-                lmsg = unpack_and_create_local_message(response, local_dir,
-                                                       **kwargs)
+                lmsg = unpack_and_create_local_message(response, local_dir, **kwargs)
+                lmsg = _update_local_message(lmsg, _destination, login, response, **kwargs)
             except IOError:
                 LOGGER.exception("Couldn't unpack %s", str(response))
                 continue
-            if publisher:
-                lmsg = make_uris(lmsg, _destination, login)
-                lmsg.data['origin'] = response.data['request_address']
-                lmsg.data.pop('request_address', None)
-                lmsg = replace_mda(lmsg, kwargs)
-                lmsg.data.pop('destination', None)
 
-                LOGGER.debug("publishing %s", str(lmsg))
-                publisher.send(str(lmsg))
+            LOGGER.debug("publishing %s", str(lmsg))
+            publisher.send(str(lmsg))
             terminate_transfers(huid, float(kwargs["req_timeout"]))
             break
         else:
@@ -658,6 +643,39 @@ def request_push(msg_in, destination, login=None, publisher=None, **kwargs):
         LOGGER.warning('Could not get a working source for requesting %s',
                        str(msg))
         terminate_transfers(huid, float(kwargs["req_timeout"]))
+
+
+def _compose_destination(destination, msg):
+    try:
+        _destination = compose(destination, msg.data)
+    except KeyError as ke:
+        LOGGER.error("Format identifier is missing from the msg.data: %s", str(ke))
+        raise
+    except ValueError as ve:
+        LOGGER.error("Type of format identifier doesn't match the type in m msg.data: %s", str(ve))
+        raise
+    except AttributeError as ae:
+        LOGGER.error("msg or msg.data is None: %s", str(ae))
+        raise
+    return _destination
+
+
+def _send_ack_message(msg, publisher):
+    """Send an 'ack' message.
+
+    This is for the possible hot spare clients so they know the primary has completed the request.
+    """
+    msg = Message(msg.subject, 'ack', msg.data)
+    LOGGER.debug("Sending a public 'ack' of completed transfer: %s", str(msg))
+    publisher.send(str(msg))
+
+
+def _update_local_message(lmsg, _destination, login, response, **kwargs):
+    lmsg = make_uris(lmsg, _destination, login)
+    lmsg.data['origin'] = response.data['request_address']
+    lmsg.data.pop('request_address', None)
+    lmsg = replace_mda(lmsg, kwargs)
+    lmsg.data.pop('destination', None)
 
 
 class Chain(Thread):
