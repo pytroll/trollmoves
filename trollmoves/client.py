@@ -28,19 +28,18 @@ import os
 import socket
 import sys
 import time
-import tarfile
 from collections import deque
-from six.moves.configparser import RawConfigParser
+from configparser import RawConfigParser
 from threading import Lock, Thread, Event
 import hashlib
-import six
-from six.moves.urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse, urlunparse
 import subprocess
 from contextlib import suppress
+
+import tarfile
 import pyinotify
 from zmq import LINGER, POLLIN, REQ, Poller
 import bz2
-
 from posttroll import get_context
 from posttroll.message import Message, MessageError
 from posttroll.publisher import NoisyPublisher
@@ -966,7 +965,7 @@ class StatCollector(object):
 
 def terminate(chains):
     """Terminate client chains."""
-    for chain in six.itervalues(chains):
+    for chain in chains.values():
         chain.stop()
     LOGGER.info("Shutting down.")
     print("Thank you for using pytroll/move_it_client."

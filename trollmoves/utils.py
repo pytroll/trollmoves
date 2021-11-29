@@ -1,34 +1,33 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
+#
 # Copyright (c) 2018, 2020
-
+#
 # Author(s):
-
+#
 #   Martin Raspaud <martin.raspaud@smhi.se>
-
+#
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-
+#
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-import netifaces
-from six import string_types
 import socket
+from urllib.parse import urlparse, urlunparse
 
-from six.moves.urllib.parse import urlparse, urlunparse
+import netifaces
 
 
 def clean_url(url):
     """Remove login info from *url*."""
-    if isinstance(url, string_types):
+    if isinstance(url, str):
         urlobj = urlparse(url)
     else:
         urlobj = url
@@ -128,8 +127,7 @@ def translate_dict(var, keys, callback, **kwargs):
 
 def is_file_local(urlobj):
     """Check that a url path is for a local file."""
-    if(urlobj.scheme not in ['', 'file']
-       and not socket.gethostbyname(urlobj.netloc) in get_local_ips()):
+    if(urlobj.scheme not in ['', 'file'] and not socket.gethostbyname(urlobj.netloc) in get_local_ips()):
         return False
 
     return True

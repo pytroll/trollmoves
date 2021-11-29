@@ -29,17 +29,15 @@ import shutil
 import sys
 import time
 import traceback
-from ftplib import FTP, all_errors, error_perm
 from threading import Event, Lock, Thread, current_thread
+from urllib.parse import urlparse
 import netrc
 
-from six import string_types
-from six.moves.urllib.parse import urlparse
-
-
-from trollmoves.utils import clean_url
+from ftplib import FTP, all_errors, error_perm
 from paramiko import SSHClient, SSHException, AutoAddPolicy
 from scp import SCPClient
+
+from trollmoves.utils import clean_url
 
 LOGGER = logging.getLogger(__name__)
 
@@ -66,8 +64,8 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None):
         LOGGER.debug("Scheme = %s", str(dest_url.scheme))
         mover = MOVERS[dest_url.scheme]
     except KeyError:
-        LOGGER.error("Unsupported protocol '" + str(dest_url.scheme)
-                     + "'. Could not copy " + pathname + " to " + str(destination))
+        LOGGER.error("Unsupported protocol '" + str(dest_url.scheme) +
+                     "'. Could not copy " + pathname + " to " + str(destination))
         raise
 
     try:
@@ -89,9 +87,9 @@ class Mover(object):
     """Base mover object. Doesn't do anything as it has to be subclassed."""
 
     def __init__(self, origin, destination, attrs=None):
-        if isinstance(destination, string_types):
+        try:
             self.destination = urlparse(destination)
-        else:
+        except AttributeError:
             self.destination = destination
 
         self._dest_username = self.destination.username
@@ -103,13 +101,13 @@ class Mover(object):
 
     def copy(self):
         """Copy it !"""
-        raise NotImplementedError("Copy for scheme " + self.destination.scheme
-                                  + " not implemented (yet).")
+        raise NotImplementedError("Copy for scheme " + self.destination.scheme +
+                                  " not implemented (yet).")
 
     def move(self):
         """Move it !"""
-        raise NotImplementedError("Move for scheme " + self.destination.scheme
-                                  + " not implemented (yet).")
+        raise NotImplementedError("Move for scheme " + self.destination.scheme +
+                                  " not implemented (yet).")
 
     def get_connection(self, hostname, port, username=None):
         """Get the connection."""

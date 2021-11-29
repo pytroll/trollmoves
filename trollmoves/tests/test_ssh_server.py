@@ -26,8 +26,8 @@ from unittest.mock import Mock, MagicMock, patch
 import unittest
 from tempfile import NamedTemporaryFile, mkdtemp
 import errno
+from urllib.parse import urlparse
 
-from six.moves.urllib.parse import urlparse
 from paramiko import SSHException
 import pytest
 
