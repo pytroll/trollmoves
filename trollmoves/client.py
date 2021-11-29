@@ -919,33 +919,6 @@ class PushRequester(object):
 
         return rep
 
-# Generic event handler
-
-
-class EventHandler(pyinotify.ProcessEvent):
-    """Handle events with a generic *fun* function."""
-
-    def __init__(self, fun, *args, **kwargs):
-        """Initialize handler."""
-        pyinotify.ProcessEvent.__init__(self, *args, **kwargs)
-        self._fun = fun
-
-    def process_IN_CLOSE_WRITE(self, event):
-        """Process on closing after writing."""
-        self._fun(event.pathname)
-
-    def process_IN_CREATE(self, event):
-        """Process on closing after linking."""
-        try:
-            if os.stat(event.pathname).st_nlink > 1:
-                self._fun(event.pathname)
-        except OSError:
-            return
-
-    def process_IN_MOVED_TO(self, event):
-        """Process on closing after moving."""
-        self._fun(event.pathname)
-
 
 def terminate(chains):
     """Terminate client chains."""
