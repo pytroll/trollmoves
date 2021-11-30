@@ -152,8 +152,7 @@ def _check_destination(res, section):
         LOGGER.info("Ignoring section %s: incomplete.", section)
         del res[section]
         return False
-    else:
-        return True
+    return True
 
 
 class Listener(Thread):
