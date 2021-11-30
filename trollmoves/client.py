@@ -138,7 +138,7 @@ def _check_subscribing(res, section):
         # We have no topics and therefor no subscriber (if you want to
         # subscribe everything, then explicit specify an empty topic).
         LOGGER.warning("Incomplete section %s: add an 'topic' "
-                        "item or enable heartbeat.", section)
+                       "item or enable heartbeat.", section)
         LOGGER.info("Ignoring section %s: incomplete.", section)
         del res[section]
         return False
@@ -230,7 +230,7 @@ class Listener(Thread):
     def _check_heartbeat(self):
         if self.restart_event.is_set():
             LOGGER.warning("Missing a heartbeat, restarting the subscriber to %s.",
-                            str(self.subscriber.addresses))
+                           str(self.subscriber.addresses))
             self.restart_event.clear()
             self.stop()
             self.running = True
@@ -253,8 +253,7 @@ class Listener(Thread):
             # If this is a hot spare client, wait for a while
             # for a public "push" message which will update
             # the ongoing transfers before starting processing here
-            add_timer(float(delay), self.callback, msg, *self.cargs,
-                        **self.ckwargs)
+            add_timer(float(delay), self.callback, msg, *self.cargs, **self.ckwargs)
         else:
             self.callback(msg, *self.cargs, **self.ckwargs)
 
