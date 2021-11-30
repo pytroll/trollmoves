@@ -572,39 +572,45 @@ def read_config(filename):
 
     for section in cp_.sections():
         res[section] = dict(cp_.items(section))
-        res[section].setdefault("working_directory", None)
-        res[section].setdefault("compression", False)
-        res[section].setdefault("req_timeout", DEFAULT_REQ_TIMEOUT)
-        res[section].setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
-        res[section].setdefault("ssh_key_filename", None)
-        if ("origin" not in res[section]) and ('listen' not in res[section]):
-            LOGGER.warning("Incomplete section %s: add an 'origin' or "
-                           "'listen' item.", section)
-            LOGGER.info("Ignoring section %s: incomplete.", section)
-            del res[section]
+        _set_config_defaults(res[section])
+        if not _check_origin_and_listen(res, section):
             continue
-
-        # if "publisher_port" not in res[section]:
-        #    LOGGER.warning("Incomplete section " + section
-        #                   + ": add an 'publisher_port' item.")
-        #    LOGGER.info("Ignoring section " + section
-        #                + ": incomplete.")
-        #    del res[section]
-        #    continue
-
-        if "topic" not in res[section]:
-            LOGGER.warning("Incomplete section %s: add an 'topic' item.",
-                           section)
-            LOGGER.info("Ignoring section %s: incomplete.",
-                        section)
+        if not _check_topic(res, section):
             continue
-        else:
-            try:
-                res[section]["publish_port"] = int(res[section][
-                    "publish_port"])
-            except (KeyError, ValueError):
-                res[section]["publish_port"] = 0
+        _verify_publish_port(res[section])
     return res
+
+
+def _set_config_defaults(conf):
+    conf.setdefault("working_directory", None)
+    conf.setdefault("compression", False)
+    conf.setdefault("req_timeout", DEFAULT_REQ_TIMEOUT)
+    conf.setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
+    conf.setdefault("ssh_key_filename", None)
+
+
+def _check_origin_and_listen(res, section):
+    if ("origin" not in res[section]) and ('listen' not in res[section]):
+        LOGGER.warning("Incomplete section %s: add an 'origin' or 'listen' item.", section)
+        LOGGER.info("Ignoring section %s: incomplete.", section)
+        del res[section]
+        return False
+    return True
+
+
+def _check_topic(res, section):
+    if "topic" not in res[section]:
+        LOGGER.warning("Incomplete section %s: add an 'topic' item.", section)
+        LOGGER.info("Ignoring section %s: incomplete.", section)
+        return False
+    return True
+
+
+def _verify_publish_port(conf):
+    try:
+        conf["publish_port"] = int(conf["publish_port"])
+    except (KeyError, ValueError):
+        conf["publish_port"] = 0
 
 
 def reload_config(filename,
