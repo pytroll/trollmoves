@@ -155,24 +155,22 @@ CHAIN_BASIC_CONFIG = {"login": "user:pass", "topic": "/foo", "publish_port": 123
 
 @pytest.fixture
 def listener():
-    callback = MagicMock()
     with patch('trollmoves.client.CTimer'):
         with patch('trollmoves.heartbeat_monitor.Monitor'):
             with patch('trollmoves.client.Subscriber'):
                 from trollmoves.client import Listener
-                listener = Listener('127.0.0.1:0', ['/topic'], callback, 'arg1', 'arg2',
+                listener = Listener('127.0.0.1:0', ['/topic'], 'arg1', 'arg2',
                                     kwarg1='kwarg1', kwarg2='kwarg2')
                 yield listener
 
 
 @pytest.fixture
 def delayed_listener():
-    callback = MagicMock()
     with patch('trollmoves.client.CTimer'):
         with patch('trollmoves.heartbeat_monitor.Monitor'):
             with patch('trollmoves.client.Subscriber'):
                 from trollmoves.client import Listener
-                listener = Listener('127.0.0.1:0', ['/topic'], callback, 'arg1', 'arg2',
+                listener = Listener('127.0.0.1:0', ['/topic'], 'arg1', 'arg2',
                                     processing_delay=0.02,
                                     kwarg1='kwarg1', kwarg2='kwarg2')
                 yield listener
@@ -587,10 +585,10 @@ def test_unpack_and_create_local_message_config_xrit_compression(unpackers, comp
         os.remove(compression_config)
 
 
-def test_listener_init(delayed_listener):
+@patch('trollmoves.client.request_push')
+def test_listener_init(request_push, delayed_listener):
     """Test listener init."""
     assert delayed_listener.topics == ['/topic']
-    assert delayed_listener.callback is not None
     assert delayed_listener.subscriber is None
     assert delayed_listener.address == '127.0.0.1:0'
     assert delayed_listener.running is False
@@ -600,9 +598,10 @@ def test_listener_init(delayed_listener):
         assert kwargs[key] == itm
 
 
+@patch('trollmoves.client.request_push')
 @patch('trollmoves.client.add_to_ongoing')
 @patch('trollmoves.client.add_to_file_cache')
-def test_listener_push_message(add_to_file_cache, add_to_ongoing, delayed_listener):
+def test_listener_push_message(add_to_file_cache, add_to_ongoing, request_push, delayed_listener):
     """Test listener push message."""
     delayed_listener.create_subscriber()
     delayed_listener.subscriber.return_value = [MSG_PUSH]
@@ -613,9 +612,10 @@ def test_listener_push_message(add_to_file_cache, add_to_ongoing, delayed_listen
     add_to_ongoing.assert_called_with(MSG_PUSH)
 
 
+@patch('trollmoves.client.request_push')
 @patch('trollmoves.client.clean_ongoing_transfer')
 @patch('trollmoves.client.add_to_file_cache')
-def test_listener_ack_message(add_to_file_cache, clean_ongoing_transfer, delayed_listener):
+def test_listener_ack_message(add_to_file_cache, clean_ongoing_transfer, request_push, delayed_listener):
     """Test listener with ack message."""
     delayed_listener.create_subscriber()
     delayed_listener.subscriber.return_value = [MSG_ACK]
@@ -626,11 +626,13 @@ def test_listener_ack_message(add_to_file_cache, clean_ongoing_transfer, delayed
     add_to_file_cache.assert_called_with(MSG_ACK)
 
 
+@patch('trollmoves.client.request_push')
 @patch('trollmoves.client.add_timer')
 @patch('trollmoves.client.add_to_ongoing')
 @patch('trollmoves.client.clean_ongoing_transfer')
 @patch('trollmoves.client.add_to_file_cache')
-def test_listener_beat_message(add_to_file_cache, clean_ongoing_transfer, add_to_ongoing, add_timer, delayed_listener):
+def test_listener_beat_message(add_to_file_cache, clean_ongoing_transfer, add_to_ongoing, add_timer, request_push,
+                               delayed_listener):
     """Test listener with beat message."""
     delayed_listener.create_subscriber()
     delayed_listener.subscriber.return_value = [MSG_BEAT]
@@ -643,13 +645,14 @@ def test_listener_beat_message(add_to_file_cache, clean_ongoing_transfer, add_to
     clean_ongoing_transfer.assert_not_called()
 
 
+@patch('trollmoves.client.request_push')
 @patch('trollmoves.client.add_timer')
 @patch('trollmoves.client.add_to_ongoing')
 @patch('trollmoves.client.clean_ongoing_transfer')
 @patch('trollmoves.client.add_to_file_cache')
 @patch('trollmoves.client.CTimer')
 def test_listener_sync_file_message(
-        CTimer, add_to_file_cache, clean_ongoing_transfer, add_to_ongoing, add_timer, delayed_listener):
+        CTimer, add_to_file_cache, clean_ongoing_transfer, add_to_ongoing, add_timer, request_push, delayed_listener):
     """Test listener with a file message from another client."""
     from trollmoves.client import get_msg_uid
 
@@ -665,8 +668,9 @@ def test_listener_sync_file_message(
     add_timer.assert_not_called()
 
 
+@patch('trollmoves.client.request_push')
 @patch('trollmoves.client.CTimer')
-def test_listener_file_message(CTimer, delayed_listener):
+def test_listener_file_message(CTimer, request_push, delayed_listener):
     """Test listener with a file message from Trollmoves Server."""
     delayed_listener.create_subscriber()
     delayed_listener.subscriber.return_value = [MSG_FILE2]
@@ -675,20 +679,22 @@ def test_listener_file_message(CTimer, delayed_listener):
     CTimer.assert_called()
 
 
+@patch('trollmoves.client.request_push')
 @patch('trollmoves.client.add_timer')
-def test_listener_no_delay_file_message(add_timer, listener):
+def test_listener_no_delay_file_message(add_timer, request_push, listener):
     """Test listener without a delay receiving a file message."""
     listener.create_subscriber()
     listener.subscriber.return_value = [MSG_FILE2]
 
     _run_listener_in_thread(listener)
 
-    listener.callback.assert_called_with(MSG_FILE2, 'arg1', 'arg2',
-                                         kwarg1='kwarg1', kwarg2='kwarg2')
+    request_push.assert_called_with(MSG_FILE2, 'arg1', 'arg2',
+                                    kwarg1='kwarg1', kwarg2='kwarg2')
     add_timer.assert_not_called()
 
 
-def test_listener_stop(listener):
+@patch('trollmoves.client.request_push')
+def test_listener_stop(request_push, listener):
     """Test stopping the listener."""
     listener.create_subscriber()
     assert listener.subscriber is not None
@@ -908,17 +914,17 @@ def test_read_config(client_config_1_item):
     assert isinstance(conf[section_name]["providers"], list)
 
 
+@patch('trollmoves.client.request_push')
 @patch('trollmoves.client.NoisyPublisher')
 @patch('trollmoves.client.Listener')
-def test_reload_config_single_chain(Listener, NoisyPublisher, client_config_1_item):
+def test_reload_config_single_chain(Listener, NoisyPublisher, request_push, client_config_1_item):
     """Test trollmoves.client.reload_config() with a single chain."""
     from trollmoves.client import reload_config
 
     chains = {}
-    callback = MagicMock()
 
     try:
-        reload_config(client_config_1_item, chains, callback=callback)
+        reload_config(client_config_1_item, chains)
         assert len(chains) == 1
         assert "eumetcast_hrit_0deg_scp_hot_spare" in chains
         assert NoisyPublisher.call_count == 1
@@ -928,18 +934,18 @@ def test_reload_config_single_chain(Listener, NoisyPublisher, client_config_1_it
         os.remove(client_config_1_item)
 
 
+@patch('trollmoves.client.request_push')
 @patch('trollmoves.client.NoisyPublisher')
 @patch('trollmoves.client.Listener')
-def test_reload_config_chain_added(Listener, NoisyPublisher, client_config_1_item, client_config_2_items):
+def test_reload_config_chain_added(Listener, NoisyPublisher, request_push, client_config_1_item, client_config_2_items):
     """Test trollmoves.client.reload_config() when a chain is added."""
     from trollmoves.client import reload_config
 
     chains = {}
-    callback = MagicMock()
 
     try:
-        reload_config(client_config_1_item, chains, callback=callback)
-        reload_config(client_config_2_items, chains, callback=callback)
+        reload_config(client_config_1_item, chains)
+        reload_config(client_config_2_items, chains)
         assert len(chains) == 2
         assert "eumetcast_hrit_0deg_scp_hot_spare" in chains
         assert "foo" in chains
@@ -951,18 +957,19 @@ def test_reload_config_chain_added(Listener, NoisyPublisher, client_config_1_ite
         os.remove(client_config_2_items)
 
 
+@patch('trollmoves.client.request_push')
 @patch('trollmoves.client.NoisyPublisher')
 @patch('trollmoves.client.Listener')
-def test_reload_config_chain_removed(Listener, NoisyPublisher, client_config_1_item, client_config_2_items):
+def test_reload_config_chain_removed(Listener, NoisyPublisher, request_push,
+                                     client_config_1_item, client_config_2_items):
     """Test trollmoves.client.reload_config() when a chain is added."""
     from trollmoves.client import reload_config
 
     chains = {}
-    callback = MagicMock()
 
     try:
-        reload_config(client_config_2_items, chains, callback=callback)
-        reload_config(client_config_1_item, chains, callback=callback)
+        reload_config(client_config_2_items, chains)
+        reload_config(client_config_1_item, chains)
         assert len(chains) == 1
         assert "eumetcast_hrit_0deg_scp_hot_spare" in chains
         assert "foo" not in chains
@@ -982,20 +989,20 @@ def _stop_chains(chains):
             pass
 
 
+@patch('trollmoves.client.request_push')
 @patch('trollmoves.client.NoisyPublisher')
 @patch('trollmoves.client.Listener')
-def test_reload_config_publisher_items_not_changed(Listener, NoisyPublisher, client_config_1_item,
+def test_reload_config_publisher_items_not_changed(Listener, NoisyPublisher, request_push, client_config_1_item,
                                                    client_config_1_item_non_pub_provider_item_modified):
     """Test trollmoves.client.reload_config() when other than publisher related items are changed."""
     from trollmoves.client import reload_config
 
     chains = {}
-    callback = MagicMock()
 
     try:
-        reload_config(client_config_1_item, chains, callback=callback)
+        reload_config(client_config_1_item, chains)
         NoisyPublisher.assert_called_once()
-        reload_config(client_config_1_item_non_pub_provider_item_modified, chains, callback=callback)
+        reload_config(client_config_1_item_non_pub_provider_item_modified, chains)
         NoisyPublisher.assert_called_once()
     finally:
         _stop_chains(chains)
@@ -1003,20 +1010,20 @@ def test_reload_config_publisher_items_not_changed(Listener, NoisyPublisher, cli
         os.remove(client_config_1_item_non_pub_provider_item_modified)
 
 
+@patch('trollmoves.client.request_push')
 @patch('trollmoves.client.NoisyPublisher')
 @patch('trollmoves.client.Listener')
-def test_reload_config_publisher_items_changed(Listener, NoisyPublisher, client_config_1_item,
+def test_reload_config_publisher_items_changed(Listener, NoisyPublisher, request_push, client_config_1_item,
                                                client_config_1_pub_item_modified):
     """Test trollmoves.client.reload_config() when publisher related items are changed."""
     from trollmoves.client import reload_config
 
     chains = {}
-    callback = MagicMock()
 
     try:
-        reload_config(client_config_1_item, chains, callback=callback)
+        reload_config(client_config_1_item, chains)
         NoisyPublisher.assert_called_once()
-        reload_config(client_config_1_pub_item_modified, chains, callback=callback)
+        reload_config(client_config_1_pub_item_modified, chains)
         assert NoisyPublisher.call_count == 2
     finally:
         _stop_chains(chains)
@@ -1024,21 +1031,21 @@ def test_reload_config_publisher_items_changed(Listener, NoisyPublisher, client_
         os.remove(client_config_1_pub_item_modified)
 
 
+@patch('trollmoves.client.request_push')
 @patch('trollmoves.client.NoisyPublisher')
 @patch('trollmoves.client.Listener')
-def test_reload_config_providers_not_changed(Listener, NoisyPublisher, client_config_1_item,
+def test_reload_config_providers_not_changed(Listener, NoisyPublisher, request_push, client_config_1_item,
                                              client_config_1_item_non_pub_provider_item_modified):
     """Test trollmoves.client.reload_config() when other than provider related options are changed."""
     from trollmoves.client import reload_config
 
     chains = {}
-    callback = MagicMock()
 
     try:
-        reload_config(client_config_1_item, chains, callback=callback)
+        reload_config(client_config_1_item, chains)
         num_providers = len(chains["eumetcast_hrit_0deg_scp_hot_spare"]._config['providers'])
         assert Listener.call_count == num_providers
-        reload_config(client_config_1_item_non_pub_provider_item_modified, chains, callback=callback)
+        reload_config(client_config_1_item_non_pub_provider_item_modified, chains)
         assert Listener.call_count == num_providers
     finally:
         _stop_chains(chains)
@@ -1046,20 +1053,20 @@ def test_reload_config_providers_not_changed(Listener, NoisyPublisher, client_co
         os.remove(client_config_1_item_non_pub_provider_item_modified)
 
 
+@patch('trollmoves.client.request_push')
 @patch('trollmoves.client.NoisyPublisher')
 @patch('trollmoves.client.Listener')
-def test_reload_config_providers_added(Listener, NoisyPublisher, client_config_1_item,
+def test_reload_config_providers_added(Listener, NoisyPublisher, request_push, client_config_1_item,
                                        client_config_1_item_two_providers):
     """Test trollmoves.client.reload_config() when providers are added."""
     from trollmoves.client import reload_config
 
     chains = {}
-    callback = MagicMock()
 
     try:
-        reload_config(client_config_1_item_two_providers, chains, callback=callback)
+        reload_config(client_config_1_item_two_providers, chains)
         _ = _check_providers_listeners_and_listener_calls(chains, Listener)
-        reload_config(client_config_1_item, chains, callback=callback)
+        reload_config(client_config_1_item, chains)
         _ = _check_providers_listeners_and_listener_calls(chains, Listener)
     finally:
         _stop_chains(chains)
@@ -1076,9 +1083,10 @@ def _check_providers_listeners_and_listener_calls(chains, Listener, call_count=N
     return num_providers
 
 
+@patch('trollmoves.client.request_push')
 @patch('trollmoves.client.NoisyPublisher')
 @patch('trollmoves.client.Listener')
-def test_reload_config_providers_removed(Listener, NoisyPublisher, client_config_1_item,
+def test_reload_config_providers_removed(Listener, NoisyPublisher, request_push, client_config_1_item,
                                          client_config_1_item_two_providers):
     """Test trollmoves.client.reload_config() when providers are removed."""
     from trollmoves.client import reload_config
@@ -1087,12 +1095,11 @@ def test_reload_config_providers_removed(Listener, NoisyPublisher, client_config
     Listener.return_value = listener
 
     chains = {}
-    callback = MagicMock()
 
     try:
-        reload_config(client_config_1_item, chains, callback=callback)
+        reload_config(client_config_1_item, chains)
         num_providers = _check_providers_listeners_and_listener_calls(chains, Listener)
-        reload_config(client_config_1_item_two_providers, chains, callback=callback)
+        reload_config(client_config_1_item_two_providers, chains)
         num_providers2 = _check_providers_listeners_and_listener_calls(chains, Listener, call_count=num_providers)
         assert num_providers2 != num_providers
         assert listener.stop.call_count == num_providers - num_providers2
@@ -1102,20 +1109,20 @@ def test_reload_config_providers_removed(Listener, NoisyPublisher, client_config
         os.remove(client_config_1_item_two_providers)
 
 
+@patch('trollmoves.client.request_push')
 @patch('trollmoves.client.NoisyPublisher')
 @patch('trollmoves.client.Listener')
-def test_reload_config_provider_topic_changed(Listener, NoisyPublisher, client_config_1_item,
+def test_reload_config_provider_topic_changed(Listener, NoisyPublisher, request_push, client_config_1_item,
                                               client_config_1_item_topic_changed):
     """Test trollmoves.client.reload_config() when the message topic is changed."""
     from trollmoves.client import reload_config
 
     chains = {}
-    callback = MagicMock()
 
     try:
-        reload_config(client_config_1_item, chains, callback=callback)
+        reload_config(client_config_1_item, chains)
         num_providers = _check_providers_listeners_and_listener_calls(chains, Listener)
-        reload_config(client_config_1_item_topic_changed, chains, callback=callback)
+        reload_config(client_config_1_item_topic_changed, chains)
         num_providers2 = _check_providers_listeners_and_listener_calls(chains, Listener, call_count=2 * num_providers)
         assert num_providers2 == num_providers
     finally:
@@ -1124,8 +1131,10 @@ def test_reload_config_provider_topic_changed(Listener, NoisyPublisher, client_c
         os.remove(client_config_1_item_topic_changed)
 
 
+@patch('trollmoves.client.request_push')
 @patch('trollmoves.client.Chain')
-def test_reload_config_chain_not_recreated(Chain, client_config_1_item, client_config_1_pub_item_modified):
+def test_reload_config_chain_not_recreated(Chain, request_push, client_config_1_item,
+                                           client_config_1_pub_item_modified):
     """Test that the chain is not recreated when config is modified."""
     from trollmoves.client import reload_config
 
@@ -1135,12 +1144,11 @@ def test_reload_config_chain_not_recreated(Chain, client_config_1_item, client_c
     chain.config_equals = config_equals
     Chain.return_value = chain
     chains = {}
-    callback = MagicMock()
 
     try:
-        reload_config(client_config_1_item, chains, callback=callback)
+        reload_config(client_config_1_item, chains)
         Chain.assert_called_once()
-        reload_config(client_config_1_pub_item_modified, chains, callback=callback)
+        reload_config(client_config_1_pub_item_modified, chains)
         Chain.assert_called_once()
     finally:
         os.remove(client_config_1_item)
@@ -1214,35 +1222,35 @@ def test_chain_init(Listener, NoisyPublisher, chain_config_with_one_item):
     assert not chain.listener_died_event.is_set()
 
 
+@patch('trollmoves.client.request_push')
 @patch('trollmoves.client.NoisyPublisher')
 @patch('trollmoves.client.Listener')
-def test_chain_listeners(Listener, NoisyPublisher, chain_config_with_one_item):
+def test_chain_listeners(Listener, NoisyPublisher, request_push, chain_config_with_one_item):
     """Test the Chain object."""
     from trollmoves.client import Chain
 
     _mock_listener_for_chain_tests(Listener)
-    callback = MagicMock()
 
     name = 'eumetcast_hrit_0deg_scp_hot_spare'
     chain = Chain(name, chain_config_with_one_item[name])
-    chain.setup_listeners(callback)
+    chain.setup_listeners()
 
     assert len(chain.listeners) == 4
 
 
+@patch('trollmoves.client.request_push')
 @patch('trollmoves.client.NoisyPublisher')
 @patch('trollmoves.client.Listener')
-def test_chain_restart_dead_listeners(Listener, NoisyPublisher, caplog, chain_config_with_one_item):
+def test_chain_restart_dead_listeners(Listener, NoisyPublisher, request_push, caplog, chain_config_with_one_item):
     """Test the Chain object."""
     from trollmoves.client import Chain
     import trollmoves.client
 
     _mock_listener_for_chain_tests(Listener)
-    callback = MagicMock()
 
     name = 'eumetcast_hrit_0deg_scp_hot_spare'
     chain = Chain(name, chain_config_with_one_item[name])
-    chain.setup_listeners(callback)
+    chain.setup_listeners()
 
     with patch('trollmoves.client.LISTENER_CHECK_INTERVAL', new=.1):
         trollmoves.client.LISTENER_CHECK_INTERVAL = .1
@@ -1263,19 +1271,19 @@ def test_chain_restart_dead_listeners(Listener, NoisyPublisher, caplog, chain_co
             chain.stop()
 
 
+@patch('trollmoves.client.request_push')
 @patch('trollmoves.client.NoisyPublisher')
 @patch('trollmoves.client.Listener')
-def test_chain_listener_crashing_once(Listener, NoisyPublisher, caplog, chain_config_with_one_item):
+def test_chain_listener_crashing_once(Listener, NoisyPublisher, request_push, caplog, chain_config_with_one_item):
     """Test the Chain object."""
     from trollmoves.client import Chain
     import trollmoves.client
 
     _mock_listener_for_chain_tests(Listener)
-    callback = MagicMock()
 
     name = 'eumetcast_hrit_0deg_scp_hot_spare'
     chain = Chain(name, chain_config_with_one_item[name])
-    chain.setup_listeners(callback)
+    chain.setup_listeners()
 
     with patch('trollmoves.client.LISTENER_CHECK_INTERVAL', new=.1):
         trollmoves.client.LISTENER_CHECK_INTERVAL = .1
@@ -1293,9 +1301,11 @@ def test_chain_listener_crashing_once(Listener, NoisyPublisher, caplog, chain_co
             chain.stop()
 
 
+@patch('trollmoves.client.request_push')
 @patch('trollmoves.client.NoisyPublisher')
 @patch('trollmoves.client.Listener')
-def test_chain_listener_crashing_all_the_time(Listener, NoisyPublisher, caplog, chain_config_with_one_item):
+def test_chain_listener_crashing_all_the_time(Listener, NoisyPublisher, request_push,
+                                              caplog, chain_config_with_one_item):
     """Test the Chain object."""
     from trollmoves.client import Chain
     import trollmoves.client
@@ -1304,11 +1314,10 @@ def test_chain_listener_crashing_all_the_time(Listener, NoisyPublisher, caplog, 
         return Listener
 
     _mock_listener_for_chain_tests(Listener, is_alive=False)
-    callback = MagicMock()
 
     name = 'eumetcast_hrit_0deg_scp_hot_spare'
     chain = Chain(name, chain_config_with_one_item[name])
-    chain.setup_listeners(callback)
+    chain.setup_listeners()
 
     with patch('trollmoves.client.LISTENER_CHECK_INTERVAL', new=.1):
         trollmoves.client.LISTENER_CHECK_INTERVAL = .1

@@ -37,7 +37,6 @@ import subprocess
 from contextlib import suppress
 
 import tarfile
-import pyinotify
 from zmq import LINGER, POLLIN, REQ, Poller
 import bz2
 from posttroll import get_context
@@ -137,12 +136,11 @@ def read_config(filename):
 class Listener(Thread):
     """PyTroll listener class for reading messages for Trollduction."""
 
-    def __init__(self, address, topics, callback, *args, die_event=None, **kwargs):
+    def __init__(self, address, topics, *args, die_event=None, **kwargs):
         """Init Listener object."""
         super(Listener, self).__init__()
 
         self.topics = topics
-        self.callback = callback
         self.subscriber = None
         self.address = address
         self.running = False
@@ -156,7 +154,7 @@ class Listener(Thread):
     def restart(self):
         """Restart the listener, returns a new running instance."""
         self.stop()
-        new_listener = self.__class__(self.address, self.topics, self.callback, *self.cargs,
+        new_listener = self.__class__(self.address, self.topics, *self.cargs,
                                       die_event=self.die_event, **self.ckwargs)
         new_listener.death_count = self.death_count + 1
         new_listener.start()
@@ -235,10 +233,10 @@ class Listener(Thread):
                         # the ongoing transfers before starting processing here
                         delay = self.ckwargs.get("processing_delay", False)
                         if delay:
-                            add_timer(float(delay), self.callback, msg, *self.cargs,
+                            add_timer(float(delay), request_push, msg, *self.cargs,
                                       **self.ckwargs)
                         else:
-                            self.callback(msg, *self.cargs, **self.ckwargs)
+                            request_push(msg, *self.cargs, **self.ckwargs)
 
                     LOGGER.debug("Exiting listener %s", str(self.address))
         except Exception as err:
@@ -513,12 +511,12 @@ def get_next_msg(uid):
         return ongoing_transfers[uid].pop(0)
 
 
-def add_timer(timeout, callback, msg, *args, **kwargs):
+def add_timer(timeout, func, msg, *args, **kwargs):
     """Add a timer for hot spare."""
     huid = get_msg_uid(msg)
     cargs = [msg] + list(args)
     with hot_spare_timer_lock:
-        timer = CTimer(timeout, callback, args=cargs, kwargs=kwargs)
+        timer = CTimer(timeout, func, args=cargs, kwargs=kwargs)
         ongoing_hot_spare_timers[huid] = timer
         ongoing_hot_spare_timers[huid].start()
     LOGGER.debug("Added timer for UID %s.", huid)
@@ -649,9 +647,8 @@ class Chain(Thread):
             except (KeyError, NameError):
                 pass
 
-    def setup_listeners(self, callback, keep_providers=None):
+    def setup_listeners(self, keep_providers=None):
         """Set up the listeners."""
-        self.callback = callback
         keep_providers = keep_providers or []
         try:
             topics = []
@@ -681,7 +678,6 @@ class Chain(Thread):
                 listener = Listener(
                     provider,
                     topics,
-                    callback,
                     publisher=self.publisher,
                     die_event=self.listener_died_event,
                     **self._config)
@@ -746,14 +742,14 @@ class Chain(Thread):
                 return True
         return False
 
-    def refresh(self, new_config, callback):
+    def refresh(self, new_config):
         """Refresh the chain with new config."""
         publisher_needs_restarting = self.publisher_needs_restarting(new_config)
         unchanged_providers = self.get_unchanged_providers(new_config)
         self._config = new_config
         if publisher_needs_restarting:
             self._refresh_publisher()
-        self._refresh_listeners(callback, unchanged_providers)
+        self._refresh_listeners(unchanged_providers)
         if not self.running:
             self.start()
 
@@ -761,9 +757,9 @@ class Chain(Thread):
         self._stop_publisher()
         self.setup_publisher()
 
-    def _refresh_listeners(self, callback, unchanged_providers):
+    def _refresh_listeners(self, unchanged_providers):
         self.reset_listeners(keep_providers=unchanged_providers)
-        self.setup_listeners(callback, keep_providers=unchanged_providers)
+        self.setup_listeners(keep_providers=unchanged_providers)
 
     def reset_listeners(self, keep_providers=None):
         """Reset the listeners."""
@@ -791,12 +787,12 @@ class Chain(Thread):
         """Restart the chain, return a new running instance."""
         self.stop()
         new_chain = self.__class__(self._name, self._config)
-        new_chain.setup_listeners(self.callback)
+        new_chain.setup_listeners()
         new_chain.start()
         return new_chain
 
 
-def reload_config(filename, chains, callback=request_push):
+def reload_config(filename, chains):
     """Rebuild chains if needed (if the configuration changed) from *filename*."""
     LOGGER.debug("New config file detected: %s", filename)
 
@@ -815,7 +811,7 @@ def reload_config(filename, chains, callback=request_push):
             chains[key] = Chain(key, new_config)
             chains[key].start()
 
-        chains[key].refresh(new_config, callback)
+        chains[key].refresh(new_config)
 
         LOGGER.debug("%s %s", verb, key)
 
@@ -921,46 +917,6 @@ class PushRequester(object):
                 self._socket.send_string(request)
 
         return rep
-
-# Generic event handler
-
-
-class EventHandler(pyinotify.ProcessEvent):
-    """Handle events with a generic *fun* function."""
-
-    def __init__(self, fun, *args, **kwargs):
-        """Initialize handler."""
-        pyinotify.ProcessEvent.__init__(self, *args, **kwargs)
-        self._fun = fun
-
-    def process_IN_CLOSE_WRITE(self, event):
-        """Process on closing after writing."""
-        self._fun(event.pathname)
-
-    def process_IN_CREATE(self, event):
-        """Process on closing after linking."""
-        try:
-            if os.stat(event.pathname).st_nlink > 1:
-                self._fun(event.pathname)
-        except OSError:
-            return
-
-    def process_IN_MOVED_TO(self, event):
-        """Process on closing after moving."""
-        self._fun(event.pathname)
-
-
-class StatCollector(object):
-    """StatCollector class."""
-
-    def __init__(self, statfile):
-        """Initialize collector."""
-        self.statfile = statfile
-
-    def collect(self, msg, *args, **kwargs):
-        """Collect."""
-        with open(self.statfile, 'a') as fd:
-            fd.write(time.asctime() + " - " + str(msg) + "\n")
 
 
 def terminate(chains):
