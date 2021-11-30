@@ -960,7 +960,8 @@ def test_reload_config_chain_added(Listener, NoisyPublisher, request_push, clien
 @patch('trollmoves.client.request_push')
 @patch('trollmoves.client.NoisyPublisher')
 @patch('trollmoves.client.Listener')
-def test_reload_config_chain_removed(Listener, NoisyPublisher, request_push, client_config_1_item, client_config_2_items):
+def test_reload_config_chain_removed(Listener, NoisyPublisher, request_push,
+                                     client_config_1_item, client_config_2_items):
     """Test trollmoves.client.reload_config() when a chain is added."""
     from trollmoves.client import reload_config
 
@@ -1132,7 +1133,8 @@ def test_reload_config_provider_topic_changed(Listener, NoisyPublisher, request_
 
 @patch('trollmoves.client.request_push')
 @patch('trollmoves.client.Chain')
-def test_reload_config_chain_not_recreated(Chain, request_push, client_config_1_item, client_config_1_pub_item_modified):
+def test_reload_config_chain_not_recreated(Chain, request_push, client_config_1_item,
+                                           client_config_1_pub_item_modified):
     """Test that the chain is not recreated when config is modified."""
     from trollmoves.client import reload_config
 
@@ -1302,7 +1304,8 @@ def test_chain_listener_crashing_once(Listener, NoisyPublisher, request_push, ca
 @patch('trollmoves.client.request_push')
 @patch('trollmoves.client.NoisyPublisher')
 @patch('trollmoves.client.Listener')
-def test_chain_listener_crashing_all_the_time(Listener, NoisyPublisher, request_push, caplog, chain_config_with_one_item):
+def test_chain_listener_crashing_all_the_time(Listener, NoisyPublisher, request_push,
+                                              caplog, chain_config_with_one_item):
     """Test the Chain object."""
     from trollmoves.client import Chain
     import trollmoves.client

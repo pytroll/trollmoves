@@ -37,7 +37,6 @@ import subprocess
 from contextlib import suppress
 
 import tarfile
-import pyinotify
 from zmq import LINGER, POLLIN, REQ, Poller
 import bz2
 from posttroll import get_context
