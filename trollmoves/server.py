@@ -266,9 +266,6 @@ class RequestManager(Thread):
 
     def reply_and_send(self, fun, address, message):
         """Reply to request."""
-        in_socket = get_context().socket(PUSH)
-        in_socket.connect("inproc://replies" + str(self.port))
-
         reply = Message(message.subject, "error")
         try:
             reply = fun(message)
@@ -276,12 +273,16 @@ class RequestManager(Thread):
             LOGGER.exception("Something went wrong"
                              " when processing the request: %s", str(message))
         finally:
-            LOGGER.debug("Response: %s", str(reply))
-            try:
-                in_socket.send_multipart([address, b'', str(reply)])
-            except TypeError:
-                in_socket.send_multipart([address, b'', bytes(str(reply),
-                                                              'utf-8')])
+            self._send_multipart_reply(reply, address)
+
+    def _send_multipart_reply(self, reply, address):
+        LOGGER.debug("Response: %s", str(reply))
+        in_socket = get_context().socket(PUSH)
+        in_socket.connect("inproc://replies" + str(self.port))
+        try:
+            in_socket.send_multipart([address, b'', str(reply)])
+        except TypeError:
+            in_socket.send_multipart([address, b'', bytes(str(reply), 'utf-8')])
 
     def run(self):
         """Run request manager."""
