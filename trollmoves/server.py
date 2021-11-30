@@ -625,66 +625,107 @@ def reload_config(filename,
 
     new_chains = read_config(filename)
 
+    old_glob = _update_chains(chains, new_chains, manager, use_watchdog, publisher, notifier_builder)
+    _disable_removed_chains(chains, new_chains)
+    LOGGER.debug("Reloaded config from %s", filename)
+    _process_old_files(old_glob, disable_backlog, publisher)
+    LOGGER.debug("done reloading config")
+
+
+def _update_chains(chains, new_chains, manager, use_watchdog, publisher, notifier_builder):
     old_glob = []
-
-    for key, val in new_chains.items():
-        identical = True
-        if key in chains:
-            for key2, val2 in new_chains[key].items():
-                if ((key2 not in ["notifier", "publisher"]) and
-                    ((key2 not in chains[key]) or
-                     (chains[key][key2] != val2))):
-                    identical = False
-                    break
-            if identical:
+    for chain_name, chain in new_chains.items():
+        chain_updated = False
+        if chain_name in chains:
+            if _chains_are_identical(chains, new_chains, chain_name):
                 continue
+            chain_updated = True
+            _stop_chain(chains[chain_name])
 
-            chains[key]["notifier"].stop()
-            try:
-                # Join the Watchdog thread
-                chains[key]["notifier"].join()
-            except AttributeError:
-                pass
-            if "request_manager" in chains[key]:
-                chains[key]["request_manager"].stop()
-                LOGGER.debug('Stopped reqman')
-
-        chains[key] = val.copy()
-        try:
-            chains[key]["request_manager"] = manager(
-                int(val["request_port"]), val)
-            LOGGER.debug("Created request manager on port %s",
-                         val["request_port"])
-        except (KeyError, NameError):
-            LOGGER.exception('In reading config')
-        except ConfigError as err:
-            LOGGER.error('Invalid config parameters in %s: %s', key, str(err))
-            LOGGER.warning('Remove and skip %s', key)
-            del chains[key]
+        if not _add_chain(chains, chain_name, chain, manager):
             continue
 
-        if notifier_builder is None:
-            if 'origin' in val:
-                if use_watchdog:
-                    LOGGER.info("Using Watchdog notifier")
-                    notifier_builder = create_watchdog_notifier
-                else:
-                    LOGGER.info("Using inotify notifier")
-                    notifier_builder = create_inotify_notifier
-            elif 'listen' in val:
-                notifier_builder = create_posttroll_notifier
+        fun = _create_notifier_and_get_function(notifier_builder, chains[chain_name], use_watchdog, chain, publisher)
 
-        chains[key]["notifier"], fun = notifier_builder(val, publisher)
-        chains[key]["request_manager"].start()
-        chains[key]["notifier"].start()
-        if 'origin' in val:
-            old_glob.append((globify(val["origin"]), fun, val))
+        if 'origin' in chain:
+            old_glob.append((globify(chain["origin"]), fun, chain))
 
-        if not identical:
-            LOGGER.debug("Updated %s", key)
+        if chain_updated:
+            LOGGER.debug("Updated %s", chain_name)
         else:
-            LOGGER.debug("Added %s", key)
+            LOGGER.debug("Added %s", chain_name)
 
+    return old_glob
+
+
+def _chains_are_identical(chains, new_chains, chain_name):
+    identical = True
+    for config_key, config_value in new_chains[chain_name].items():
+        if ((config_key not in ["notifier", "publisher"]) and
+            ((config_key not in chains[chain_name]) or
+                (chains[chain_name][config_key] != config_value))):
+            identical = False
+            break
+    return identical
+
+
+def _stop_chain(chain):
+    chain["notifier"].stop()
+    try:
+        chain["notifier"].join()
+    except AttributeError:
+        pass
+    if "request_manager" in chain:
+        chain["request_manager"].stop()
+        LOGGER.debug('Stopped reqman')
+
+
+def _add_chain(chains, chain_name, chain, manager):
+    chains[chain_name] = chain.copy()
+    manager_added = _create_manager(chains, chain_name, chain, manager)
+    if not manager_added:
+        del chains[chain]
+    return manager_added
+
+
+def _create_manager(chains, chain_name, chain, manager):
+    try:
+        chains[chain_name]["request_manager"] = manager(int(chain["request_port"]), chain)
+        LOGGER.debug("Created request manager on port %s", chain["request_port"])
+    except (KeyError, NameError):
+        LOGGER.exception('In reading config')
+    except ConfigError as err:
+        LOGGER.error('Invalid config parameters in %s: %s', chain_name, str(err))
+        LOGGER.warning('Remove and skip %s', chain_name)
+        return False
+    chains[chain_name]["request_manager"].start()
+    return True
+
+
+def _create_notifier_and_get_function(notifier_builder, conf, use_watchdog, val, publisher):
+    if notifier_builder is None:
+        notifier_builder = _get_notifier_builder(use_watchdog, val)
+    conf["notifier"], fun = notifier_builder(val, publisher)
+    conf["notifier"].start()
+
+    return fun
+
+
+def _get_notifier_builder(use_watchdog, val):
+    if 'origin' in val:
+        if use_watchdog:
+            LOGGER.info("Using Watchdog notifier")
+            notifier_builder = create_watchdog_notifier
+        else:
+            LOGGER.info("Using inotify notifier")
+            notifier_builder = create_inotify_notifier
+    elif 'listen' in val:
+        notifier_builder = create_posttroll_notifier
+
+    return notifier_builder
+
+
+def _disable_removed_chains(chains, new_chains):
     for key in (set(chains.keys()) - set(new_chains.keys())):
         chains[key]["notifier"].stop()
         try:
@@ -695,17 +736,12 @@ def reload_config(filename,
         del chains[key]
         LOGGER.debug("Removed %s", key)
 
-    LOGGER.debug("Reloaded config from %s", filename)
+
+def _process_old_files(old_glob, disable_backlog, publisher):
     if old_glob and not disable_backlog:
         time.sleep(3)
         for pattern, fun, attrs in old_glob:
             process_old_files(pattern, fun, publisher, attrs)
-
-    LOGGER.debug("done reloading config")
-
-# Unpackers
-
-# xrit
 
 
 def check_output(*popenargs, **kwargs):
