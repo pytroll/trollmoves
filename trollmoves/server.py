@@ -133,33 +133,50 @@ class RequestManager(Thread):
         """Initialize request manager."""
         Thread.__init__(self)
 
-        self._loop = True
-        self.out_socket = get_context().socket(ROUTER)
-        self.out_socket.bind("tcp://*:" + str(port))
         self.port = port
-        self.in_socket = get_context().socket(PULL)
-        self.in_socket.bind("inproc://replies" + str(port))
-
-        self._poller = Poller()
-        self._poller.register(self.out_socket, POLLIN)
-        self._poller.register(self.in_socket, POLLIN)
         self._attrs = attrs
-        try:
-            # Checking the validity of the file pattern
-            globify(attrs["origin"])
-        except ValueError as err:
-            raise ConfigError('Invalid file pattern: ' + str(err))
-        except KeyError:
-            if 'listen' not in attrs:
-                raise
+        self._loop = True
+        self.out_socket = None
+        self.in_socket = None
+        self._poller = None
+        self._station = None
+
+        self._validate_file_pattern()
+        self._set_out_socket()
+        self._set_in_socket()
+        self._set_station()
+        self._create_poller()
         self._deleter = Deleter(attrs)
 
+    def _set_out_socket(self):
+        self.out_socket = get_context().socket(ROUTER)
+        self.out_socket.bind("tcp://*:" + str(self.port))
+
+    def _set_in_socket(self):
+        self.in_socket = get_context().socket(PULL)
+        self.in_socket.bind("inproc://replies" + str(self.port))
+
+    def _set_station(self):
         try:
             self._station = self._attrs["station"]
         except (KeyError, TypeError):
             LOGGER.warning("Station is not defined in config file")
             self._station = "unknown"
         LOGGER.debug("Station is '%s'", self._station)
+
+    def _create_poller(self):
+        self._poller = Poller()
+        self._poller.register(self.out_socket, POLLIN)
+        self._poller.register(self.in_socket, POLLIN)
+
+    def _validate_file_pattern(self):
+        try:
+            _ = globify(self._attrs["origin"])
+        except ValueError as err:
+            raise ConfigError('Invalid file pattern: ' + str(err))
+        except KeyError:
+            if 'listen' not in self._attrs:
+                raise
 
     def start(self):
         """Start the request manager."""
