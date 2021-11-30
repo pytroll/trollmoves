@@ -189,42 +189,51 @@ class RequestManager(Thread):
 
     def push(self, message):
         """Reply to push request."""
-        for the_dict in gen_dict_contains(message.data, 'uri'):
-            uri = urlparse(the_dict['uri'])
-            rel_path = the_dict.get('path', None)
-            pathname = uri.path
-            # FIXME: check against file_cache
-            if 'origin' in self._attrs and not fnmatch.fnmatch(
-                    os.path.basename(pathname),
-                    os.path.basename(globify(self._attrs["origin"]))):
-                LOGGER.warning('Client trying to get invalid file: %s', pathname)
-                return Message(message.subject,
-                               "err",
-                               data="{0:s} not reachable".format(pathname))
-            try:
-                move_it(pathname, message.data['destination'], self._attrs, rel_path=rel_path)
-            except Exception as err:
-                return Message(message.subject, "err", data=str(err))
-            else:
-                if (self._attrs.get('compression') or self._attrs.get(
-                        'delete', 'False').lower() in ["1", "yes", "true", "on"]):
-                    self._deleter.add(pathname)
+        new_msg = self._move_files(message)
+        if new_msg is None:
+            new_msg = Message(message.subject,
+                              message.type,
+                              data=message.data.copy())
+            new_msg.data['destination'] = clean_url(new_msg.data['destination'])
 
-            if 'dataset' in message.data:
-                mtype = 'dataset'
-            elif 'collection' in message.data:
-                mtype = 'collection'
-            elif 'uid' in message.data:
-                mtype = 'file'
-            else:
-                raise KeyError('No known metadata in message.')
-
-        new_msg = Message(message.subject,
-                          mtype,
-                          data=message.data.copy())
-        new_msg.data['destination'] = clean_url(new_msg.data[
-            'destination'])
         return new_msg
+
+    def _move_files(self, message):
+        error_message = None
+        for data in gen_dict_contains(message.data, 'uri'):
+            pathname = urlparse(data['uri']).path
+            rel_path = data.get('path', None)
+            error_message = self._validate_requested_file(pathname, message)
+            if error_message is not None:
+                break
+            error_message = self._move_file(pathname, message, rel_path)
+            if error_message is not None:
+                break
+
+        return error_message
+
+    def _validate_requested_file(self, pathname, message):
+        # FIXME: check against file_cache
+        if 'origin' in self._attrs and not fnmatch.fnmatch(
+                os.path.basename(pathname),
+                os.path.basename(globify(self._attrs["origin"]))):
+            LOGGER.warning('Client trying to get invalid file: %s', pathname)
+            return Message(message.subject, "err", data="{0:s} not reachable".format(pathname))
+        return None
+
+    def _move_file(self, pathname, message, rel_path):
+        error_message = None
+        try:
+            move_it(pathname, message.data['destination'], self._attrs, rel_path=rel_path)
+        except Exception as err:
+            error_message = Message(message.subject, "err", data=str(err))
+        else:
+            if self._attrs.get('compression') or self._is_delete_set():
+                self._deleter.add(pathname)
+        return error_message
+
+    def _is_delete_set(self):
+        return self._attrs.get('delete', 'False').lower() in ["1", "yes", "true", "on"]
 
     def ack(self, message):
         """Reply with ack to a publication."""
