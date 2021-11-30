@@ -255,20 +255,9 @@ class RequestManager(Thread):
 
     def info(self, message):
         """Collect information from file cache to message."""
-        topic = message.subject
-        max_count = 2256  # Let's set a (close to arbitrary) limit on messages size.
-        try:
-            max_count = min(message.data.get("max_count", max_count), max_count)
-        except AttributeError:
-            pass
         uptime = datetime.datetime.utcnow() - START_TIME
-        files = []
-        with file_cache_lock:
-            for i in file_cache:
-                if i.startswith(topic):
-                    files.append(i)
-                    if len(files) == max_count:
-                        break
+        files, max_count = _collect_cached_files(message)
+
         return Message(message.subject, "info", data={"files": files, "max_count": max_count, "uptime": str(uptime)})
 
     def unknown(self, message):
@@ -377,6 +366,22 @@ def _get_cleaned_ack_message(message):
         pass
 
     return new_msg
+
+
+def _collect_cached_files(message):
+    max_count = 2256  # Let's set a (close to arbitrary) limit on messages size.
+    try:
+        max_count = min(message.data.get("max_count", max_count), max_count)
+    except AttributeError:
+        pass
+    files = []
+    with file_cache_lock:
+        for i in file_cache:
+            if i.startswith(message.subject):
+                files.append(i)
+                if len(files) == max_count:
+                    break
+    return files, max_count
 
 
 class Listener(Thread):
