@@ -228,36 +228,29 @@ class RequestManager(Thread):
         except Exception as err:
             error_message = Message(message.subject, "err", data=str(err))
         else:
-            if self._attrs.get('compression') or self._is_delete_set():
-                self._deleter.add(pathname)
+            self._add_to_deleter(pathname)
         return error_message
+
+    def _add_to_deleter(self, pathname):
+        if self._attrs.get('compression') or self._is_delete_set():
+            self._deleter.add(pathname)
 
     def _is_delete_set(self):
         return self._attrs.get('delete', 'False').lower() in ["1", "yes", "true", "on"]
 
     def ack(self, message):
         """Reply with ack to a publication."""
+        new_msg = None
         for url in gen_dict_extract(message.data, 'uri'):
-            uri = urlparse(url)
-            pathname = uri.path
+            pathname = urlparse(url).path
+            new_msg = self._validate_requested_file(pathname, message)
+            if new_msg is not None:
+                break
+            self._add_to_deleter(pathname)
 
-            if 'origin' in self._attrs and not fnmatch.fnmatch(
-                    os.path.basename(pathname),
-                    os.path.basename(globify(self._attrs["origin"]))):
-                LOGGER.warning('Client trying to get invalid file: %s', pathname)
-                return Message(message.subject,
-                               "err",
-                               data="{0:s} not reacheable".format(pathname))
+        if new_msg is None:
+            new_msg = _get_cleaned_ack_message(message)
 
-            if (self._attrs.get('compression') or self._attrs.get(
-                    'delete', 'False').lower() in ["1", "yes", "true", "on"]):
-                self._deleter.add(pathname)
-        new_msg = Message(message.subject, "ack", data=message.data.copy())
-        try:
-            new_msg.data['destination'] = clean_url(new_msg.data[
-                'destination'])
-        except KeyError:
-            pass
         return new_msg
 
     def info(self, message):
@@ -373,6 +366,17 @@ class RequestManager(Thread):
         self._deleter.stop()
         self.out_socket.close(1)
         self.in_socket.close(1)
+
+
+def _get_cleaned_ack_message(message):
+    new_msg = Message(message.subject, "ack", data=message.data.copy())
+    try:
+        new_msg.data['destination'] = clean_url(new_msg.data[
+            'destination'])
+    except KeyError:
+        pass
+
+    return new_msg
 
 
 class Listener(Thread):
