@@ -397,49 +397,55 @@ class Listener(Thread):
     def run(self):
         """Start listening to messages."""
         with Subscribe('', topics=self.attrs['listen'], addr_listener=True) as sub:
-            for msg in sub.recv(1):
-                if msg is None:
-                    if not self.loop:
-                        break
-                    else:
-                        continue
+            self._run(sub)
 
-                # check that files are local
-                for uri in gen_dict_extract(msg.data, 'uri'):
-                    urlobj = urlparse(uri)
-                    if not is_file_local(urlobj):
-                        break
-                else:
-                    LOGGER.debug('We have a match: %s', str(msg))
+    def _run(self, sub):
+        for msg in sub.recv(1):
+            if not self.loop:
+                break
+            if msg is None:
+                continue
+            if not _files_in_message_are_local(msg):
+                break
+            self._send_message(msg)
 
-                    # pathname = unpack(orig_pathname, **attrs)
+    def _send_message(self, msg):
+        LOGGER.debug('We have a match: %s', str(msg))
+        info = self._collect_message_info(msg)
+        msg = Message(self.attrs["topic"], msg.type, info)
+        self.publisher.send(str(msg))
+        self._add_files_to_cache(msg)
+        LOGGER.debug("Message sent: %s", str(msg))
 
-                    info = self.attrs.get("info", {})
-                    if info:
-                        info = dict((elt.strip().split('=') for elt in info.split(";")))
-                        for infokey, infoval in info.items():
-                            if "," in infoval:
-                                info[infokey] = infoval.split(",")
+    def _collect_message_info(self, msg):
+        info = self.attrs.get("info", {})
+        if info:
+            info = dict((elt.strip().split('=') for elt in info.split(";")))
+            for infokey, infoval in info.items():
+                if "," in infoval:
+                    info[infokey] = infoval.split(",")
 
-                    # info.update(parse(attrs["origin"], orig_pathname))
-                    # info['uri'] = pathname
-                    # info['uid'] = os.path.basename(pathname)
-                    info.update(msg.data)
-                    info['request_address'] = self.attrs.get(
-                        "request_address", get_own_ip()) + ":" + self.attrs["request_port"]
-                    old_data = msg.data
-                    msg = Message(self.attrs["topic"], msg.type, info)
-                    self.publisher.send(str(msg))
-                    with file_cache_lock:
-                        for filename in gen_dict_extract(old_data, 'uid'):
-                            file_cache.appendleft(self.attrs["topic"] + '/' + filename)
-                    LOGGER.debug("Message sent: %s", str(msg))
-                    if not self.loop:
-                        break
+        info.update(msg.data)
+        info['request_address'] = self.attrs.get(
+            "request_address", get_own_ip()) + ":" + self.attrs["request_port"]
+        return info
+
+    def _add_files_to_cache(self, msg):
+        with file_cache_lock:
+            for filename in gen_dict_extract(msg.data, 'uid'):
+                file_cache.appendleft(self.attrs["topic"] + '/' + filename)
 
     def stop(self):
         """Stop the listener."""
         self.loop = False
+
+
+def _files_in_message_are_local(msg):
+    for uri in gen_dict_extract(msg.data, 'uri'):
+        urlobj = urlparse(uri)
+        if not is_file_local(urlobj):
+            return False
+    return True
 
 
 def create_posttroll_notifier(attrs, publisher):
