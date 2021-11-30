@@ -418,13 +418,7 @@ class Listener(Thread):
         LOGGER.debug("Message sent: %s", str(msg))
 
     def _collect_message_info(self, msg):
-        info = self.attrs.get("info", {})
-        if info:
-            info = dict((elt.strip().split('=') for elt in info.split(";")))
-            for infokey, infoval in info.items():
-                if "," in infoval:
-                    info[infokey] = infoval.split(",")
-
+        info = _collect_attribute_info(self.attrs)
         info.update(msg.data)
         info['request_address'] = self.attrs.get(
             "request_address", get_own_ip()) + ":" + self.attrs["request_port"]
@@ -448,6 +442,16 @@ def _files_in_message_are_local(msg):
     return True
 
 
+def _collect_attribute_info(attrs):
+    info = attrs.get("info", {})
+    if info:
+        info = dict((elt.strip().split('=') for elt in info.split(";")))
+        for infokey, infoval in info.items():
+            if "," in infoval:
+                info[infokey] = infoval.split(",")
+    return info
+
+
 def create_posttroll_notifier(attrs, publisher):
     """Create a notifier listening to posttroll messages from *attrs*."""
     listener = Listener(attrs, publisher)
@@ -459,32 +463,29 @@ def process_notify(orig_pathname, publisher, pattern, attrs):
     """Publish what we have."""
     if not fnmatch.fnmatch(orig_pathname, pattern):
         return
-    elif (os.stat(orig_pathname).st_size == 0):
-        # Want to avoid files with size 0.
+    elif os.stat(orig_pathname).st_size == 0:
         LOGGER.debug("Ignoring empty file: %s", orig_pathname)
         return
     else:
         LOGGER.debug('We have a match: %s', orig_pathname)
 
     pathname = unpack(orig_pathname, **attrs)
-
-    info = attrs.get("info", {})
-    if info:
-        info = dict((elt.strip().split('=') for elt in info.split(";")))
-        for infokey, infoval in info.items():
-            if "," in infoval:
-                info[infokey] = infoval.split(",")
-
-    info.update(parse(attrs["origin"], orig_pathname))
-    info['uri'] = pathname
-    info['uid'] = os.path.basename(pathname)
-    info['request_address'] = attrs.get(
-        "request_address", get_own_ip()) + ":" + attrs["request_port"]
+    info = _get_inotify_message_info(attrs, orig_pathname, pathname)
     msg = Message(attrs["topic"], 'file', info)
     publisher.send(str(msg))
     with file_cache_lock:
         file_cache.appendleft(attrs["topic"] + '/' + info["uid"])
     LOGGER.debug("Message sent: %s", str(msg))
+
+
+def _get_inotify_message_info(attrs, orig_pathname, pathname):
+    info = _collect_attribute_info(attrs)
+    info.update(parse(attrs["origin"], orig_pathname))
+    info['uri'] = pathname
+    info['uid'] = os.path.basename(pathname)
+    info['request_address'] = attrs.get(
+        "request_address", get_own_ip()) + ":" + attrs["request_port"]
+    return info
 
 
 def create_inotify_notifier(attrs, publisher):
