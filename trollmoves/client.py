@@ -253,9 +253,9 @@ class Listener(Thread):
             # If this is a hot spare client, wait for a while
             # for a public "push" message which will update
             # the ongoing transfers before starting processing here
-            add_timer(float(delay), self.callback, msg, *self.cargs, **self.ckwargs)
+            add_request_push_timer(float(delay), msg, *self.cargs, **self.ckwargs)
         else:
-            self.callback(msg, *self.cargs, **self.ckwargs)
+            request_push(msg, *self.cargs, **self.ckwargs)
 
     def stop(self):
         """Stop subscriber and delete the instance."""
@@ -553,12 +553,12 @@ def get_next_msg(uid):
         return ongoing_transfers[uid].pop(0)
 
 
-def add_timer(timeout, func, msg, *args, **kwargs):
+def add_request_push_timer(timeout, msg, *args, **kwargs):
     """Add a timer for hot spare."""
     huid = get_msg_uid(msg)
     cargs = [msg] + list(args)
     with hot_spare_timer_lock:
-        timer = CTimer(timeout, func, args=cargs, kwargs=kwargs)
+        timer = CTimer(timeout, request_push, args=cargs, kwargs=kwargs)
         ongoing_hot_spare_timers[huid] = timer
         ongoing_hot_spare_timers[huid].start()
     LOGGER.debug("Added timer for UID %s.", huid)

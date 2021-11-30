@@ -627,12 +627,12 @@ def test_listener_ack_message(add_to_file_cache, clean_ongoing_transfer, request
 
 
 @patch('trollmoves.client.request_push')
-@patch('trollmoves.client.add_timer')
+@patch('trollmoves.client.add_request_push_timer')
 @patch('trollmoves.client.add_to_ongoing')
 @patch('trollmoves.client.clean_ongoing_transfer')
 @patch('trollmoves.client.add_to_file_cache')
-def test_listener_beat_message(add_to_file_cache, clean_ongoing_transfer, add_to_ongoing, add_timer, request_push,
-                               delayed_listener):
+def test_listener_beat_message(add_to_file_cache, clean_ongoing_transfer, add_to_ongoing,
+                               add_request_push_timer, request_push, delayed_listener):
     """Test listener with beat message."""
     delayed_listener.create_subscriber()
     delayed_listener.subscriber.return_value = [MSG_BEAT]
@@ -641,18 +641,19 @@ def test_listener_beat_message(add_to_file_cache, clean_ongoing_transfer, add_to
 
     add_to_file_cache.assert_not_called()
     add_to_ongoing.assert_not_called()
-    add_timer.assert_not_called()
+    add_request_push_timer.assert_not_called()
     clean_ongoing_transfer.assert_not_called()
 
 
 @patch('trollmoves.client.request_push')
-@patch('trollmoves.client.add_timer')
+@patch('trollmoves.client.add_request_push_timer')
 @patch('trollmoves.client.add_to_ongoing')
 @patch('trollmoves.client.clean_ongoing_transfer')
 @patch('trollmoves.client.add_to_file_cache')
 @patch('trollmoves.client.CTimer')
 def test_listener_sync_file_message(
-        CTimer, add_to_file_cache, clean_ongoing_transfer, add_to_ongoing, add_timer, request_push, delayed_listener):
+        CTimer, add_to_file_cache, clean_ongoing_transfer, add_to_ongoing, add_request_push_timer,
+        request_push, delayed_listener):
     """Test listener with a file message from another client."""
     from trollmoves.client import get_msg_uid
 
@@ -665,7 +666,7 @@ def test_listener_sync_file_message(
     add_to_file_cache.assert_called_with(MSG_FILE1)
     clean_ongoing_transfer.assert_called_with(get_msg_uid(MSG_FILE1))
     add_to_ongoing.assert_called_with(MSG_FILE1)
-    add_timer.assert_not_called()
+    add_request_push_timer.assert_not_called()
 
 
 @patch('trollmoves.client.request_push')
@@ -680,8 +681,8 @@ def test_listener_file_message(CTimer, request_push, delayed_listener):
 
 
 @patch('trollmoves.client.request_push')
-@patch('trollmoves.client.add_timer')
-def test_listener_no_delay_file_message(add_timer, request_push, listener):
+@patch('trollmoves.client.add_request_push_timer')
+def test_listener_no_delay_file_message(add_request_push_timer, request_push, listener):
     """Test listener without a delay receiving a file message."""
     listener.create_subscriber()
     listener.subscriber.return_value = [MSG_FILE2]
@@ -690,7 +691,7 @@ def test_listener_no_delay_file_message(add_timer, request_push, listener):
 
     request_push.assert_called_with(MSG_FILE2, 'arg1', 'arg2',
                                     kwarg1='kwarg1', kwarg2='kwarg2')
-    add_timer.assert_not_called()
+    add_request_push_timer.assert_not_called()
 
 
 @patch('trollmoves.client.request_push')
@@ -1157,18 +1158,18 @@ def test_reload_config_chain_not_recreated(Chain, request_push, client_config_1_
 
 @patch('trollmoves.client.hot_spare_timer_lock')
 @patch('trollmoves.client.CTimer')
-def test_add_timer(CTimer, hot_spare_timer_lock):
+def test_add_request_push_timer(CTimer, hot_spare_timer_lock):
     """Test adding timer."""
-    from trollmoves.client import add_timer, ongoing_hot_spare_timers
+    from trollmoves.client import add_request_push_timer, ongoing_hot_spare_timers, request_push
 
     # Mock timer
     timer = MagicMock()
     CTimer.return_value = timer
 
     kwargs = {'kwarg1': 'kwarg1', 'kwarg2': 'kwarg2'}
-    add_timer(0.02, '', MSG_FILE1, 'arg1', 'arg2', **kwargs)
+    add_request_push_timer(0.02, MSG_FILE1, 'arg1', 'arg2', **kwargs)
 
-    CTimer.assert_called_once_with(0.02, '',
+    CTimer.assert_called_once_with(0.02, request_push,
                                    args=[MSG_FILE1, 'arg1', 'arg2'],
                                    kwargs=kwargs)
     timer.start.assert_called_once()
