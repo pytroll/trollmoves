@@ -196,77 +196,67 @@ class Listener(Thread):
         """Run listener."""
         try:
             with heartbeat_monitor.Monitor(self.restart_event, **self.ckwargs) as beat_monitor:
-
                 self.running = True
-
                 while self.running:
-                    # Loop for restart.
                     LOGGER.debug("Starting listener %s", str(self.address))
                     self.create_subscriber()
-
-                    for msg in self.subscriber(timeout=1):
-                        if not self.running:
-                            break
-
-                        # If the heartbeat didn't arrive, restart the subscriber
-                        if self.restart_event.is_set():
-                            LOGGER.warning("Missing a heartbeat, restarting the subscriber to %s.",
-                                           str(self.subscriber.addresses))
-                            self.restart_event.clear()
-                            self.stop()
-                            self.running = True
-                            break
-
-                        if msg is None:
-                            continue
-
-                        LOGGER.debug("Receiving (SUB) %s", str(msg))
-
-                        beat_monitor(msg)
-                        if msg.type == "beat":
-                            self.death_count = 0
-                            continue
-
-                        # Handle public "push" messages as a hot spare client
-                        if msg.type == "push":
-                            # TODO: these need to be checked and acted if
-                            # the transfers are not finished on primary
-                            # client and are not cleared
-                            LOGGER.debug("Primary client published 'push'")
-                            add_to_ongoing(msg)
-                            continue
-
-                        # Handle public "ack" messages as a hot spare client
-                        if msg.type == "ack":
-                            LOGGER.debug("Primary client finished transfer")
-                            _ = add_to_file_cache(msg)
-                            _ = clean_ongoing_transfer(get_msg_uid(msg))
-                            continue
-
-                        # Ignore "file" messages which don't have a request address
-                        if msg.type == "file" and "request_address" not in msg.data:
-                            LOGGER.debug("Ignoring 'file' message from primary client.")
-                            add_to_ongoing(msg)
-                            _ = add_to_file_cache(msg)
-                            _ = clean_ongoing_transfer(get_msg_uid(msg))
-                            continue
-
-                        # If this is a hot spare client, wait for a while
-                        # for a public "push" message which will update
-                        # the ongoing transfers before starting processing here
-                        delay = self.ckwargs.get("processing_delay", False)
-                        if delay:
-                            add_timer(float(delay), request_push, msg, *self.cargs,
-                                      **self.ckwargs)
-                        else:
-                            request_push(msg, *self.cargs, **self.ckwargs)
-
-                    LOGGER.debug("Exiting listener %s", str(self.address))
+                    self._get_messages(beat_monitor)
         except Exception as err:
             LOGGER.exception("Listener died.")
             self.cause_of_death = err
             with suppress(AttributeError):
                 self.die_event.set()
+
+    def _get_messages(self, beat_monitor):
+        for msg in self.subscriber(timeout=1):
+            if not self.running:
+                break
+            if not self._check_heartbeat():
+                break
+            if msg is None:
+                continue
+
+            LOGGER.debug("Receiving (SUB) %s", str(msg))
+
+            beat_monitor(msg)
+
+            if self._is_message_already_handled(msg):
+                continue
+
+            self._process_message(msg)
+
+        LOGGER.debug("Exiting listener %s", str(self.address))
+
+    def _check_heartbeat(self):
+        if self.restart_event.is_set():
+            LOGGER.warning("Missing a heartbeat, restarting the subscriber to %s.",
+                            str(self.subscriber.addresses))
+            self.restart_event.clear()
+            self.stop()
+            self.running = True
+            return False
+        return True
+
+    def _is_message_already_handled(self, msg):
+        return (self._is_beat_message(msg) or _is_push_message(msg) or
+                _is_ack_message(msg) or _is_message_from_another_client(msg))
+
+    def _is_beat_message(self, msg):
+        if msg.type == "beat":
+            self.death_count = 0
+            return True
+        return False
+
+    def _process_message(self, msg):
+        delay = self.ckwargs.get("processing_delay", False)
+        if delay:
+            # If this is a hot spare client, wait for a while
+            # for a public "push" message which will update
+            # the ongoing transfers before starting processing here
+            add_timer(float(delay), self.callback, msg, *self.cargs,
+                        **self.ckwargs)
+        else:
+            self.callback(msg, *self.cargs, **self.ckwargs)
 
     def stop(self):
         """Stop subscriber and delete the instance."""
@@ -275,6 +265,36 @@ class Listener(Thread):
         if self.subscriber is not None:
             self.subscriber.close()
             self.subscriber = None
+
+
+def _is_push_message(msg):
+    if msg.type == "push":
+        # TODO: these need to be checked and acted if
+        # the transfers are not finished on primary
+        # client and are not cleared
+        LOGGER.debug("Primary client published 'push'")
+        add_to_ongoing(msg)
+        return True
+    return False
+
+
+def _is_ack_message(msg):
+    if msg.type == "ack":
+        LOGGER.debug("Primary client finished transfer")
+        _ = add_to_file_cache(msg)
+        _ = clean_ongoing_transfer(get_msg_uid(msg))
+        return True
+    return False
+
+
+def _is_message_from_another_client(msg):
+    if msg.type == "file" and "request_address" not in msg.data:
+        LOGGER.debug("Ignoring 'file' message from primary client.")
+        add_to_ongoing(msg)
+        _ = add_to_file_cache(msg)
+        _ = clean_ongoing_transfer(get_msg_uid(msg))
+        return True
+    return False
 
 
 def clean_ongoing_transfer(uid):
