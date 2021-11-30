@@ -300,55 +300,43 @@ class RequestManager(Thread):
                 LOGGER.info("Poller interrupted.")
                 continue
             if socks.get(self.out_socket) == POLLIN:
-                LOGGER.debug("Received a request")
-                multiparts = self.out_socket.recv_multipart(NOBLOCK)
-                try:
-                    address, _, payload = multiparts
-                except ValueError:
-                    LOGGER.warning("Invalid request.")
-                    try:
-                        address = multiparts[0]
-                    except (TypeError, IndexError):
-                        LOGGER.warning("Address unknown, not sending an error message back.")
-                    else:
-                        message = Message('error', 'error', "Invalid message received")
-                        Thread(target=self.reply_and_send,
-                               args=(self.unknown, address, message)).start()
-                        LOGGER.warning("Sent error message back.")
+                address, payload = self._get_address_and_payload()
+                if payload is None:
                     continue
-
-                message = Message(rawstr=payload)
-                fake_msg = Message(rawstr=str(message))
-                try:
-                    urlparse(message.data['destination'])
-                except (KeyError, TypeError):
-                    pass
-                else:
-                    fake_msg.data['destination'] = clean_url(message.data[
-                        'destination'])
-
-                LOGGER.debug("processing request: %s", str(fake_msg))
-                if message.type == "ping":
-                    Thread(target=self.reply_and_send,
-                           args=(self.pong, address, message)).start()
-                elif message.type == "push":
-                    Thread(target=self.reply_and_send,
-                           args=(self.push, address, message)).start()
-                elif message.type == "ack":
-                    Thread(target=self.reply_and_send,
-                           args=(self.ack, address, message)).start()
-                elif message.type == "info":
-                    Thread(target=self.reply_and_send,
-                           args=(self.info, address, message)).start()
-                else:  # unknown request
-                    Thread(target=self.reply_and_send,
-                           args=(self.unknown, address, message)).start()
+                self._process_request(Message(rawstr=payload), address)
             elif socks.get(self.in_socket) == POLLIN:
-                self.out_socket.send_multipart(
-                    self.in_socket.recv_multipart(NOBLOCK))
+                self.out_socket.send_multipart(self.in_socket.recv_multipart(NOBLOCK))
 
-            else:  # timeout
-                pass
+    def _get_address_and_payload(self):
+        address, payload = None, None
+        LOGGER.debug("Received a request")
+        multiparts = self.out_socket.recv_multipart(NOBLOCK)
+        try:
+            address, _, payload = multiparts
+        except ValueError:
+            LOGGER.warning("Invalid request.")
+            try:
+                address = multiparts[0]
+            except (TypeError, IndexError):
+                LOGGER.warning("Address unknown, not sending an error message back.")
+            else:
+                message = Message('error', 'error', "Invalid message received")
+                Thread(target=self.reply_and_send, args=(self.unknown, address, message)).start()
+                LOGGER.warning("Sent error message back.")
+        return address, payload
+
+    def _process_request(self, message, address):
+        LOGGER.debug("processing request: %s", str(_sanitize_message_destination(message)))
+        if message.type == "ping":
+            Thread(target=self.reply_and_send, args=(self.pong, address, message)).start()
+        elif message.type == "push":
+            Thread(target=self.reply_and_send, args=(self.push, address, message)).start()
+        elif message.type == "ack":
+            Thread(target=self.reply_and_send, args=(self.ack, address, message)).start()
+        elif message.type == "info":
+            Thread(target=self.reply_and_send, args=(self.info, address, message)).start()
+        else:  # unknown request
+            Thread(target=self.reply_and_send, args=(self.unknown, address, message)).start()
 
     def stop(self):
         """Stop the request manager."""
@@ -383,6 +371,17 @@ def _collect_cached_files(message):
                 if len(files) == max_count:
                     break
     return files, max_count
+
+
+def _sanitize_message_destination(message):
+    sanitized_message = Message(rawstr=str(message))
+    try:
+        _ = urlparse(message.data['destination'])
+    except (KeyError, TypeError):
+        pass
+    else:
+        sanitized_message.data['destination'] = clean_url(message.data['destination'])
+    return sanitized_message
 
 
 class Listener(Thread):
