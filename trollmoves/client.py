@@ -237,10 +237,10 @@ class Listener(Thread):
         return True
 
     def _is_message_already_handled(self, msg):
-        return (self._is_beat_message(msg) or _is_push_message(msg) or
-                _is_ack_message(msg) or _is_message_from_another_client(msg))
+        return (self._handle_beat_message(msg) or _handle_push_message(msg) or
+                _handle_ack_message(msg) or _handle_message_from_another_client(msg))
 
-    def _is_beat_message(self, msg):
+    def _handle_beat_message(self, msg):
         if msg.type == "beat":
             self.death_count = 0
             return True
@@ -265,7 +265,7 @@ class Listener(Thread):
             self.subscriber = None
 
 
-def _is_push_message(msg):
+def _handle_push_message(msg):
     if msg.type == "push":
         # TODO: these need to be checked and acted if
         # the transfers are not finished on primary
@@ -276,7 +276,7 @@ def _is_push_message(msg):
     return False
 
 
-def _is_ack_message(msg):
+def _handle_ack_message(msg):
     if msg.type == "ack":
         LOGGER.debug("Primary client finished transfer")
         _ = add_to_file_cache(msg)
@@ -285,7 +285,7 @@ def _is_ack_message(msg):
     return False
 
 
-def _is_message_from_another_client(msg):
+def _handle_message_from_another_client(msg):
     if msg.type == "file" and "request_address" not in msg.data:
         LOGGER.debug("Ignoring 'file' message from primary client.")
         add_to_ongoing(msg)
