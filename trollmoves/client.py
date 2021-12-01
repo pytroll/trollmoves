@@ -71,7 +71,6 @@ BUNZIP_BLOCK_SIZE = 1024
 LISTENER_CHECK_INTERVAL = 1
 
 
-# Config management
 def read_config(filename):
     """Read the config file called *filename*."""
     cp_ = RawConfigParser()
@@ -81,56 +80,79 @@ def read_config(filename):
 
     for section in cp_.sections():
         res[section] = dict(cp_.items(section))
-        res[section].setdefault("delete", False)
-        if res[section]["delete"] in ["", "False", "false", "0", "off"]:
-            res[section]["delete"] = False
-        if res[section]["delete"] in ["True", "true", "on", "1"]:
-            res[section]["delete"] = True
-        res[section].setdefault("working_directory", None)
-        res[section].setdefault("compression", False)
-        res[section].setdefault("xritdecompressor", None)
-        res[section].setdefault("heartbeat", True)
-        res[section].setdefault("req_timeout", DEFAULT_REQ_TIMEOUT)
-        res[section].setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
-        res[section].setdefault("nameservers", None)
-        if res[section]["heartbeat"] in ["", "False", "false", "0", "off"]:
-            res[section]["heartbeat"] = False
-
-        if "providers" not in res[section]:
-            LOGGER.warning("Incomplete section %s: add an 'providers' item.",
-                           section)
-            LOGGER.info("Ignoring section %s: incomplete.",
-                        section)
-            del res[section]
+        _set_config_defaults(res[section])
+        _parse_boolean_config_items(res[section])
+        if not _check_provider_config(res, section):
             continue
-        else:
-            res[section]["providers"] = [
-                "tcp://" + item.split('/', 1)[0] for item in res[section]["providers"].split()
-            ]
-
-        if "destination" not in res[section]:
-            LOGGER.warning("Incomplete section %s: add an 'destination' item.",
-                           section)
-            LOGGER.info("Ignoring section %s: incomplete.", section)
-            del res[section]
+        if not _check_destination(res, section):
             continue
-
-        if "topic" in res[section]:
-            try:
-                res[section]["publish_port"] = int(res[section][
-                    "publish_port"])
-            except (KeyError, ValueError):
-                res[section]["publish_port"] = 0
-        elif not res[section]["heartbeat"]:
-            # We have no topics and therefor no subscriber (if you want to
-            # subscribe everything, then explicit specify an empty topic).
-            LOGGER.warning("Incomplete section %s: add an 'topic' "
-                           "item or enable heartbeat.", section)
-            LOGGER.info("Ignoring section %s: incomplete.", section)
-            del res[section]
+        if not _check_subscribing(res, section):
             continue
 
     return res
+
+
+def _set_config_defaults(conf):
+    conf.setdefault("delete", False)
+    conf.setdefault("working_directory", None)
+    conf.setdefault("compression", False)
+    conf.setdefault("xritdecompressor", None)
+    conf.setdefault("heartbeat", True)
+    conf.setdefault("req_timeout", DEFAULT_REQ_TIMEOUT)
+    conf.setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
+    conf.setdefault("nameservers", None)
+
+
+def _parse_boolean_config_items(conf):
+    if conf["delete"] in ["", "False", "false", "0", "off"]:
+        conf["delete"] = False
+    if conf["delete"] in ["True", "true", "on", "1"]:
+        conf["delete"] = True
+    if conf["heartbeat"] in ["", "False", "false", "0", "off"]:
+        conf["heartbeat"] = False
+
+
+def _check_provider_config(conf, section):
+    if "providers" not in conf[section]:
+        LOGGER.warning("Incomplete section %s: add an 'providers' item.",
+                       section)
+        LOGGER.info("Ignoring section %s: incomplete.",
+                    section)
+        del conf[section]
+        return False
+
+    conf[section]["providers"] = [
+        "tcp://" + item.split('/', 1)[0] for item in conf[section]["providers"].split()
+    ]
+    return True
+
+
+def _check_subscribing(res, section):
+    if "topic" in res[section]:
+        try:
+            res[section]["publish_port"] = int(res[section][
+                "publish_port"])
+        except (KeyError, ValueError):
+            res[section]["publish_port"] = 0
+    elif not res[section]["heartbeat"]:
+        # We have no topics and therefor no subscriber (if you want to
+        # subscribe everything, then explicit specify an empty topic).
+        LOGGER.warning("Incomplete section %s: add an 'topic' "
+                       "item or enable heartbeat.", section)
+        LOGGER.info("Ignoring section %s: incomplete.", section)
+        del res[section]
+        return False
+    return True
+
+
+def _check_destination(res, section):
+    if "destination" not in res[section]:
+        LOGGER.warning("Incomplete section %s: add an 'destination' item.",
+                       section)
+        LOGGER.info("Ignoring section %s: incomplete.", section)
+        del res[section]
+        return False
+    return True
 
 
 class Listener(Thread):
@@ -173,77 +195,66 @@ class Listener(Thread):
         """Run listener."""
         try:
             with heartbeat_monitor.Monitor(self.restart_event, **self.ckwargs) as beat_monitor:
-
                 self.running = True
-
                 while self.running:
-                    # Loop for restart.
                     LOGGER.debug("Starting listener %s", str(self.address))
                     self.create_subscriber()
-
-                    for msg in self.subscriber(timeout=1):
-                        if not self.running:
-                            break
-
-                        # If the heartbeat didn't arrive, restart the subscriber
-                        if self.restart_event.is_set():
-                            LOGGER.warning("Missing a heartbeat, restarting the subscriber to %s.",
-                                           str(self.subscriber.addresses))
-                            self.restart_event.clear()
-                            self.stop()
-                            self.running = True
-                            break
-
-                        if msg is None:
-                            continue
-
-                        LOGGER.debug("Receiving (SUB) %s", str(msg))
-
-                        beat_monitor(msg)
-                        if msg.type == "beat":
-                            self.death_count = 0
-                            continue
-
-                        # Handle public "push" messages as a hot spare client
-                        if msg.type == "push":
-                            # TODO: these need to be checked and acted if
-                            # the transfers are not finished on primary
-                            # client and are not cleared
-                            LOGGER.debug("Primary client published 'push'")
-                            add_to_ongoing(msg)
-                            continue
-
-                        # Handle public "ack" messages as a hot spare client
-                        if msg.type == "ack":
-                            LOGGER.debug("Primary client finished transfer")
-                            _ = add_to_file_cache(msg)
-                            _ = clean_ongoing_transfer(get_msg_uid(msg))
-                            continue
-
-                        # Ignore "file" messages which don't have a request address
-                        if msg.type == "file" and "request_address" not in msg.data:
-                            LOGGER.debug("Ignoring 'file' message from primary client.")
-                            add_to_ongoing(msg)
-                            _ = add_to_file_cache(msg)
-                            _ = clean_ongoing_transfer(get_msg_uid(msg))
-                            continue
-
-                        # If this is a hot spare client, wait for a while
-                        # for a public "push" message which will update
-                        # the ongoing transfers before starting processing here
-                        delay = self.ckwargs.get("processing_delay", False)
-                        if delay:
-                            add_timer(float(delay), request_push, msg, *self.cargs,
-                                      **self.ckwargs)
-                        else:
-                            request_push(msg, *self.cargs, **self.ckwargs)
-
-                    LOGGER.debug("Exiting listener %s", str(self.address))
+                    self._get_messages(beat_monitor)
         except Exception as err:
             LOGGER.exception("Listener died.")
             self.cause_of_death = err
             with suppress(AttributeError):
                 self.die_event.set()
+
+    def _get_messages(self, beat_monitor):
+        for msg in self.subscriber(timeout=1):
+            if not self.running:
+                break
+            if not self._check_heartbeat():
+                break
+            if msg is None:
+                continue
+
+            LOGGER.debug("Receiving (SUB) %s", str(msg))
+
+            beat_monitor(msg)
+
+            if self._is_message_already_handled(msg):
+                continue
+
+            self._process_message(msg)
+
+        LOGGER.debug("Exiting listener %s", str(self.address))
+
+    def _check_heartbeat(self):
+        if self.restart_event.is_set():
+            LOGGER.warning("Missing a heartbeat, restarting the subscriber to %s.",
+                           str(self.subscriber.addresses))
+            self.restart_event.clear()
+            self.stop()
+            self.running = True
+            return False
+        return True
+
+    def _is_message_already_handled(self, msg):
+        return (self._handle_beat_message(msg) or _handle_push_message(msg) or
+                _handle_ack_message(msg) or _handle_message_from_another_client(msg))
+
+    def _handle_beat_message(self, msg):
+        if msg.type == "beat":
+            self.death_count = 0
+            return True
+        return False
+
+    def _process_message(self, msg):
+        delay = self.ckwargs.get("processing_delay", False)
+        if delay:
+            # If this is a hot spare client, wait for a while
+            # for a public "push" message which will update
+            # the ongoing transfers before starting processing here
+            add_request_push_timer(float(delay), msg, *self.cargs, **self.ckwargs)
+        else:
+            request_push(msg, *self.cargs, **self.ckwargs)
 
     def stop(self):
         """Stop subscriber and delete the instance."""
@@ -252,6 +263,36 @@ class Listener(Thread):
         if self.subscriber is not None:
             self.subscriber.close()
             self.subscriber = None
+
+
+def _handle_push_message(msg):
+    if msg.type == "push":
+        # TODO: these need to be checked and acted if
+        # the transfers are not finished on primary
+        # client and are not cleared
+        LOGGER.debug("Primary client published 'push'")
+        add_to_ongoing(msg)
+        return True
+    return False
+
+
+def _handle_ack_message(msg):
+    if msg.type == "ack":
+        LOGGER.debug("Primary client finished transfer")
+        _ = add_to_file_cache(msg)
+        _ = clean_ongoing_transfer(get_msg_uid(msg))
+        return True
+    return False
+
+
+def _handle_message_from_another_client(msg):
+    if msg.type == "file" and "request_address" not in msg.data:
+        LOGGER.debug("Ignoring 'file' message from primary client.")
+        add_to_ongoing(msg)
+        _ = add_to_file_cache(msg)
+        _ = clean_ongoing_transfer(get_msg_uid(msg))
+        return True
+    return False
 
 
 def clean_ongoing_transfer(uid):
@@ -511,12 +552,12 @@ def get_next_msg(uid):
         return ongoing_transfers[uid].pop(0)
 
 
-def add_timer(timeout, func, msg, *args, **kwargs):
+def add_request_push_timer(timeout, msg, *args, **kwargs):
     """Add a timer for hot spare."""
     huid = get_msg_uid(msg)
     cargs = [msg] + list(args)
     with hot_spare_timer_lock:
-        timer = CTimer(timeout, func, args=cargs, kwargs=kwargs)
+        timer = CTimer(timeout, request_push, args=cargs, kwargs=kwargs)
         ongoing_hot_spare_timers[huid] = timer
         ongoing_hot_spare_timers[huid].start()
     LOGGER.debug("Added timer for UID %s.", huid)
@@ -562,50 +603,35 @@ def request_push(msg_in, destination, login=None, publisher=None, **kwargs):
         _ = clean_ongoing_transfer(huid)
         return
 
+    _request_files(huid, destination, login, publisher, **kwargs)
+
+
+def _request_files(huid, destination, login, publisher, **kwargs):
     for msg in iterate_messages(huid):
-        try:
-            _destination = compose(destination, msg.data)
-        except KeyError as ke:
-            LOGGER.error("Format identifier is missing from the msg.data: %s", str(ke))
-            raise
-        except ValueError as ve:
-            LOGGER.error("Type of format identifier doesn't match the type in m msg.data: %s", str(ve))
-            raise
-        except AttributeError as ae:
-            LOGGER.error("msg or msg.data is None: %s", str(ae))
-            raise
+        _destination = _compose_destination(destination, msg)
+
         req, fake_req = create_push_req_message(msg, _destination, login)
         LOGGER.info("Requesting: %s", str(fake_req))
-        timeout = float(kwargs["transfer_req_timeout"])
         local_dir = create_local_dir(_destination, kwargs.get('ftp_root', '/'))
 
         publisher.send(str(fake_req))
-        response, hostname = send_request(msg, req, timeout)
+
+        response, hostname = send_request(msg, req, float(kwargs["transfer_req_timeout"]))
 
         if response and response.type in ['file', 'collection', 'dataset']:
             LOGGER.debug("Server done sending file")
             add_to_file_cache(msg)
-            # Send an 'ack' message so that possible hot spares know
-            # the primary has completed the request
-            msg = Message(msg.subject, 'ack', msg.data)
-            LOGGER.debug("Sending a public 'ack' of completed transfer: %s",
-                         str(msg))
-            publisher.send(str(msg))
+            _send_ack_message(msg, publisher)
+
             try:
-                lmsg = unpack_and_create_local_message(response, local_dir,
-                                                       **kwargs)
+                lmsg = unpack_and_create_local_message(response, local_dir, **kwargs)
+                lmsg = _update_local_message(lmsg, _destination, login, response, **kwargs)
             except IOError:
                 LOGGER.exception("Couldn't unpack %s", str(response))
                 continue
-            if publisher:
-                lmsg = make_uris(lmsg, _destination, login)
-                lmsg.data['origin'] = response.data['request_address']
-                lmsg.data.pop('request_address', None)
-                lmsg = replace_mda(lmsg, kwargs)
-                lmsg.data.pop('destination', None)
 
-                LOGGER.debug("publishing %s", str(lmsg))
-                publisher.send(str(lmsg))
+            LOGGER.debug("publishing %s", str(lmsg))
+            publisher.send(str(lmsg))
             terminate_transfers(huid, float(kwargs["req_timeout"]))
             break
         else:
@@ -615,6 +641,39 @@ def request_push(msg_in, destination, login=None, publisher=None, **kwargs):
         LOGGER.warning('Could not get a working source for requesting %s',
                        str(msg))
         terminate_transfers(huid, float(kwargs["req_timeout"]))
+
+
+def _compose_destination(destination, msg):
+    try:
+        _destination = compose(destination, msg.data)
+    except KeyError as ke:
+        LOGGER.error("Format identifier is missing from the msg.data: %s", str(ke))
+        raise
+    except ValueError as ve:
+        LOGGER.error("Type of format identifier doesn't match the type in m msg.data: %s", str(ve))
+        raise
+    except AttributeError as ae:
+        LOGGER.error("msg or msg.data is None: %s", str(ae))
+        raise
+    return _destination
+
+
+def _send_ack_message(msg, publisher):
+    """Send an 'ack' message.
+
+    This is for the possible hot spare clients so they know the primary has completed the request.
+    """
+    msg = Message(msg.subject, 'ack', msg.data)
+    LOGGER.debug("Sending a public 'ack' of completed transfer: %s", str(msg))
+    publisher.send(str(msg))
+
+
+def _update_local_message(lmsg, _destination, login, response, **kwargs):
+    lmsg = make_uris(lmsg, _destination, login)
+    lmsg.data['origin'] = response.data['request_address']
+    lmsg.data.pop('request_address', None)
+    lmsg = replace_mda(lmsg, kwargs)
+    lmsg.data.pop('destination', None)
 
 
 class Chain(Thread):
