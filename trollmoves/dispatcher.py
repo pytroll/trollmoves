@@ -164,10 +164,10 @@ from inotify.constants import IN_MODIFY, IN_CLOSE_WRITE, IN_CREATE, IN_MOVED_TO
 from posttroll.listener import ListenerContainer
 from posttroll.publisher import NoisyPublisher
 from posttroll.message import Message
+from trollsift import compose
 
 from trollmoves.movers import move_it
 from trollmoves.utils import (clean_url, is_file_local)
-from trollsift import compose
 
 logger = logging.getLogger(__name__)
 
@@ -181,15 +181,15 @@ class Notifier(Thread):
         """Initialize the notifier."""
         self.filename = filename
         self.loop = True
-        self.i = inotify.adapters.Inotify()
-        self.i.add_watch(filename, mask=INOTIFY_MASK)
+        self.inotify = inotify.adapters.Inotify()
+        self.inotify.add_watch(filename, mask=INOTIFY_MASK)
         self.event_types = set(event_types)
         self.callback = callback
         super().__init__()
 
     def run(self):
         """Run the notifier."""
-        for event in self.i.event_gen():
+        for event in self.inotify.event_gen():
             if event is None:
                 if not self.loop:
                     logger.info('Terminating watch on %s', self.filename)
