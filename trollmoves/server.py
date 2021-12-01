@@ -702,10 +702,10 @@ def _create_manager(chains, chain_name, chain, manager):
     return True
 
 
-def _create_notifier_and_get_function(notifier_builder, conf, use_watchdog, val, publisher):
+def _create_notifier_and_get_function(notifier_builder, conf, use_watchdog, chain, publisher):
     if notifier_builder is None:
-        notifier_builder = _get_notifier_builder(use_watchdog, val)
-    conf["notifier"], fun = notifier_builder(val, publisher)
+        notifier_builder = _get_notifier_builder(use_watchdog, chain)
+    conf["notifier"], fun = notifier_builder(chain, publisher)
     conf["notifier"].start()
 
     return fun
