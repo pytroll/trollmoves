@@ -267,17 +267,20 @@ class Dispatcher(Thread):
         self.config = None
         self.topics = None
         self.listener = None
+        self._publish_port = publish_port
+        self._publish_nameservers = publish_nameservers
         self.publisher = None
         self.host = socket.gethostname()
-
-        if publish_port is not None:
-            self.publisher = NoisyPublisher(
-                "dispatcher", port=publish_port,
-                nameservers=publish_nameservers)
-            self.publisher.start()
+        self._create_publisher()
         self.loop = True
         self.config_handler = DispatchConfig(config_file, self.update_config)
         signal.signal(signal.SIGTERM, self.signal_shutdown)
+
+    def _create_publisher(self):
+        if self._publish_port is not None:
+            self.publisher = NoisyPublisher("dispatcher", port=self._publish_port,
+                                            nameservers=self._publish_nameservers)
+            self.publisher.start()
 
     def signal_shutdown(self, *args, **kwargs):
         """Shutdown dispatcher."""
@@ -291,22 +294,24 @@ class Dispatcher(Thread):
             for _client, client_config in new_config.items():
                 topics |= set(sum([item['topics'] for item in client_config['dispatch_configs']], []))
             if self.topics != topics:
-                if self.listener is not None:
-                    # FIXME: make sure to get the last messages though
-                    self.listener.stop()
                 self.config = new_config
-                addresses = client_config.get('subscribe_addresses', None)
-                nameserver = client_config.get('nameserver', 'localhost')
-                services = client_config.get('subscribe_services', '')
-                self.listener = ListenerContainer(topics=topics,
-                                                  addresses=addresses,
-                                                  nameserver=nameserver,
-                                                  services=services)
-                self.topics = topics
-
+                self._create_listener(client_config, topics)
         except KeyError as err:
             logger.warning('Invalid config for %s, keeping the old one running: %s', _client, str(err))
             self.config = old_config
+
+    def _create_listener(self, client_config, topics):
+        if self.listener is not None:
+            # FIXME: make sure to get the last messages though
+            self.listener.stop()
+        addresses = client_config.get('subscribe_addresses', None)
+        nameserver = client_config.get('nameserver', 'localhost')
+        services = client_config.get('subscribe_services', '')
+        self.listener = ListenerContainer(topics=topics,
+                                          addresses=addresses,
+                                          nameserver=nameserver,
+                                          services=services)
+        self.topics = topics
 
     def run(self):
         """Run dispatcher."""
@@ -315,24 +320,19 @@ class Dispatcher(Thread):
                 msg = self.listener.output_queue.get(timeout=1)
             except Empty:
                 continue
-            else:
-                if msg.type != 'file':
-                    continue
-                destinations = self.get_destinations(msg)
-                if destinations:
-                    # Check if the url are on another host:
-                    url = urlparse(msg.data['uri'])
-                    if not is_file_local(url):
-                        # This warning may appear even if the file path
-                        # does exist on both servers (a central file server
-                        # reachable from both). But in those cases one
-                        # should probably not use an url scheme but just a
-                        # file path:
-                        raise NotImplementedError(("uri is pointing to a file path on another server! "
-                                                   "Host=<%s> uri netloc=<%s>", self.host, url.netloc))
-                    success = dispatch(url.path, destinations)
-                    if self.publisher:
-                        self._publish(msg, destinations, success)
+            if msg.type != 'file':
+                continue
+            self._dispatch_from_message(msg)
+
+    def _dispatch_from_message(self, msg):
+        destinations = self.get_destinations(msg)
+        if destinations:
+            # Check if the url are on another host:
+            url = urlparse(msg.data['uri'])
+            _check_file_locality(url, self.host)
+            success = dispatch(url.path, destinations)
+            if self.publisher:
+                self._publish(msg, destinations, success)
 
     def _publish(self, msg, destinations, success):
         """Publish a message.
@@ -340,69 +340,67 @@ class Dispatcher(Thread):
         The URI is replaced with the URI on the target server.
 
         """
-        for url, params, client in destinations:
+        for url, _, client in destinations:
             if not success[client]:
                 continue
-            del params
-            info = msg.data.copy()
-            info["uri"] = urlsplit(url).path
-            topic = self.config[client].get("publish_topic")
-            if topic is None:
-                logger.error("Publish topic not configured for '%s'",
-                             client)
+            msg = self._get_new_message(msg, url, client)
+            if msg is None:
                 continue
-            topic = compose(topic, info)
-            msg = Message(topic, 'file', info)
             logger.debug('Publishing %s', str(msg))
             self.publisher.send(str(msg))
+
+    def _get_new_message(self, msg, url, client):
+        info = self._get_message_info(msg, url)
+        topic = self._get_topic(client, info)
+        if topic is None:
+            return None
+        return Message(topic, 'file', info)
+
+    def _get_message_info(self, msg, url):
+        info = msg.data.copy()
+        info["uri"] = urlsplit(url).path
+        return info
+
+    def _get_topic(self, client, info):
+        topic = self.config[client].get("publish_topic")
+        if topic is None:
+            logger.error("Publish topic not configured for '%s'", client)
+            return None
+        return compose(topic, info)
 
     def get_destinations(self, msg):
         """Get the destinations for this message."""
         destinations = []
         for client, config in self.config.items():
-            for disp_config in config['dispatch_configs']:
-                for topic in disp_config['topics']:
-                    if msg.subject.startswith(topic):
-                        break
-                else:
+            for dispatch_config in config['dispatch_configs']:
+                destination = self._get_destination(dispatch_config, msg, client)
+                if destination is None:
                     continue
-                if check_conditions(msg, disp_config):
-                    destinations.append(
-                        self.create_dest_url(msg, client, disp_config))
+                destinations.append(destination)
         return destinations
 
-    def create_dest_url(self, msg, client, disp_config):
+    def _get_destination(self, dispatch_config, msg, client):
+        destination = None
+        if _has_correct_topic(dispatch_config, msg):
+            if check_conditions(msg, dispatch_config):
+                destination = self.create_dest_url(msg, client, dispatch_config)
+        return destination
+
+    def create_dest_url(self, msg, client, conf):
         """Create the destination URL and the connection parameters."""
         defaults = self.config[client].copy()
-        if 'filepattern' not in defaults:
-            source_filename = os.path.basename(urlsplit(msg.data['uri']).path)
-            defaults['filepattern'] = source_filename
-        info_dict = dict()
-        for key in ['host', 'directory', 'filepattern']:
-            try:
-                info_dict[key] = disp_config[key]
-            except KeyError:
-                info_dict[key] = defaults[key]
-        connection_parameters = disp_config.get(
-            'connection_parameters',
-            defaults.get('connection_parameters'))
-        host = info_dict['host']
-        path = os.path.join(info_dict['directory'], info_dict['filepattern'])
-        mda = msg.data.copy()
+        _verify_filepattern(defaults, msg)
+        connection_parameters = conf.get('connection_parameters', defaults.get('connection_parameters'))
+        host = conf.get('host', defaults['host'])
 
-        for key, aliases in defaults.get('aliases', {}).items():
-            if isinstance(aliases, dict):
-                aliases = [aliases]
+        metadata = _get_metadata_with_aliases(msg, defaults)
 
-            for alias in aliases:
-                new_key = alias.pop("_alias_name", key)
-                if key in msg.data:
-                    mda[new_key] = alias.get(msg.data[key], msg.data[key])
-
-        path = compose(path, mda)
+        path = compose(
+            os.path.join(conf.get('directory', defaults['directory']),
+                         conf.get('filepattern', defaults['filepattern'])),
+            metadata)
         parts = urlsplit(host)
-        host_path = urlunsplit((parts.scheme, parts.netloc, path,
-                                parts.query, parts.fragment))
+        host_path = urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment))
         return host_path, connection_parameters, client
 
     def close(self):
@@ -422,6 +420,41 @@ class Dispatcher(Thread):
             self.config_handler.close()
         except Exception:
             logger.exception("Couldn't stop config handler.")
+
+
+def _check_file_locality(url, host):
+    if not is_file_local(url):
+        # This warning may appear even if the file path does exist on both servers (a central file server
+        # reachable from both). But in those cases one should probably not use an url scheme but just a
+        # file path:
+        raise NotImplementedError(("uri is pointing to a file path on another server! "
+                                   "Host=<%s> uri netloc=<%s>", host, url.netloc))
+
+
+def _has_correct_topic(dispatch_config, msg):
+    for topic in dispatch_config['topics']:
+        if msg.subject.startswith(topic):
+            return True
+    return False
+
+
+def _verify_filepattern(defaults, msg):
+    if 'filepattern' not in defaults:
+        source_filename = os.path.basename(urlsplit(msg.data['uri']).path)
+        defaults['filepattern'] = source_filename
+
+
+def _get_metadata_with_aliases(msg, defaults):
+    metadata = msg.data.copy()
+    for key, aliases in defaults.get('aliases', {}).items():
+        if isinstance(aliases, dict):
+            aliases = [aliases]
+
+        for alias in aliases:
+            new_key = alias.pop("_alias_name", key)
+            if key in msg.data:
+                metadata[new_key] = alias.get(msg.data[key], msg.data[key])
+    return metadata
 
 
 def check_conditions(msg, item):
