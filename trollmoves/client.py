@@ -488,12 +488,15 @@ def make_uris(msg, destination, login=None):
 
 
 def replace_mda(msg, kwargs):
-    """Replace messate metadata with itmes in kwargs dict."""
+    """Replace messate metadata with items in kwargs dict."""
     for key in msg.data:
         if key in kwargs:
-            replacement = dict(item.split(':')
-                               for item in kwargs[key].split('|'))
-            msg.data[key] = replacement[msg.data[key]]
+            try:
+                replacement = dict(item.split(':') for item in kwargs[key].split('|'))
+                replacement = replacement[msg.data[key]]
+            except ValueError:
+                replacement = kwargs[key]
+            msg.data[key] = replacement
     return msg
 
 
