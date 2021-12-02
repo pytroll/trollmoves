@@ -213,7 +213,7 @@ class RequestManager(Thread):
         new_msg = self._move_files(message)
         if new_msg is None:
             new_msg = Message(message.subject,
-                              message.type,
+                              'file',
                               data=message.data.copy())
             new_msg.data['destination'] = clean_url(new_msg.data['destination'])
 
