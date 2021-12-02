@@ -452,82 +452,6 @@ def _collect_attribute_info(attrs):
     return info
 
 
-def create_posttroll_notifier(attrs, publisher):
-    """Create a notifier listening to posttroll messages from *attrs*."""
-    listener = Listener(attrs, publisher)
-
-    return listener, None
-
-
-def process_notify(orig_pathname, publisher, pattern, attrs):
-    """Publish what we have."""
-    if not fnmatch.fnmatch(orig_pathname, pattern):
-        return
-    elif os.stat(orig_pathname).st_size == 0:
-        LOGGER.debug("Ignoring empty file: %s", orig_pathname)
-        return
-    else:
-        LOGGER.debug('We have a match: %s', orig_pathname)
-
-    pathname = unpack(orig_pathname, **attrs)
-    info = _get_inotify_message_info(attrs, orig_pathname, pathname)
-    msg = Message(attrs["topic"], 'file', info)
-    publisher.send(str(msg))
-    with file_cache_lock:
-        file_cache.appendleft(attrs["topic"] + '/' + info["uid"])
-    LOGGER.debug("Message sent: %s", str(msg))
-
-
-def _get_inotify_message_info(attrs, orig_pathname, pathname):
-    info = _collect_attribute_info(attrs)
-    info.update(parse(attrs["origin"], orig_pathname))
-    info['uri'] = pathname
-    info['uid'] = os.path.basename(pathname)
-    info['request_address'] = attrs.get(
-        "request_address", get_own_ip()) + ":" + attrs["request_port"]
-    return info
-
-
-def create_inotify_notifier(attrs, publisher):
-    """Create a notifier from the specified configuration attributes *attrs*."""
-    tmask = (pyinotify.IN_CLOSE_WRITE |
-             pyinotify.IN_MOVED_TO |
-             pyinotify.IN_CREATE |
-             pyinotify.IN_DELETE)
-
-    wm_ = pyinotify.WatchManager()
-
-    pattern = globify(attrs["origin"])
-    opath = os.path.dirname(pattern)
-
-    if 'origin_inotify_base_dir_skip_levels' in attrs:
-        """If you need to inotify monitor for new directories within the origin
-        this attribute tells the server how many levels to skip from the origin
-        before staring to inorify monitor a directory
-
-        Eg. origin=/tmp/{platform_name_dir}_{start_time_dir:%Y%m%d_%H%M}_{orbit_number_dir:05d}/
-                   {sensor}_{platform_name}_{start_time:%Y%m%d_%H%M}_{orbit_number:05d}.{data_processing_level:3s}
-
-        and origin_inotify_base_dir_skip_levels=-2
-
-        this means the inotify monitor will use opath=/tmp"""
-        pattern_list = pattern.split('/')
-        pattern_join = os.path.join(*pattern_list[:int(attrs['origin_inotify_base_dir_skip_levels'])])
-        opath = os.path.join("/", pattern_join)
-        LOGGER.debug("Using %s as base path for pyinotify add_watch.", opath)
-
-    def process_notify_publish(pathname):
-        pattern = globify(attrs["origin"])
-        return process_notify(pathname, publisher, pattern, attrs)
-
-    tnotifier = pyinotify.ThreadedNotifier(
-        wm_, EventHandler(process_notify_publish, watchManager=wm_, tmask=tmask))
-
-    wm_.add_watch(opath, tmask)
-
-    return tnotifier, process_notify
-
-
 class WatchdogHandler(FileSystemEventHandler):
     """Trigger processing on filesystem events."""
 
@@ -546,21 +470,6 @@ class WatchdogHandler(FileSystemEventHandler):
     def on_moved(self, event):
         """Process a file being moved to the destination directory."""
         self.fun(event.dest_path, self.publisher, self.pattern, self.attrs)
-
-
-def create_watchdog_notifier(attrs, publisher):
-    """Create a notifier from the specified configuration attributes *attrs*."""
-    pattern = globify(attrs["origin"])
-    opath = os.path.dirname(pattern)
-
-    timeout = float(attrs.get("watchdog_timeout", 1.))
-    LOGGER.debug("Watchdog timeout: %.1f", timeout)
-    observer = PollingObserver(timeout=timeout)
-    handler = WatchdogHandler(process_notify, publisher, pattern, attrs)
-
-    observer.schedule(handler, opath)
-
-    return observer, process_notify
 
 
 def read_config(filename):
@@ -725,6 +634,97 @@ def _get_notifier_builder(use_watchdog, val):
     return notifier_builder
 
 
+def create_watchdog_notifier(attrs, publisher):
+    """Create a notifier from the specified configuration attributes *attrs*."""
+    pattern = globify(attrs["origin"])
+    opath = os.path.dirname(pattern)
+
+    timeout = float(attrs.get("watchdog_timeout", 1.))
+    LOGGER.debug("Watchdog timeout: %.1f", timeout)
+    observer = PollingObserver(timeout=timeout)
+    handler = WatchdogHandler(process_notify, publisher, pattern, attrs)
+
+    observer.schedule(handler, opath)
+
+    return observer, process_notify
+
+
+def process_notify(orig_pathname, publisher, pattern, attrs):
+    """Publish what we have."""
+    if not fnmatch.fnmatch(orig_pathname, pattern):
+        return
+    elif os.stat(orig_pathname).st_size == 0:
+        LOGGER.debug("Ignoring empty file: %s", orig_pathname)
+        return
+    else:
+        LOGGER.debug('We have a match: %s', orig_pathname)
+
+    pathname = unpack(orig_pathname, **attrs)
+    info = _get_notify_message_info(attrs, orig_pathname, pathname)
+    msg = Message(attrs["topic"], 'file', info)
+    publisher.send(str(msg))
+    with file_cache_lock:
+        file_cache.appendleft(attrs["topic"] + '/' + info["uid"])
+    LOGGER.debug("Message sent: %s", str(msg))
+
+
+def _get_notify_message_info(attrs, orig_pathname, pathname):
+    info = _collect_attribute_info(attrs)
+    info.update(parse(attrs["origin"], orig_pathname))
+    info['uri'] = pathname
+    info['uid'] = os.path.basename(pathname)
+    info['request_address'] = attrs.get(
+        "request_address", get_own_ip()) + ":" + attrs["request_port"]
+    return info
+
+
+def create_inotify_notifier(attrs, publisher):
+    """Create a notifier from the specified configuration attributes *attrs*."""
+    tmask = (pyinotify.IN_CLOSE_WRITE |
+             pyinotify.IN_MOVED_TO |
+             pyinotify.IN_CREATE |
+             pyinotify.IN_DELETE)
+
+    wm_ = pyinotify.WatchManager()
+
+    pattern = globify(attrs["origin"])
+    opath = os.path.dirname(pattern)
+
+    if 'origin_inotify_base_dir_skip_levels' in attrs:
+        """If you need to inotify monitor for new directories within the origin
+        this attribute tells the server how many levels to skip from the origin
+        before staring to inorify monitor a directory
+
+        Eg. origin=/tmp/{platform_name_dir}_{start_time_dir:%Y%m%d_%H%M}_{orbit_number_dir:05d}/
+                   {sensor}_{platform_name}_{start_time:%Y%m%d_%H%M}_{orbit_number:05d}.{data_processing_level:3s}
+
+        and origin_inotify_base_dir_skip_levels=-2
+
+        this means the inotify monitor will use opath=/tmp"""
+        pattern_list = pattern.split('/')
+        pattern_join = os.path.join(*pattern_list[:int(attrs['origin_inotify_base_dir_skip_levels'])])
+        opath = os.path.join("/", pattern_join)
+        LOGGER.debug("Using %s as base path for pyinotify add_watch.", opath)
+
+    def process_notify_publish(pathname):
+        pattern = globify(attrs["origin"])
+        return process_notify(pathname, publisher, pattern, attrs)
+
+    tnotifier = pyinotify.ThreadedNotifier(
+        wm_, EventHandler(process_notify_publish, watchManager=wm_, tmask=tmask))
+
+    wm_.add_watch(opath, tmask)
+
+    return tnotifier, process_notify
+
+
+def create_posttroll_notifier(attrs, publisher):
+    """Create a notifier listening to posttroll messages from *attrs*."""
+    listener = Listener(attrs, publisher)
+
+    return listener, None
+
+
 def _disable_removed_chains(chains, new_chains):
     for key in (set(chains.keys()) - set(new_chains.keys())):
         chains[key]["notifier"].stop()
@@ -744,21 +744,15 @@ def _process_old_files(old_glob, disable_backlog, publisher):
             process_old_files(pattern, fun, publisher, attrs)
 
 
-def check_output(*popenargs, **kwargs):
-    """Copy from python 2.7, `subprocess.check_output`."""
-    if 'stdout' in kwargs:
-        raise ValueError('stdout argument not allowed, it will be overridden.')
-    LOGGER.debug("Calling %s", str(popenargs))
-    process = subprocess.Popen(stdout=subprocess.PIPE, *popenargs, **kwargs)
-    output, unused_err = process.communicate()
-    del unused_err
-    retcode = process.poll()
-    if retcode:
-        cmd = kwargs.get("args")
-        if cmd is None:
-            cmd = popenargs[0]
-        raise RuntimeError(output)
-    return output
+def process_old_files(pattern, fun, publisher, kwargs):
+    """Process files from *pattern* with function *fun*."""
+    fnames = glob.glob(pattern)
+    if fnames:
+        # time.sleep(3)
+        LOGGER.debug("Touching old files")
+        for fname in fnames:
+            if os.path.exists(fname):
+                fun(fname, publisher, pattern, kwargs)
 
 
 def xrit(pathname, destination=None, cmd="./xRITDecompress"):
@@ -776,7 +770,22 @@ def xrit(pathname, destination=None, cmd="./xRITDecompress"):
     return expected
 
 
-# bzip
+def check_output(*popenargs, **kwargs):
+    """Copy from python 2.7, `subprocess.check_output`."""
+    if 'stdout' in kwargs:
+        raise ValueError('stdout argument not allowed, it will be overridden.')
+    LOGGER.debug("Calling %s", str(popenargs))
+    process = subprocess.Popen(stdout=subprocess.PIPE, *popenargs, **kwargs)
+    output, unused_err = process.communicate()
+    del unused_err
+    retcode = process.poll()
+    if retcode:
+        cmd = kwargs.get("args")
+        if cmd is None:
+            cmd = popenargs[0]
+        raise RuntimeError(output)
+    return output
+
 
 BLOCK_SIZE = 1024
 
@@ -889,17 +898,6 @@ class EventHandler(pyinotify.ProcessEvent):
                     "Dir %s not watched by inotify. Can not delete watch.",
                     event.pathname)
         return
-
-
-def process_old_files(pattern, fun, publisher, kwargs):
-    """Process files from *pattern* with function *fun*."""
-    fnames = glob.glob(pattern)
-    if fnames:
-        # time.sleep(3)
-        LOGGER.debug("Touching old files")
-        for fname in fnames:
-            if os.path.exists(fname):
-                fun(fname, publisher, pattern, kwargs)
 
 
 def terminate(chains, publisher=None):
