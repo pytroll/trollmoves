@@ -39,6 +39,7 @@ from threading import Lock, Thread
 from configparser import RawConfigParser
 from queue import Empty, Queue
 from urllib.parse import urlparse
+import signal
 
 import bz2
 import pyinotify
@@ -55,6 +56,7 @@ from trollmoves.client import DEFAULT_REQ_TIMEOUT
 from trollmoves.movers import move_it
 from trollmoves.utils import (clean_url, gen_dict_contains, gen_dict_extract,
                               is_file_local)
+from trollmoves.move_it_base import MoveItBase, create_publisher, EventHandler
 
 LOGGER = logging.getLogger(__name__)
 
@@ -62,6 +64,25 @@ LOGGER = logging.getLogger(__name__)
 file_cache = deque(maxlen=61000)
 file_cache_lock = Lock()
 START_TIME = datetime.datetime.utcnow()
+
+
+class MoveItServer(MoveItBase):
+    """Wrapper class for Trollmoves Server."""
+
+    def __init__(self, cmd_args):
+        """Initialize server."""
+        publisher = create_publisher(cmd_args.port, "move_it_server")
+        super(MoveItServer, self).__init__(cmd_args, "server", publisher=publisher)
+
+    def run(self):
+        """Start the transfer chains."""
+        signal.signal(signal.SIGTERM, self.chains_stop)
+        signal.signal(signal.SIGHUP, self.signal_reload_cfg_file)
+        self.notifier.start()
+        self.running = True
+        while self.running:
+            time.sleep(1)
+            self.publisher.heartbeat(30)
 
 
 class ConfigError(Exception):
@@ -833,71 +854,6 @@ def unpack(pathname,
                 os.remove(pathname)
             return new_path
     return pathname
-
-
-# Generic event handler
-# fixme: on deletion, the file should be removed from the filecache
-class EventHandler(pyinotify.ProcessEvent):
-    """Handle events with a generic *fun* function."""
-
-    def __init__(self, fun, *args, **kwargs):
-        """Initialize event handler."""
-        pyinotify.ProcessEvent.__init__(self, *args, **kwargs)
-        self._cmd_filename = kwargs.get('cmd_filename')
-        if self._cmd_filename:
-            self._cmd_filename = os.path.abspath(self._cmd_filename)
-        self._fun = fun
-        self._watched_dirs = dict()
-        self._watchManager = kwargs.get('watchManager', None)
-        self._tmask = kwargs.get('tmask', None)
-
-    def process_IN_CLOSE_WRITE(self, event):
-        """On closing after writing."""
-        if self._cmd_filename and os.path.abspath(
-                event.pathname) != self._cmd_filename:
-            return
-        self._fun(event.pathname)
-
-    def process_IN_CREATE(self, event):
-        """On closing after linking."""
-        if (event.mask & pyinotify.IN_ISDIR):
-            self._watched_dirs.update(self._watchManager.add_watch(event.pathname, self._tmask))
-
-        if self._cmd_filename and os.path.abspath(
-                event.pathname) != self._cmd_filename:
-            return
-        try:
-            if os.stat(event.pathname).st_nlink > 1:
-                self._fun(event.pathname)
-        except OSError:
-            return
-
-    def process_IN_MOVED_TO(self, event):
-        """On closing after moving."""
-        if self._cmd_filename and os.path.abspath(
-                event.pathname) != self._cmd_filename:
-            return
-        self._fun(event.pathname)
-
-    def process_IN_DELETE(self, event):
-        """On delete."""
-        if (event.mask & pyinotify.IN_ISDIR):
-            try:
-                try:
-                    self._watchManager.rm_watch(self._watched_dirs[event.pathname], quiet=False)
-                except pyinotify.WatchManagerError:
-                    # As the directory is deleted prior removing the
-                    # watch will cause a error message from
-                    # pyinotify. This is ok, so just pass the
-                    # exception.
-                    pass
-                finally:
-                    del self._watched_dirs[event.pathname]
-            except KeyError:
-                LOGGER.warning(
-                    "Dir %s not watched by inotify. Can not delete watch.",
-                    event.pathname)
-        return
 
 
 def terminate(chains, publisher=None):
