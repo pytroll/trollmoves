@@ -23,7 +23,7 @@ Start the Server process using the supplied configuration file:
 
 In another terminal, create a file in the input directory:
 
-    echo "Unladen swallow" > /tmp/input_directory/test1.txt
+    echo "Unladen swallow" > /tmp/server_input_directory/test1.txt
 
 This should trigger the Server to publish a message.
 
@@ -39,9 +39,9 @@ Start the Mirror using the supplied configuration file:
 
 In a new terminal, create another test file to the Server input directory:
 
-    echo "African swallow" > /tmp/input_directory/test2.txt
+    echo "African swallow" > /tmp/server_input_directory/test2.txt
 
-This should show that the Mirror got a message.
+This should show that the Mirror got a message and re-published it.
 
 ## Start a Trollmoves Client
 
@@ -55,7 +55,7 @@ Start the Client using the supplied configuration file:
 
 In a new terminal, create another test file:
 
-    echo "European swallow" > /tmp/input_directory/test3.txt
+    echo "European swallow" > /tmp/server_input_directory/test3.txt
 
 This should trigger Server and eventually Mirror to notify Client that there is a new file,
 Client to make a request to Mirror, which requests the file from Server and forwards it to
