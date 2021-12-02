@@ -71,13 +71,13 @@ Start the Dispatcher:
 
     dispatcher.py -v dispatch.yaml
 
-In a new terminla, create yet another test file for the Server to host:
+In a new terminal, create yet another test file for the Server to host:
 
     echo "Coconuts migrate?" > /tmp/input_directory/test4.txt
 
 In the end the file should be in the following directories:
 
-    /tmp/input_directory
+    /tmp/server_input_directory
     /tmp/client_target_directory
     /tmp/dispatcher_target_directory
 
