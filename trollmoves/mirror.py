@@ -24,6 +24,8 @@
 
 import os
 import logging
+import signal
+import time
 
 from urllib.parse import urlparse, urlunparse
 from threading import Lock, Timer
@@ -49,11 +51,13 @@ class MirrorListener(Listener):
     Subclass the Client Listener to replace how the messages are processed.
     """
 
-    def _process_message(self, msg, request_address, delay, publisher):
+    def _process_message(self, msg):
         if _file_already_published(msg):
             return
         file_registry[msg.data['uid']] = [msg]
-        request_address = self.cargs.get("request_address", get_own_ip()) + ":" + self.cargs["request_port"]
+        request_address = self.ckwargs.get("request_address", get_own_ip()) + ":" + self.ckwargs["request_port"]
+        delay = float(self.ckwargs.get("delay", 0))
+        publisher = self.ckwargs["publisher"]
         mirror_message = _get_mirror_message(msg, request_address)
         if delay:
             Timer(delay, publisher.send, [mirror_message]).start()
@@ -101,9 +105,9 @@ class MoveItMirror(MoveItBase):
 
     def create_listener_notifier(self, attrs, publisher):
         """Create a listener notifier."""
-        if "client_topic" not in attrs:
-            attrs["client_topic"] = None
-        listeners = Listeners(**attrs)
+        if "publisher" not in attrs:
+            attrs["publisher"] = publisher
+        listeners = Listeners(attrs.pop("client_topic"), attrs.pop("providers"), **attrs)
 
         return listeners, noop
 
@@ -165,7 +169,7 @@ class MirrorRequestManager(RequestManager):
         """Push the file."""
         new_uri = None
         for source_message in file_registry.get(message.data['uid'], []):
-            request_push(source_message, publisher=None, **self._attrs)
+            request_push(source_message, **self._attrs)
             destination = urlparse(self._attrs['destination']).path
             new_uri = os.path.join(destination, message.data['uid'])
             if os.path.exists(new_uri):
