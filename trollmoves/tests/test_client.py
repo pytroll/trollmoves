@@ -51,6 +51,10 @@ MSG_COLLECTION_TAR = Message('/topic', 'collection',
                              {'collection':
                               [{'dataset': [{'uid': 'file1.tar.bz2',
                                              'uri': '/tmp/file1.tar.bz2'}]}]})
+MSG_MIRROR = Message('/topic', 'file', {'fname': 'file1', 'uri':
+                                        'scp://user@host/tmp/bar/file1.txt', 'uid':
+                                        'file1.txt', 'destination': 'scp://targethost.domain/tmp/bar/',
+                                        'origin': 'sourcehost.domain:9201'})
 COMPRESSION_CONFIG = """
 [DEFAULT]
 providers = 127.0.0.1:40000
@@ -1418,3 +1422,12 @@ def test_chain_publisher_needs_restarting_port_modified(Listener, NoisyPublisher
     chain = Chain("foo", config.copy())
     config["publish_port"] = 12346
     assert chain.publisher_needs_restarting(config.copy()) is True
+
+
+def test_replace_mda_for_mirror():
+    """Test that replacing metadata items works properly for Trollmoves Mirror."""
+    from trollmoves.client import replace_mda
+
+    kwargs = {'uri': '/another/path/{filename}.txt'}
+    res = replace_mda(MSG_MIRROR, kwargs)
+    assert res.data['uri'] == kwargs['uri']
