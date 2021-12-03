@@ -1,3 +1,36 @@
+###############################################################################
+## Version v0.9.0 (2021/12/03)
+
+### Issues Closed
+
+* [Issue 107](https://github.com/pytroll/trollmoves/issues/107) - Possible to handle messages with dataset
+* [Issue 100](https://github.com/pytroll/trollmoves/issues/100) - Refactor unit tests ([PR 101](https://github.com/pytroll/trollmoves/pull/101) by [@pnuu](https://github.com/pnuu))
+* [Issue 97](https://github.com/pytroll/trollmoves/issues/97) - Adjusting the config restarts Client listeners unnecessarily ([PR 99](https://github.com/pytroll/trollmoves/pull/99) by [@pnuu](https://github.com/pnuu))
+* [Issue 80](https://github.com/pytroll/trollmoves/issues/80) - Move child classes of MoveItBase to respective modules within trollmoves library
+
+In this release 4 issues were closed.
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 108](https://github.com/pytroll/trollmoves/pull/108) - Refactor dispatcher
+* [PR 99](https://github.com/pytroll/trollmoves/pull/99) - Prevent unnecessary listener reloads in Trollmoves Client ([97](https://github.com/pytroll/trollmoves/issues/97))
+
+#### Features added
+
+* [PR 109](https://github.com/pytroll/trollmoves/pull/109) - Example end-to-end test
+* [PR 108](https://github.com/pytroll/trollmoves/pull/108) - Refactor dispatcher
+* [PR 106](https://github.com/pytroll/trollmoves/pull/106) - Refactor mirror
+* [PR 105](https://github.com/pytroll/trollmoves/pull/105) - Refactor server
+* [PR 104](https://github.com/pytroll/trollmoves/pull/104) - Refactor client
+* [PR 103](https://github.com/pytroll/trollmoves/pull/103) - Remove client listener callback
+* [PR 102](https://github.com/pytroll/trollmoves/pull/102) - Remove six usage, reorder imports and fix flake8 warnings
+* [PR 101](https://github.com/pytroll/trollmoves/pull/101) - Refactor unit tests ([100](https://github.com/pytroll/trollmoves/issues/100))
+* [PR 99](https://github.com/pytroll/trollmoves/pull/99) - Prevent unnecessary listener reloads in Trollmoves Client ([97](https://github.com/pytroll/trollmoves/issues/97))
+
+In this release 11 pull requests were closed.
+
 ## Version 0.8.1 (2021/11/04)
 
 ### Issues Closed
