@@ -213,7 +213,7 @@ class RequestManager(Thread):
         new_msg = self._move_files(message)
         if new_msg is None:
             new_msg = Message(message.subject,
-                              'file',
+                              _get_push_message_type(message),
                               data=message.data.copy())
             new_msg.data['destination'] = clean_url(new_msg.data['destination'])
 
@@ -365,6 +365,17 @@ class RequestManager(Thread):
         self._deleter.stop()
         self.out_socket.close(1)
         self.in_socket.close(1)
+
+
+def _get_push_message_type(message):
+    message_type = message.type
+    if 'uri' in message.data:
+        message_type = 'file'
+    elif 'dataset' in message.data:
+        message_type = 'dataset'
+    elif 'collection' in message.data:
+        message_type = 'collection'
+    return message_type
 
 
 def _get_cleaned_ack_message(message):
