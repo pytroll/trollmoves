@@ -678,6 +678,8 @@ def _update_local_message(lmsg, _destination, login, response, **kwargs):
     lmsg = replace_mda(lmsg, kwargs)
     lmsg.data.pop('destination', None)
 
+    return lmsg
+
 
 class Chain(Thread):
     """The Chain class."""
