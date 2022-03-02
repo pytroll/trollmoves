@@ -388,16 +388,18 @@ class Dispatcher(Thread):
 
     def create_dest_url(self, msg, client, conf):
         """Create the destination URL and the connection parameters."""
-        defaults = self.config[client].copy()
-        _verify_filepattern(defaults, msg)
-        connection_parameters = conf.get('connection_parameters', defaults.get('connection_parameters'))
-        host = conf.get('host', defaults['host'])
+        config = self.config[client].copy()
+        _verify_filepattern(config, msg)
+        config.update(conf)
+        connection_parameters = config.get('connection_parameters')
 
-        metadata = _get_metadata_with_aliases(msg, defaults)
+        host = config['host']
+
+        metadata = _get_metadata_with_aliases(msg, config)
 
         path = compose(
-            os.path.join(conf.get('directory', defaults['directory']),
-                         conf.get('filepattern', defaults['filepattern'])),
+            os.path.join(config['directory'],
+                         config['filepattern']),
             metadata)
         parts = urlsplit(host)
         host_path = urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment))
