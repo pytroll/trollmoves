@@ -238,6 +238,7 @@ target3:
 
 @pytest.fixture
 def check_conditions_string_config():
+    """Check conditions string config."""
     config_item = yaml.safe_load("""
         topics:
           - /level2/viirs
@@ -257,6 +258,7 @@ def check_conditions_string_config():
 
 @pytest.fixture
 def get_destinations_message():
+    """Get the destinations message."""
     msg = Mock()
     msg.type = 'file'
     msg.subject = '/level2/viirs'
@@ -268,6 +270,7 @@ def get_destinations_message():
 
 @pytest.fixture
 def create_dest_url_message(get_destinations_message):
+    """Create the destination url message."""
     get_destinations_message.data['uri'] = '/data/viirs/201909190919_NOAA-20_viirs.tif'
     get_destinations_message.data['uid'] = '67e91f4a778adc59e5f1a4f0475e388b'
 
@@ -276,6 +279,7 @@ def create_dest_url_message(get_destinations_message):
 
 @pytest.fixture
 def publisher_config_file_name():
+    """Create a temporary config file name."""
     with NamedTemporaryFile('w', delete=False) as config_file:
         config_file_name = config_file.name
         config_file.write(test_yaml_pub)
@@ -434,7 +438,7 @@ def _assert_get_destinations_res(res, expected_length, expected_url, expected_at
 
 def test_get_destinations_no_default_directory_single_destination(get_destinations_message):
     """Check getting destination urls when default directory isn't configured."""
-    dispatcher = _get_dispatcher(test_yaml1)
+    dispatcher = _get_dispatcher(test_yaml_no_default_directory)
 
     expected_length = 1
     expected_url = 'ftp://ftp.target1.com/input_data/viirs/NOAA-20_201909190919.tif'

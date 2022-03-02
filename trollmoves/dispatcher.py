@@ -390,14 +390,17 @@ class Dispatcher(Thread):
         """Create the destination URL and the connection parameters."""
         defaults = self.config[client].copy()
         _verify_filepattern(defaults, msg)
-        connection_parameters = conf.get('connection_parameters', defaults.get('connection_parameters'))
-        host = conf.get('host', defaults['host'])
+        conf_with_defaults = defaults.copy()
+        conf_with_defaults.update(conf)
+        connection_parameters = conf_with_defaults.get('connection_parameters')
+
+        host = conf_with_defaults['host']
 
         metadata = _get_metadata_with_aliases(msg, defaults)
 
         path = compose(
-            os.path.join(conf.get('directory', defaults['directory']),
-                         conf.get('filepattern', defaults['filepattern'])),
+            os.path.join(conf_with_defaults['directory'],
+                         conf_with_defaults['filepattern']),
             metadata)
         parts = urlsplit(host)
         host_path = urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment))
