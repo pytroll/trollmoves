@@ -22,7 +22,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 """Classes and functions for Trollmoves server."""
-
+import argparse
 import datetime
 import errno
 import fnmatch
@@ -31,12 +31,11 @@ import logging
 import logging.handlers
 import os
 import subprocess
-import sys
 import tempfile
 import time
 from collections import deque
 from threading import Lock, Thread
-from configparser import RawConfigParser
+from configparser import ConfigParser
 from queue import Empty, Queue
 from urllib.parse import urlparse
 import signal
@@ -64,87 +63,6 @@ LOGGER = logging.getLogger(__name__)
 file_cache = deque(maxlen=61000)
 file_cache_lock = Lock()
 START_TIME = datetime.datetime.utcnow()
-
-
-class MoveItServer(MoveItBase):
-    """Wrapper class for Trollmoves Server."""
-
-    def __init__(self, cmd_args):
-        """Initialize server."""
-        publisher = create_publisher(cmd_args.port, "move_it_server")
-        super(MoveItServer, self).__init__(cmd_args, "server", publisher=publisher)
-
-    def run(self):
-        """Start the transfer chains."""
-        signal.signal(signal.SIGTERM, self.chains_stop)
-        signal.signal(signal.SIGHUP, self.signal_reload_cfg_file)
-        self.notifier.start()
-        self.running = True
-        while self.running:
-            time.sleep(1)
-            self.publisher.heartbeat(30)
-
-
-class ConfigError(Exception):
-    """Configuration error."""
-
-    pass
-
-
-class Deleter(Thread):
-    """Class for deleting moved files."""
-
-    def __init__(self, attrs):
-        """Initialize Deleter."""
-        Thread.__init__(self)
-        self.queue = Queue()
-        self.timer = None
-        self.loop = True
-        self._attrs = attrs or dict()
-
-    def add(self, filename):
-        """Schedule file for deletion."""
-        remove_delay = int(self._attrs.get('remove_delay', 30))
-        LOGGER.debug('Scheduling %s for removal in %ds', filename, remove_delay)
-        self.queue.put((filename, time.time() + remove_delay))
-
-    def run(self):
-        """Start the deleter."""
-        while self.loop:
-            try:
-                filename, the_time = self.queue.get(True, 2)
-            except Empty:
-                continue
-            while self.loop:
-                time.sleep(min(2, max(the_time - time.time(), 0)))
-                if the_time <= time.time():
-                    try:
-                        self.delete(filename)
-                    except Exception:
-                        LOGGER.exception(
-                            'Something went wrong when deleting %s', filename)
-                    else:
-                        LOGGER.debug('Removed %s.', filename)
-                    break
-
-    @staticmethod
-    def delete(filename):
-        """Delete the given file.
-
-        If the file is not present, this function does *not* raise an error.
-        """
-        try:
-            os.remove(filename)
-        except OSError as err:
-            if err.errno != errno.ENOENT:
-                raise
-            LOGGER.debug("File already deleted: %s", filename)
-
-    def stop(self):
-        """Stop the deleter."""
-        self.loop = False
-        if self.timer:
-            self.timer.cancel()
 
 
 class RequestManager(Thread):
@@ -367,6 +285,139 @@ class RequestManager(Thread):
         self.in_socket.close(1)
 
 
+class AbstractMoveItServer(MoveItBase):
+    """Abstract base class for the move it server."""
+
+    def terminate(self, publisher=None):
+        """Terminate the given *chains* and stop the *publisher*."""
+        for chain in self.chains.values():
+            chain["notifier"].stop()
+            try:
+                # Join the Watchdog thread
+                chain["notifier"].join()
+            except AttributeError:
+                pass
+            if "request_manager" in chain:
+                chain["request_manager"].stop()
+
+        if publisher:
+            publisher.stop()
+
+        LOGGER.info("Shutting down.")
+        print("Thank you for using pytroll/move_it_server."
+              " See you soon on pytroll.org!")
+
+    def reload_config(self, filename,
+                      notifier_builder=None,
+                      manager=RequestManager,
+                      disable_backlog=False,
+                      use_watchdog=False):
+        """Rebuild chains if needed (if the configuration changed) from *filename*."""
+        LOGGER.debug("New config file detected: %s", filename)
+
+        new_chain_configs = read_config(filename)
+
+        old_glob = _update_chains(self.chains, new_chain_configs, manager, use_watchdog, self.publisher,
+                                  notifier_builder)
+        _disable_removed_chains(self.chains, new_chain_configs)
+        LOGGER.debug("Reloaded config from %s", filename)
+        _process_old_files(old_glob, disable_backlog, self.publisher)
+        LOGGER.debug("done reloading config")
+
+
+class MoveItServer(AbstractMoveItServer):
+    """Wrapper class for Trollmoves Server."""
+
+    def __init__(self, cmd_args):
+        """Initialize server."""
+        self.name = "move_it_server"
+        publisher = create_publisher(cmd_args.port, self.name)
+        super().__init__(cmd_args, publisher=publisher)
+
+    def run(self):
+        """Start the transfer chains."""
+        signal.signal(signal.SIGTERM, self.chains_stop)
+        signal.signal(signal.SIGHUP, self.signal_reload_cfg_file)
+        self.notifier.start()
+        self.running = True
+        while self.running:
+            time.sleep(1)
+            self.publisher.heartbeat(30)
+
+    def reload_cfg_file(self, filename):
+        """Reload configuration file."""
+        self.reload_config(filename,
+                           disable_backlog=self.cmd_args.disable_backlog,
+                           use_watchdog=self.cmd_args.watchdog)
+
+    def signal_reload_cfg_file(self, *args):
+        """Handle reload signal."""
+        del args
+        self.reload_cfg_file(self.cmd_args.config_file)
+
+
+class ConfigError(Exception):
+    """Configuration error."""
+
+    pass
+
+
+class Deleter(Thread):
+    """Class for deleting moved files."""
+
+    def __init__(self, attrs):
+        """Initialize Deleter."""
+        Thread.__init__(self)
+        self.queue = Queue()
+        self.timer = None
+        self.loop = True
+        self._attrs = attrs or dict()
+
+    def add(self, filename):
+        """Schedule file for deletion."""
+        remove_delay = int(self._attrs.get('remove_delay', 30))
+        LOGGER.debug('Scheduling %s for removal in %ds', filename, remove_delay)
+        self.queue.put((filename, time.time() + remove_delay))
+
+    def run(self):
+        """Start the deleter."""
+        while self.loop:
+            try:
+                filename, the_time = self.queue.get(True, 2)
+            except Empty:
+                continue
+            while self.loop:
+                time.sleep(min(2, max(the_time - time.time(), 0)))
+                if the_time <= time.time():
+                    try:
+                        self.delete(filename)
+                    except Exception:
+                        LOGGER.exception(
+                            'Something went wrong when deleting %s', filename)
+                    else:
+                        LOGGER.debug('Removed %s.', filename)
+                    break
+
+    @staticmethod
+    def delete(filename):
+        """Delete the given file.
+
+        If the file is not present, this function does *not* raise an error.
+        """
+        try:
+            os.remove(filename)
+        except OSError as err:
+            if err.errno != errno.ENOENT:
+                raise
+            LOGGER.debug("File already deleted: %s", filename)
+
+    def stop(self):
+        """Stop the deleter."""
+        self.loop = False
+        if self.timer:
+            self.timer.cancel()
+
+
 def _get_push_message_type(message):
     message_type = message.type
     if 'uri' in message.data:
@@ -506,8 +557,9 @@ class WatchdogHandler(FileSystemEventHandler):
 
 def read_config(filename):
     """Read the config file called *filename*."""
-    cp_ = RawConfigParser()
-    cp_.read(filename)
+    cp_ = ConfigParser(interpolation=None)
+    with open(filename) as config_file:
+        cp_.read_file(config_file)
 
     res = {}
 
@@ -554,31 +606,12 @@ def _verify_publish_port(conf):
         conf["publish_port"] = 0
 
 
-def reload_config(filename,
-                  chains,
-                  notifier_builder=None,
-                  manager=RequestManager,
-                  publisher=None,
-                  disable_backlog=False,
-                  use_watchdog=False):
-    """Rebuild chains if needed (if the configuration changed) from *filename*."""
-    LOGGER.debug("New config file detected: %s", filename)
-
-    new_chains = read_config(filename)
-
-    old_glob = _update_chains(chains, new_chains, manager, use_watchdog, publisher, notifier_builder)
-    _disable_removed_chains(chains, new_chains)
-    LOGGER.debug("Reloaded config from %s", filename)
-    _process_old_files(old_glob, disable_backlog, publisher)
-    LOGGER.debug("done reloading config")
-
-
-def _update_chains(chains, new_chains, manager, use_watchdog, publisher, notifier_builder):
+def _update_chains(chains, new_chain_configs, manager, use_watchdog, publisher, notifier_builder):
     old_glob = []
-    for chain_name, chain in new_chains.items():
+    for chain_name, chain in new_chain_configs.items():
         chain_updated = False
         if chain_name in chains:
-            if _chains_are_identical(chains, new_chains, chain_name):
+            if _chains_are_identical(chains, new_chain_configs, chain_name):
                 continue
             chain_updated = True
             _stop_chain(chains[chain_name])
@@ -867,23 +900,22 @@ def unpack(pathname,
     return pathname
 
 
-def terminate(chains, publisher=None):
-    """Terminate the given *chains* and stop the *publisher*."""
-    for chain in chains.values():
-        chain["notifier"].stop()
-        try:
-            # Join the Watchdog thread
-            chain["notifier"].join()
-        except AttributeError:
-            pass
-        if "request_manager" in chain:
-            chain["request_manager"].stop()
+def parse_args(args=None):
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config_file",
+                        help="The configuration file to run on.")
+    parser.add_argument("-l", "--log",
+                        help="The file to log to. stdout otherwise.")
+    parser.add_argument("-p", "--port",
+                        help="The port to publish on. 9010 is the default",
+                        default=9010)
+    parser.add_argument("-v", "--verbose", default=False, action="store_true",
+                        help="Toggle verbose logging")
+    parser.add_argument("--disable-backlog",
+                        help="Disable glob and handling of backlog of files at start/restart",
+                        action='store_true')
+    parser.add_argument("-w", "--watchdog", default=False, action="store_true",
+                        help="Use Watchdog instead of inotify")
 
-    if publisher:
-        publisher.stop()
-
-    LOGGER.info("Shutting down.")
-    print("Thank you for using pytroll/move_it_server."
-          " See you soon on pytroll.org!")
-    time.sleep(1)
-    sys.exit(0)
+    return parser.parse_args(args)

@@ -32,6 +32,7 @@ from collections import deque
 
 import pytest
 from posttroll.message import Message
+from trollmoves.client import MoveItClient, parse_args
 
 
 MSG_FILE = Message('/topic', 'file', {'uid': 'file1.png',
@@ -159,6 +160,7 @@ CHAIN_BASIC_CONFIG = {"login": "user:pass", "topic": "/foo", "publish_port": 123
 
 @pytest.fixture
 def listener():
+    """Fix a listener."""
     with patch('trollmoves.client.CTimer'):
         with patch('trollmoves.heartbeat_monitor.Monitor'):
             with patch('trollmoves.client.Subscriber'):
@@ -170,6 +172,7 @@ def listener():
 
 @pytest.fixture
 def delayed_listener():
+    """Fix a delayed listener."""
     with patch('trollmoves.client.CTimer'):
         with patch('trollmoves.heartbeat_monitor.Monitor'):
             with patch('trollmoves.client.Subscriber'):
@@ -207,51 +210,61 @@ def _write_to_tar(file_to_add, remove_in_file=False, filename=None):
 
 @pytest.fixture
 def client_config_1_item():
+    """Fix client config #1 item."""
     yield _write_named_temporary_config(CLIENT_CONFIG_1_ITEM)
 
 
 @pytest.fixture
 def client_config_1_item_non_pub_provider_item_modified():
+    """Fix client config #1 item with non pub provider item modified."""
     yield _write_named_temporary_config(CLIENT_CONFIG_1_ITEM_NON_PUB_PROVIDER_ITEM_MODIFIED)
 
 
 @pytest.fixture
 def client_config_1_item_two_providers():
+    """Fix client config #1 item with two providers."""
     yield _write_named_temporary_config(CLIENT_CONFIG_1_ITEM_TWO_PROVIDERS)
 
 
 @pytest.fixture
 def client_config_1_item_topic_changed():
+    """Fix client config #1 with item topic changed."""
     yield _write_named_temporary_config(CLIENT_CONFIG_1_ITEM_TOPIC_CHANGED)
 
 
 @pytest.fixture
 def client_config_1_pub_item_modified():
+    """Fix client config #1 with pub item modified."""
     yield _write_named_temporary_config(CLIENT_CONFIG_1_PUB_ITEM_MODIFIED)
 
 
 @pytest.fixture
 def client_config_2_items():
+    """Fix client config #2 items."""
     yield _write_named_temporary_config(CLIENT_CONFIG_2_ITEMS)
 
 
 @pytest.fixture
 def compression_config():
+    """Fix compression config."""
     yield _write_named_temporary_config(COMPRESSION_CONFIG)
 
 
 @pytest.fixture
 def test_txt_file_1():
+    """Fix text file number 1."""
     yield _write_named_temporary_config("test 1\n")
 
 
 @pytest.fixture
 def test_txt_file_2():
+    """Fix text file number 2."""
     yield _write_named_temporary_config("test 2\n")
 
 
 @pytest.fixture
 def chain_config_with_one_item(client_config_1_item):
+    """Fix chain config with one item."""
     from trollmoves.client import read_config
 
     try:
@@ -1431,3 +1444,60 @@ def test_replace_mda_for_mirror():
     kwargs = {'uri': '/another/path/{filename}.txt'}
     res = replace_mda(MSG_MIRROR, kwargs)
     assert res.data['uri'] == kwargs['uri']
+
+
+config_file = b"""
+[eumetcast_hrit_0deg_ftp]
+providers = satmottag2:9010 satmottag:9010 explorer:9010
+destination = ftp:///san1/geo_in/0deg/
+login = user:pass
+topic = /1b/hrit-segment/0deg
+publish_port = 0
+nameservers = localhost 192.168.0.10 192.168.0.11
+heartbeat_alarm_scale = 10
+"""
+
+
+class TestMoveItClient:
+    """Test the move it client."""
+
+    def test_reloads_config_crashes_when_config_file_does_not_exist(self):
+        """Test that reloading a non existing config file crashes."""
+        cmd_args = parse_args(["somefile99999.cfg"])
+        client = MoveItClient(cmd_args)
+        with pytest.raises(FileNotFoundError):
+            client.reload_cfg_file(cmd_args.config_file)
+
+    @patch("trollmoves.move_it_base.Publisher")
+    def test_reloads_config_on_example_config(self, fake_publisher):
+        """Test that config can be reloaded with basic example."""
+        with NamedTemporaryFile() as temporary_config_file:
+            temporary_config_file.write(config_file)
+            config_filename = temporary_config_file.name
+            cmd_args = parse_args([config_filename])
+            client = MoveItClient(cmd_args)
+            client.reload_cfg_file(cmd_args.config_file)
+
+    @patch("trollmoves.move_it_base.Publisher")
+    @patch("trollmoves.client.reload_config")
+    def test_reloads_config_calls_reload_config(self, mock_reload_config, mock_publisher):
+        """Test that config file can be reloaded."""
+        with NamedTemporaryFile() as temporary_config_file:
+            temporary_config_file.write(config_file)
+            config_filename = temporary_config_file.name
+            cmd_args = parse_args([config_filename])
+            client = MoveItClient(cmd_args)
+            client.reload_cfg_file(cmd_args.config_file)
+            mock_reload_config.assert_called_once()
+
+    @patch("trollmoves.move_it_base.Publisher")
+    @patch("trollmoves.client.reload_config")
+    def test_signal_reloads_config_calls_reload_config(self, mock_reload_config, mock_publisher):
+        """Test that config file can be reloaded through signal."""
+        with NamedTemporaryFile() as temporary_config_file:
+            temporary_config_file.write(config_file)
+            config_filename = temporary_config_file.name
+            cmd_args = parse_args([config_filename])
+            client = MoveItClient(cmd_args)
+            client.signal_reload_cfg_file()
+            mock_reload_config.assert_called_once()

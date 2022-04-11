@@ -22,14 +22,14 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 """Trollmoves client."""
-
+import argparse
 import logging
 import os
+import signal
 import socket
-import sys
 import time
 from collections import deque
-from configparser import RawConfigParser
+from configparser import ConfigParser
 from threading import Lock, Thread, Event
 import hashlib
 from urllib.parse import urlparse, urlunparse
@@ -46,6 +46,7 @@ from posttroll.subscriber import Subscriber
 from trollsift.parser import compose
 
 from trollmoves import heartbeat_monitor
+from trollmoves.move_it_base import MoveItBase
 from trollmoves.utils import get_local_ips
 from trollmoves.utils import gen_dict_extract, translate_dict
 from trollmoves.movers import CTimer
@@ -73,8 +74,9 @@ LISTENER_CHECK_INTERVAL = 1
 
 def read_config(filename):
     """Read the config file called *filename*."""
-    cp_ = RawConfigParser()
-    cp_.read(filename)
+    cp_ = ConfigParser(interpolation=None)
+    with open(filename) as config_file:
+        cp_.read_file(config_file)
 
     res = {}
 
@@ -983,12 +985,52 @@ class PushRequester(object):
         return rep
 
 
-def terminate(chains):
-    """Terminate client chains."""
-    for chain in chains.values():
-        chain.stop()
-    LOGGER.info("Shutting down.")
-    print("Thank you for using pytroll/move_it_client."
-          " See you soon on pytroll.org!")
-    time.sleep(1)
-    sys.exit(0)
+def parse_args(args=None):
+    """Parse commandline arguments."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config_file",
+                        help="The configuration file to run on.")
+    parser.add_argument("-l", "--log",
+                        help="The file to log to. stdout otherwise.")
+    parser.add_argument("-v", "--verbose", default=False, action="store_true",
+                        help="Toggle verbose logging")
+    return parser.parse_args(args)
+
+
+class MoveItClient(MoveItBase):
+    """Trollmoves client class."""
+
+    def __init__(self, cmd_args):
+        """Initialize client."""
+        self.name = "move_it_client"
+        super().__init__(cmd_args)
+
+    def reload_cfg_file(self, filename, *args, **kwargs):
+        """Reload configuration file."""
+        reload_config(filename, self.chains, *args, **kwargs)
+
+    def signal_reload_cfg_file(self, *args):
+        """Handle reload signal."""
+        reload_config(self.cmd_args.config_file, self.chains,
+                      publisher=self.publisher)
+
+    def run(self):
+        """Start the transfer chains."""
+        signal.signal(signal.SIGTERM, self.chains_stop)
+        signal.signal(signal.SIGHUP, self.signal_reload_cfg_file)
+        self.notifier.start()
+        self.running = True
+        while self.running:
+            time.sleep(1)
+            for chain_name in self.chains:
+                if not self.chains[chain_name].is_alive():
+                    self.chains[chain_name] = self.chains[chain_name].restart()
+                self.chains[chain_name].publisher.heartbeat(30)
+
+    def terminate(self):
+        """Terminate client chains."""
+        for chain in self.chains.values():
+            chain.stop()
+        LOGGER.info("Shutting down.")
+        print("Thank you for using pytroll/move_it_client."
+              " See you soon on pytroll.org!")
