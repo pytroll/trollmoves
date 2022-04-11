@@ -17,7 +17,7 @@ import os
 @scenario('move_it_server_client.feature', 'Simple file transfer')
 def test_simple_transfer():
     """Stub for this scenario."""
-    pass
+    pass  # noqa
 
 
 @given("We have a source directory", target_fixture="source_dir")
