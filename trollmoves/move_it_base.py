@@ -68,7 +68,6 @@ class MoveItBase(ABC):
     @abstractmethod
     def terminate(self):
         """Terminate the chains and threads."""
-        pass  # noqa
 
     def setup_watchers(self):
         """Set up watcher for the configuration file."""
