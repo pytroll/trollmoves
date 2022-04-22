@@ -92,11 +92,11 @@ class MoveItMirror(AbstractMoveItServer):
         self.name = "move_it_mirror"
         publisher = create_publisher(cmd_args.port, self.name)
         super().__init__(cmd_args, publisher=publisher)
+        self.request_manager = MirrorRequestManager
 
     def reload_cfg_file(self, filename):
         """Reload the config file."""
-        self.reload_config(filename, self.create_listener_notifier,
-                           MirrorRequestManager, disable_backlog=True)
+        self.reload_config(filename, self.create_listener_notifier, disable_backlog=True)
 
     def signal_reload_cfg_file(self, *args):
         """Reload the config file when we get a signal."""
