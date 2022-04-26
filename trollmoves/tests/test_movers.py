@@ -67,3 +67,47 @@ def test_open_ftp_connection_credentials_in_url():
     ftp = _get_ftp('ftp://auser:apasswd@localhost.smhi.se/data/satellite/archive/')
 
     ftp.return_value.login.assert_called_once_with('auser', 'apasswd')
+
+
+def _get_s3_mover(origin, destination):
+    from trollmoves.movers import S3Mover
+
+    return S3Mover(origin, destination)
+
+
+@patch('trollmoves.movers.S3FileSystem')
+def test_s3_copy_file_to_base(S3FileSystem):
+    """Test copying to base of S3 bucket."""
+    s3_mover = _get_s3_mover(ORIGIN, "s3://data-bucket/")
+    s3_mover.copy()
+
+    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/filename.ext")
+
+
+@patch('trollmoves.movers.S3FileSystem')
+def test_s3_copy_file_to_sub_directory(S3FileSystem):
+    """Test copying to sub directory of a S3 bucket."""
+    # The target directory doesn't exist
+    S3FileSystem.return_value.exists.return_value = False
+    s3_mover = _get_s3_mover(ORIGIN, "s3://data-bucket/target/directory/")
+    s3_mover.copy()
+
+    S3FileSystem.return_value.mkdirs.assert_called_once_with("data-bucket/target/directory")
+    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/target/directory/filename.ext")
+
+
+@patch('trollmoves.movers.S3FileSystem')
+def test_s3_move(S3FileSystem):
+    """Test moving a file."""
+    import os
+    from tempfile import NamedTemporaryFile
+
+    with NamedTemporaryFile(delete=False) as fid:
+        fname = fid.name
+    s3_mover = _get_s3_mover(fname, "s3://data-bucket/target/directory")
+    s3_mover.move()
+    try:
+        assert not os.path.exists(fname)
+    except AssertionError as err:
+        os.remove(fname)
+        raise OSError("File was not deleted after transfer.")

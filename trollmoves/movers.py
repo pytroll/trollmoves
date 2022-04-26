@@ -36,6 +36,10 @@ import netrc
 from ftplib import FTP, all_errors, error_perm
 from paramiko import SSHClient, SSHException, AutoAddPolicy
 from scp import SCPClient
+try:
+    from s3fs import S3FileSystem
+except ImportError:
+    S3FileSystem = None
 
 from trollmoves.utils import clean_url
 
@@ -448,9 +452,61 @@ class SftpMover(Mover):
         transport.close()
 
 
+class S3Mover(Mover):
+    """Move files to S3 cloud storage.
+
+    The transfer is initiated by Trollmoves Client by having destination that starts with "s3://".
+
+    All the connection configurations and such are done using the `fsspec` configuration system:
+
+    https://filesystem-spec.readthedocs.io/en/latest/features.html#configuration
+
+    An example configuration could be for example placed in `~/.config/fsspec/s3.json`::
+
+        {
+            "s3": {
+                "client_kwargs": {"endpoint_url": "https://s3.server.foo.com"},
+                "secret": "VERYBIGSECRET",
+                "key": "ACCESSKEY"
+            }
+        }
+
+    """
+
+    def copy(self):
+        """Copy the file to a bucket."""
+        if S3FileSystem is None:
+            raise ImportError("S3Mover requires 's3fs' to be installed.")
+        s3 = S3FileSystem()
+        destination_file_path = self._get_destination()
+        _create_s3_destination_path(s3, destination_file_path)
+        s3.put(self.origin, destination_file_path)
+
+    def _get_destination(self):
+        bucket_parts = []
+        bucket_parts.append(self.destination.netloc)
+        if self.destination.path != '/':
+            bucket_parts.append(self.destination.path.strip('/'))
+        bucket_parts.append(os.path.basename(self.origin))
+
+        return '/'.join(bucket_parts)
+
+    def move(self):
+        """Move the file."""
+        self.copy()
+        os.remove(self.origin)
+
+
+def _create_s3_destination_path(s3, destination_file_path):
+    destination_path = os.path.dirname(destination_file_path)
+    if not s3.exists(destination_path):
+        s3.mkdirs(destination_path)
+
+
 MOVERS = {'ftp': FtpMover,
           'file': FileMover,
           '': FileMover,
           'scp': ScpMover,
           'sftp': SftpMover,
+          's3': S3Mover,
           }
