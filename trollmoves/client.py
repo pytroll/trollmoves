@@ -673,7 +673,6 @@ def _send_ack_message(msg, publisher):
 
 
 def _update_local_message(lmsg, _destination, login, response, **kwargs):
-    scheme = urlparse(_destination).scheme
     lmsg = make_uris(lmsg, _destination, login)
     lmsg.data['origin'] = response.data['request_address']
     lmsg.data.pop('request_address', None)

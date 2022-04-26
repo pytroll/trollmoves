@@ -108,6 +108,6 @@ def test_s3_move(S3FileSystem):
     s3_mover.move()
     try:
         assert not os.path.exists(fname)
-    except AssertionError as err:
+    except AssertionError:
         os.remove(fname)
         raise OSError("File was not deleted after transfer.")
