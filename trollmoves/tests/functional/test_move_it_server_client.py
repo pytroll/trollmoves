@@ -207,7 +207,6 @@ def check_message_for_filesystem_info(subscriber, tmp_path, source_dir, moved_fi
     assert msg.data["uri"] == expected_uri
     assert msg.data["sensor"] == "seviri"
     assert msg.data["variant"] == "0DEG"
-    print(msg)
 
 
 @scenario('move_it_server_client.feature', 'Simple file publishing with untarring')
@@ -279,4 +278,3 @@ def check_message_for_filesystem_info_and_untarring(subscriber, tmp_path, moved_
     assert msg.data["dataset"][0]["uri"] == expected_uri
     assert msg.data["sensor"] == "seviri"
     assert msg.data["variant"] == "0DEG"
-    print(msg)
