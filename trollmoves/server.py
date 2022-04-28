@@ -796,11 +796,8 @@ def create_message_with_request_info(pathname, orig_pathname, attrs):
 
 def create_message_with_remote_fs_info(pathname, attrs):
     """Create a message containing remote filesystem info."""
-    from pytroll_collectors.fsspec_to_message import extract_files_to_message
-    import fsspec
-    import socket
-    fs = fsspec.filesystem('ssh', host=socket.gethostname())
-    msg = extract_files_to_message(pathname, fs, attrs['topic'], attrs.get("unpack"))
+    from pytroll_collectors.fsspec_to_message import extract_local_files_to_message_for_remote_use
+    msg = extract_local_files_to_message_for_remote_use(pathname, attrs['topic'], attrs.get("unpack"))
     info = _collect_attribute_info(attrs)
     msg.data.update(info)
     return msg

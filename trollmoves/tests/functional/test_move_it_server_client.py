@@ -198,14 +198,16 @@ def start_subscriber(subscriber):
 def check_message_for_filesystem_info(subscriber, tmp_path, source_dir, moved_filename):
     """Check the posttroll message for filesystem info."""
     msg = next(subscriber)
-    expected_filesystem = {"cls": "fsspec.implementations.sftp.SFTPFileSystem", "protocol": "sftp", "args": [],
-                           "host": socket.gethostname()}
-    expected_uid = f'sftp://{source_dir}/{moved_filename}'
+    host = socket.gethostname()
+    expected_filesystem = {"cls": "fsspec.implementations.sftp.SFTPFileSystem", "protocol": "ssh", "args": [],
+                           "host": host}
+    expected_uri = f'ssh://{host}{source_dir}/{moved_filename}'
 
     assert msg.data["filesystem"] == expected_filesystem
-    assert msg.data["uid"] == expected_uid
+    assert msg.data["uri"] == expected_uri
     assert msg.data["sensor"] == "seviri"
     assert msg.data["variant"] == "0DEG"
+    print(msg)
 
 
 @scenario('move_it_server_client.feature', 'Simple file publishing with untarring')
@@ -262,17 +264,19 @@ def create_new_tar_file(source_dir):
 def check_message_for_filesystem_info_and_untarring(subscriber, tmp_path, moved_filename):
     """Check the posttroll message for filesystem info and untarring."""
     msg = next(subscriber)
+    host = socket.gethostname()
     expected_filesystem = {"cls": "fsspec.implementations.tar.TarFileSystem",
                            "protocol": "tar",
                            "args": [],
-                           "target_options": {"host": socket.gethostname(), "protocol": "sftp"},
-                           "target_protocol": "sftp",
+                           "target_options": {"host": host, "protocol": "ssh"},
+                           "target_protocol": "ssh",
                            "fo": os.fspath(moved_filename)}
 
-    expected_uid = f'tar:/{str(moved_filename)[:-4]}::sftp://{moved_filename}'
+    expected_uri = f'tar:/{str(moved_filename)[:-4]}::ssh://{host}{moved_filename}'
 
     assert len(msg.data["dataset"]) == 1
     assert msg.data["dataset"][0]["filesystem"] == expected_filesystem
-    assert msg.data["dataset"][0]["uid"] == expected_uid
+    assert msg.data["dataset"][0]["uri"] == expected_uri
     assert msg.data["sensor"] == "seviri"
     assert msg.data["variant"] == "0DEG"
+    print(msg)
