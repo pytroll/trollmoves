@@ -25,7 +25,6 @@
 import argparse
 import logging
 import os
-import signal
 import socket
 import time
 from collections import deque
@@ -1014,18 +1013,11 @@ class MoveItClient(MoveItBase):
         reload_config(self.cmd_args.config_file, self.chains,
                       publisher=self.publisher)
 
-    def run(self):
-        """Start the transfer chains."""
-        signal.signal(signal.SIGTERM, self.chains_stop)
-        signal.signal(signal.SIGHUP, self.signal_reload_cfg_file)
-        self.notifier.start()
-        self.running = True
-        while self.running:
-            time.sleep(1)
-            for chain_name in self.chains:
-                if not self.chains[chain_name].is_alive():
-                    self.chains[chain_name] = self.chains[chain_name].restart()
-                self.chains[chain_name].publisher.heartbeat(30)
+    def _run(self):
+        for chain_name in self.chains:
+            if not self.chains[chain_name].is_alive():
+                self.chains[chain_name] = self.chains[chain_name].restart()
+            self.chains[chain_name].publisher.heartbeat(30)
 
     def terminate(self):
         """Terminate client chains."""

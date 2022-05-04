@@ -26,6 +26,9 @@
 import logging
 import logging.handlers
 import os
+import signal
+import time
+from threading import Lock
 from abc import ABC, abstractmethod
 from contextlib import suppress
 
@@ -51,11 +54,14 @@ class MoveItBase(ABC):
         self.setup_logging()
         LOGGER.info("Starting up.")
         self.setup_watchers()
-        self.name = "move_it_base"
+        self.run_lock = Lock()
 
     def chains_stop(self, *args):
         """Stop all transfer chains."""
         del args
+        with suppress(RuntimeError):
+            self.run_lock.acquire(timeout=1)
+
         self.running = False
         try:
             self.notifier.stop()
@@ -104,6 +110,29 @@ class MoveItBase(ABC):
         LOGGER.addHandler(fh_)
         LOGGER = logging.getLogger(self.name)
         pyinotify.log.handlers = [fh_]
+
+    def run(self):
+        """Start the transfer chains."""
+        try:
+            signal.signal(signal.SIGTERM, self.chains_stop)
+            signal.signal(signal.SIGHUP, self.signal_reload_cfg_file)
+        except ValueError:
+            LOGGER.warning("Signals could not be set up.")
+        self.notifier.start()
+        self.running = True
+        while self.running:
+            time.sleep(1)
+            shutting_down = not self.run_lock.acquire(blocking=False)
+            if shutting_down:
+                break
+            try:
+                self._run()
+            finally:
+                self.run_lock.release()
+
+    @abstractmethod
+    def _run(self):
+        raise NotImplementedError
 
 
 def create_publisher(port, publisher_name):

@@ -24,8 +24,6 @@
 import argparse
 import os
 import logging
-import signal
-import time
 
 from urllib.parse import urlparse, urlunparse
 from threading import Lock, Timer
@@ -110,16 +108,6 @@ class MoveItMirror(AbstractMoveItServer):
         listeners = Listeners(attrs.pop("client_topic"), attrs.pop("providers"), **attrs)
 
         return listeners, noop
-
-    def run(self):
-        """Start the transfer chains."""
-        signal.signal(signal.SIGTERM, self.chains_stop)
-        signal.signal(signal.SIGHUP, self.signal_reload_cfg_file)
-        self.notifier.start()
-        self.running = True
-        while self.running:
-            time.sleep(1)
-            self.publisher.heartbeat(30)
 
 
 def noop(*args, **kwargs):

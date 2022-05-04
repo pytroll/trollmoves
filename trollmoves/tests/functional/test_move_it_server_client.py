@@ -66,7 +66,7 @@ def create_target_directory(tmp_path):
 
 
 @pytest.fixture
-def server(source_dir, tmp_path):
+def server(source_dir, tmp_path, reraise):
     """Create a move it server instance."""
     server_config = f"""
     [eumetcast-hrit-0deg]
@@ -84,7 +84,7 @@ def server(source_dir, tmp_path):
                                   str(server_config_filename)])
     server = MoveItServer(cmd_args)
     server.reload_cfg_file(cmd_args.config_file)
-    thread = Thread(target=server.run)
+    thread = Thread(target=reraise.wrap(server.run))
     thread.start()
     yield server
     server.chains_stop()
@@ -98,7 +98,7 @@ def start_move_it_server(server):
 
 
 @pytest.fixture
-def client(target_dir, tmp_path):
+def client(target_dir, tmp_path, reraise):
     """Create a move it client."""
     client_config = f"""
     [eumetcast_hrit_0deg_ftp]
@@ -114,7 +114,7 @@ def client(target_dir, tmp_path):
     cmd_args = parse_args_client(["-v", "-l", str(tmp_path / "move_it_client.log"), str(client_config_filename)])
     client = MoveItClient(cmd_args)
     client.reload_cfg_file(cmd_args.config_file)
-    thread = Thread(target=client.run)
+    thread = Thread(target=reraise.wrap(client.run))
     thread.start()
     yield client
     client.chains_stop()
@@ -151,7 +151,7 @@ def test_simple_publishing():
 
 
 @pytest.fixture
-def server_without_request_port(source_dir, tmp_path, free_port):
+def server_without_request_port(source_dir, tmp_path, free_port, reraise):
     """Create a move it server instance."""
     server_config = f"""
     [eumetcast-hrit-0deg]
@@ -167,7 +167,7 @@ def server_without_request_port(source_dir, tmp_path, free_port):
                                   str(server_config_filename)])
     server = MoveItServerWithoutRequester(cmd_args)
     server.reload_cfg_file(cmd_args.config_file)
-    thread = Thread(target=server.run)
+    thread = Thread(target=reraise.wrap(server.run))
     thread.start()
     yield server
     server.chains_stop()
@@ -215,7 +215,7 @@ def test_simple_publishing_with_untarring():
 
 
 @pytest.fixture
-def server_without_request_port_and_untarring(source_dir, tmp_path, free_port):
+def server_without_request_port_and_untarring(source_dir, tmp_path, free_port, reraise):
     """Create a move it server instance."""
     server_config = f"""
     [eumetcast-hrit-0deg]
@@ -232,7 +232,7 @@ def server_without_request_port_and_untarring(source_dir, tmp_path, free_port):
                                   str(server_config_filename)])
     server = MoveItServerWithoutRequester(cmd_args)
     server.reload_cfg_file(cmd_args.config_file)
-    thread = Thread(target=server.run)
+    thread = Thread(target=reraise.wrap(server.run))
     thread.start()
     yield server
     server.chains_stop()

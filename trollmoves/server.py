@@ -38,7 +38,6 @@ from threading import Lock, Thread
 from configparser import ConfigParser
 from queue import Empty, Queue
 from urllib.parse import urlparse
-import signal
 from contextlib import suppress
 
 import bz2
@@ -328,15 +327,12 @@ class MoveItServer(AbstractMoveItServer):
         super().__init__(cmd_args, publisher=publisher)
         self.request_manager = RequestManager
 
-    def run(self):
-        """Start the transfer chains."""
-        signal.signal(signal.SIGTERM, self.chains_stop)
-        signal.signal(signal.SIGHUP, self.signal_reload_cfg_file)
-        self.notifier.start()
-        self.running = True
-        while self.running:
-            time.sleep(1)
+    def _run(self):
+        try:
             self.publisher.heartbeat(30)
+        except ZMQError:
+            if self.running:
+                raise
 
     def reload_cfg_file(self, filename):
         """Reload configuration file."""
@@ -710,31 +706,6 @@ def _add_chain(chains, chain_name, chain_config, manager):
     current_chain.create_manager(manager)
     chains[chain_name] = current_chain
     return current_chain
-
-
-# def _create_manager(chains, chain_name, chain_config, manager):
-#     if manager is None:
-#         return True
-#     try:
-#         chains[chain_name]["request_manager"] = manager(int(chain_config["request_port"]), chain_config)
-#         LOGGER.debug("Created request manager on port %s", chain_config["request_port"])
-#     except (KeyError, NameError):
-#         LOGGER.exception('In reading config')
-#     except ConfigError as err:
-#         LOGGER.error('Invalid config parameters in %s: %s', chain_name, str(err))
-#         LOGGER.warning('Remove and skip %s', chain_name)
-#         return False
-#     chains[chain_name]["request_manager"].start()
-#     return True
-
-
-# def _create_notifier_and_get_function(notifier_builder, conf, use_watchdog, chain_config, publisher):
-#     if notifier_builder is None:
-#         notifier_builder = _get_notifier_builder(use_watchdog, chain_config)
-#     conf["notifier"], fun = notifier_builder(chain_config, publisher)
-#     conf["notifier"].start()
-#
-#     return fun
 
 
 def _get_notifier_builder(use_watchdog, val):
