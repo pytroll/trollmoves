@@ -2,7 +2,7 @@
 
 from pytest_bdd import scenario, given, when, then
 import pytest
-from trollmoves.server import MoveItServer, MoveItServerWithoutRequester
+from trollmoves.server import MoveItServer
 from trollmoves.server import parse_args as parse_args_server
 from trollmoves.client import MoveItClient
 from trollmoves.client import parse_args as parse_args_client
@@ -165,7 +165,7 @@ def server_without_request_port(source_dir, tmp_path, free_port, reraise):
         fp.write(server_config.encode())
     cmd_args = parse_args_server(["--port", str(free_port), "-v", "-l", str(tmp_path / "move_it_server.log"),
                                   str(server_config_filename)])
-    server = MoveItServerWithoutRequester(cmd_args)
+    server = MoveItServer(cmd_args)
     server.reload_cfg_file(cmd_args.config_file)
     thread = Thread(target=reraise.wrap(server.run))
     thread.start()
@@ -230,7 +230,7 @@ def server_without_request_port_and_untarring(source_dir, tmp_path, free_port, r
         fp.write(server_config.encode())
     cmd_args = parse_args_server(["--port", str(free_port), "-v", "-l", str(tmp_path / "move_it_server.log"),
                                   str(server_config_filename)])
-    server = MoveItServerWithoutRequester(cmd_args)
+    server = MoveItServer(cmd_args)
     server.reload_cfg_file(cmd_args.config_file)
     thread = Thread(target=reraise.wrap(server.run))
     thread.start()

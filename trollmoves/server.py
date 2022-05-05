@@ -346,16 +346,6 @@ class MoveItServer(AbstractMoveItServer):
         self.reload_cfg_file(self.cmd_args.config_file)
 
 
-class MoveItServerWithoutRequester(MoveItServer):
-    """Wrapper class for Trollmoves Server."""
-
-    def __init__(self, cmd_args):
-        """Initialize server."""
-        self.name = "move_it_server_no_request"
-        super().__init__(cmd_args)
-        self.request_manager = None
-
-
 class ConfigError(Exception):
     """Configuration error."""
 
@@ -665,10 +655,11 @@ class Chain:
         self.config = config.copy()
         self.request_manager = None
         self.notifier = None
+        self.needs_manager = "request_port" in self.config
 
     def create_manager(self, manager):
         """Create a request manager."""
-        if manager is None:
+        if manager is None or not self.needs_manager:
             return
         try:
             self.request_manager = manager(int(self.config["request_port"]), self.config)
