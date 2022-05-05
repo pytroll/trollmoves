@@ -147,7 +147,7 @@ except ImportError:
     print("\nNOTICE! Import of posttroll failed, "
           "messaging will not be used.\n")
 
-from trollmoves import MOVERS
+from trollmoves.movers import MOVERS
 
 
 LOGGER = logging.getLogger("move_it")
