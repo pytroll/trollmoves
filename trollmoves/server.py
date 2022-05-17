@@ -647,7 +647,7 @@ def _chains_are_identical(chains, new_chains, chain_name):
 
 
 class Chain:
-    """A chain."""
+    """A chain for managing new incoming files."""
 
     def __init__(self, name, config):
         """Set up the chain."""
