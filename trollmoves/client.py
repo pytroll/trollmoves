@@ -101,15 +101,22 @@ def _set_config_defaults(conf):
     conf.setdefault("req_timeout", DEFAULT_REQ_TIMEOUT)
     conf.setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
     conf.setdefault("nameservers", None)
+    conf.setdefault("create_target_directory", True)
+
+
+FALSY = ["", "False", "false", "0", "off"]
+TRUTHY = ["True", "true", "on", "1"]
 
 
 def _parse_boolean_config_items(conf):
-    if conf["delete"] in ["", "False", "false", "0", "off"]:
+    if conf["delete"] in FALSY:
         conf["delete"] = False
-    if conf["delete"] in ["True", "true", "on", "1"]:
+    if conf["delete"] in TRUTHY:
         conf["delete"] = True
-    if conf["heartbeat"] in ["", "False", "false", "0", "off"]:
+    if conf["heartbeat"] in FALSY:
         conf["heartbeat"] = False
+    if conf["create_target_directory"] in FALSY:
+        conf["create_target_directory"] = False
 
 
 def _check_provider_config(conf, section):
@@ -414,8 +421,10 @@ def create_push_req_message(msg, destination, login):
     return req, fake_req
 
 
-def create_local_dir(destination, local_root, mode=0o777):
+def create_local_dir(destination, local_root, mode=0o777, create_target_directory=True):
     """Create the local directory if it doesn't exist and return that path."""
+    if not create_target_directory:
+        return None
     duri = urlparse(destination)
     local_dir = os.path.join(*([local_root] + duri.path.split(os.path.sep)))
 
@@ -615,7 +624,8 @@ def _request_files(huid, destination, login, publisher, **kwargs):
 
         req, fake_req = create_push_req_message(msg, _destination, login)
         LOGGER.info("Requesting: %s", str(fake_req))
-        local_dir = create_local_dir(_destination, kwargs.get('ftp_root', '/'))
+        local_dir = create_local_dir(_destination, kwargs.get('ftp_root', '/'),
+                                     create_target_directory=kwargs.get('create_target_directory', True))
 
         publisher.send(str(fake_req))
 
