@@ -489,7 +489,7 @@ def make_uris(msg, destination, login=None):
 
 
 def replace_mda(msg, kwargs):
-    """Replace messate metadata with items in kwargs dict."""
+    """Replace message metadata with items in kwargs dict."""
     for key in msg.data:
         if key in kwargs:
             try:
