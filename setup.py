@@ -52,4 +52,6 @@ setup(name="trollmoves",
                         'trollsift', 'netifaces',
                         'pyzmq', 'inotify',
                         'scp', 'paramiko', 'pyyaml', 'watchdog'],
+      tests_require=["pytest", "pytest-reraise", "pytest-bdd"],
+      extras_require={"remote_fs": ["pytroll-collectors"]},
       )
