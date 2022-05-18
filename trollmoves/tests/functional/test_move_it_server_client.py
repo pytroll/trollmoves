@@ -207,6 +207,7 @@ def check_message_for_filesystem_info(subscriber, tmp_path, source_dir, moved_fi
     assert msg.data["uri"] == expected_uri
     assert msg.data["sensor"] == "seviri"
     assert msg.data["variant"] == "0DEG"
+    assert "nominal_time" in msg.data
 
 
 @scenario('move_it_server_client.feature', 'Simple file publishing with untarring')

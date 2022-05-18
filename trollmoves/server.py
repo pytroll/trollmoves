@@ -742,7 +742,7 @@ def process_notify(orig_pathname, publisher, pattern, attrs):
     if "request_port" in attrs:
         msg = create_message_with_request_info(pathname, orig_pathname, attrs)
     else:
-        msg = create_message_with_remote_fs_info(pathname, attrs)
+        msg = create_message_with_remote_fs_info(pathname, orig_pathname, attrs)
     publisher.send(str(msg))
     LOGGER.debug("Message sent: %s", str(msg))
 
@@ -756,11 +756,12 @@ def create_message_with_request_info(pathname, orig_pathname, attrs):
     return msg
 
 
-def create_message_with_remote_fs_info(pathname, attrs):
+def create_message_with_remote_fs_info(pathname, orig_pathname, attrs):
     """Create a message containing remote filesystem info."""
     from pytroll_collectors.fsspec_to_message import extract_local_files_to_message_for_remote_use
     msg = extract_local_files_to_message_for_remote_use(pathname, attrs['topic'], attrs.get("unpack"))
     info = _collect_attribute_info(attrs)
+    info.update(parse(attrs["origin"], orig_pathname))
     msg.data.update(info)
     return msg
 
