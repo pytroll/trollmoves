@@ -66,13 +66,13 @@ def create_target_directory(tmp_path):
 
 
 @pytest.fixture
-def server(source_dir, tmp_path, reraise):
+def server(source_dir, tmp_path, free_port, reraise):
     """Create a move it server instance."""
     server_config = f"""
     [eumetcast-hrit-0deg]
     origin = {str(source_dir)}/H-000-{{nominal_time:%Y%m%d%H%M}}-__
     request_port = 9094
-    publisher_port = 9010
+    publisher_port = {free_port}
     info = sensor=seviri;variant=0DEG
     topic = /1b/hrit-segment/0deg
     delete = False
@@ -80,7 +80,7 @@ def server(source_dir, tmp_path, reraise):
     server_config_filename = tmp_path / "server_config.cfg"
     with open(server_config_filename, "wb") as fp:
         fp.write(server_config.encode())
-    cmd_args = parse_args_server(["--port", "9010", "-v", "-l", str(tmp_path / "move_it_server.log"),
+    cmd_args = parse_args_server(["--port", str(free_port), "-v", "-l", str(tmp_path / "move_it_server.log"),
                                   str(server_config_filename)])
     server = MoveItServer(cmd_args)
     server.reload_cfg_file(cmd_args.config_file)
@@ -98,11 +98,11 @@ def start_move_it_server(server):
 
 
 @pytest.fixture
-def client(target_dir, tmp_path, reraise):
+def client(target_dir, tmp_path, free_port, reraise):
     """Create a move it client."""
     client_config = f"""
     [eumetcast_hrit_0deg_ftp]
-    providers = localhost:9010
+    providers = localhost:{str(free_port)}
     destination = file://{str(target_dir)}
     topic = /1b/hrit-segment/0deg
     publish_port = 0
