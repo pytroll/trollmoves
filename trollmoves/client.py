@@ -421,10 +421,8 @@ def create_push_req_message(msg, destination, login):
     return req, fake_req
 
 
-def create_local_dir(destination, local_root, mode=0o777, create_target_directory=True):
+def create_local_dir(destination, local_root, mode=0o777):
     """Create the local directory if it doesn't exist and return that path."""
-    if not create_target_directory:
-        return None
     duri = urlparse(destination)
     local_dir = os.path.join(*([local_root] + duri.path.split(os.path.sep)))
 
@@ -624,8 +622,10 @@ def _request_files(huid, destination, login, publisher, **kwargs):
 
         req, fake_req = create_push_req_message(msg, _destination, login)
         LOGGER.info("Requesting: %s", str(fake_req))
-        local_dir = create_local_dir(_destination, kwargs.get('ftp_root', '/'),
-                                     create_target_directory=kwargs.get('create_target_directory', True))
+        if kwargs.get('create_target_directory', True):
+            local_dir = create_local_dir(_destination, kwargs.get('ftp_root', '/'))
+        else:
+            local_dir = None
 
         publisher.send(str(fake_req))
 
