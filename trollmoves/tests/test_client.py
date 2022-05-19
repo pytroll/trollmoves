@@ -899,6 +899,24 @@ def test_request_push_duplicate_call(send_ack, send_request, clean_ongoing_trans
     assert len(file_cache) == 1
 
 
+@patch('os.makedirs')
+@patch('trollmoves.client.send_request')
+def test_request_push_disable_directory_creation(send_request, os_makedirs):
+    """Test trollmoves.client.request_push() with target directory creation disabled."""
+    from trollmoves.client import request_push
+
+    send_request.return_value = [MSG_FILE2, 'localhost']
+    publisher = MagicMock()
+    kwargs = {'transfer_req_timeout': 1.0, 'req_timeout': 1.0, 'create_target_directory': False}
+
+    not_local_path = 'scp://host:/path/not/existing/on/this/server'
+    request_push(MSG_FILE2, not_local_path, 'login', publisher=publisher,
+                 **kwargs)
+    os_makedirs.assert_not_called()
+    dest = send_request.mock_calls[0].args[1].data["destination"]
+    assert "scp://login@host/path/not/existing/on/this/server" == dest
+
+
 def test_read_config(client_config_1_item):
     """Test config handling."""
     from trollmoves.client import read_config
@@ -914,7 +932,8 @@ def test_read_config(client_config_1_item):
     section_keys = conf[section_name].keys()
     for key in ["delete", "working_directory", "compression",
                 "heartbeat", "req_timeout", "transfer_req_timeout",
-                "nameservers", "providers", "topic", "publish_port", ]:
+                "nameservers", "providers", "topic", "publish_port",
+                "create_target_directory"]:
         assert key in section_keys
     assert isinstance(conf[section_name]["providers"], list)
 

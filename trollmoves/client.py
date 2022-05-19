@@ -101,15 +101,22 @@ def _set_config_defaults(conf):
     conf.setdefault("req_timeout", DEFAULT_REQ_TIMEOUT)
     conf.setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
     conf.setdefault("nameservers", None)
+    conf.setdefault("create_target_directory", True)
+
+
+FALSY = ["", "False", "false", "0", "off"]
+TRUTHY = ["True", "true", "on", "1"]
 
 
 def _parse_boolean_config_items(conf):
-    if conf["delete"] in ["", "False", "false", "0", "off"]:
+    if conf["delete"] in FALSY:
         conf["delete"] = False
-    if conf["delete"] in ["True", "true", "on", "1"]:
+    if conf["delete"] in TRUTHY:
         conf["delete"] = True
-    if conf["heartbeat"] in ["", "False", "false", "0", "off"]:
+    if conf["heartbeat"] in FALSY:
         conf["heartbeat"] = False
+    if conf["create_target_directory"] in FALSY:
+        conf["create_target_directory"] = False
 
 
 def _check_provider_config(conf, section):
@@ -617,7 +624,10 @@ def _request_files(huid, destination, login, publisher, **kwargs):
 
         req, fake_req = create_push_req_message(msg, _destination, login)
         LOGGER.info("Requesting: %s", str(fake_req))
-        local_dir = create_local_dir(_destination, kwargs.get('ftp_root', '/'))
+        if kwargs.get('create_target_directory', True):
+            local_dir = create_local_dir(_destination, kwargs.get('ftp_root', '/'))
+        else:
+            local_dir = None
 
         publisher.send(str(fake_req))
 
