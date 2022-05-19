@@ -424,6 +424,8 @@ def create_push_req_message(msg, destination, login):
 def create_local_dir(destination, local_root, mode=0o777):
     """Create the local directory if it doesn't exist and return that path."""
     duri = urlparse(destination)
+    if duri.scheme in ('s3'):
+        return None
     local_dir = os.path.join(*([local_root] + duri.path.split(os.path.sep)))
 
     if not os.path.exists(local_dir):
@@ -477,7 +479,7 @@ def make_uris(msg, destination, login=None):
     duri = urlparse(destination)
     scheme = duri.scheme or 'ssh'
     dest_hostname = duri.hostname or socket.gethostname()
-    if socket.gethostbyname(dest_hostname) in get_local_ips():
+    if scheme not in ('s3') and socket.gethostbyname(dest_hostname) in get_local_ips():
         scheme_, host_ = "ssh", dest_hostname  # local file
     else:
         scheme_, host_ = scheme, dest_hostname  # remote file
@@ -635,7 +637,6 @@ def _request_files(huid, destination, login, publisher, **kwargs):
             LOGGER.debug("Server done sending file")
             add_to_file_cache(msg)
             _send_ack_message(msg, publisher)
-
             try:
                 lmsg = unpack_and_create_local_message(response, local_dir, **kwargs)
                 lmsg = _update_local_message(lmsg, _destination, login, response, **kwargs)

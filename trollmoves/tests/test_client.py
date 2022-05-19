@@ -1450,3 +1450,57 @@ def test_replace_mda_for_mirror():
     kwargs = {'uri': '/another/path/{filename}.txt'}
     res = replace_mda(MSG_MIRROR, kwargs)
     assert res.data['uri'] == kwargs['uri']
+
+
+def test_create_local_dir():
+    """Test creation of local directory."""
+    from tempfile import mkdtemp
+    import shutil
+    from trollmoves.client import create_local_dir
+
+    destination = "ftp://server.foo/public_path/subdir/"
+    local_root = mkdtemp()
+    try:
+        res = create_local_dir(destination, local_root)
+        assert os.path.exists(res)
+    finally:
+        shutil.rmtree(local_root)
+
+
+def test_create_local_dir_s3():
+    """Test that nothing is done when destination is a S3 bucket."""
+    from trollmoves.client import create_local_dir
+
+    destination = "s3://data-bucket/public_path/subdir/"
+    res = create_local_dir(destination, "/foo/bar")
+    assert res is None
+
+
+def test_make_uris_local_destination():
+    """Test that the published messages are formulated correctly for local destinations."""
+    from trollmoves.client import make_uris
+
+    destination = "file://localhost/directory"
+    expected_uri = os.path.join(destination, "file1.png").replace("file://", "ssh://")
+    msg = make_uris(MSG_FILE, destination)
+    assert msg.data['uri'] == expected_uri
+
+
+def test_make_uris_remote_destination():
+    """Test that the published messages are formulated correctly for remote destinations."""
+    from trollmoves.client import make_uris
+
+    destination = "ftp://google.com/directory"
+    expected_uri = os.path.join(destination, "file1.png")
+    msg = make_uris(MSG_FILE, destination)
+    assert msg.data['uri'] == expected_uri
+
+
+def test_make_uris_s3_destination():
+    """Test that the published messages are formulated correctly for S3 destinations."""
+    from trollmoves.client import make_uris
+
+    destination = "s3://data-bucket/directory"
+    expected_uri = destination + "/" + "file1.png"
+    msg = make_uris(MSG_FILE, destination)
+    assert msg.data['uri'] == expected_uri

@@ -24,6 +24,18 @@
 from setuptools import setup
 import versioneer
 
+
+extras_require = {
+    's3': [
+        's3fs',
+    ]
+}
+
+all_extras = []
+for extra_deps in extras_require.values():
+    all_extras.extend(extra_deps)
+extras_require['all'] = list(set(all_extras))
+
 setup(name="trollmoves",
       version=versioneer.get_version(),
       description='Pytroll file utilities',
@@ -52,4 +64,5 @@ setup(name="trollmoves",
                         'trollsift', 'netifaces',
                         'pyzmq', 'inotify',
                         'scp', 'paramiko', 'pyyaml', 'watchdog'],
+      extras_require=extras_require,
       )
