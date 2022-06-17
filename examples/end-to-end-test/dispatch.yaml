@@ -1,0 +1,10 @@
+dispatch_test:
+  host: file://localhost
+  connection_parameters:
+    connection_uptime: 60
+  filepattern: "{filename}.txt"
+  directory: "/tmp/dispatcher_target_directory/"
+  nameserver: localhost
+  dispatch_configs:
+    - topics:
+        - /foo

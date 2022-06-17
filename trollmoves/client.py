@@ -101,15 +101,22 @@ def _set_config_defaults(conf):
     conf.setdefault("req_timeout", DEFAULT_REQ_TIMEOUT)
     conf.setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
     conf.setdefault("nameservers", None)
+    conf.setdefault("create_target_directory", True)
+
+
+FALSY = ["", "False", "false", "0", "off"]
+TRUTHY = ["True", "true", "on", "1"]
 
 
 def _parse_boolean_config_items(conf):
-    if conf["delete"] in ["", "False", "false", "0", "off"]:
+    if conf["delete"] in FALSY:
         conf["delete"] = False
-    if conf["delete"] in ["True", "true", "on", "1"]:
+    if conf["delete"] in TRUTHY:
         conf["delete"] = True
-    if conf["heartbeat"] in ["", "False", "false", "0", "off"]:
+    if conf["heartbeat"] in FALSY:
         conf["heartbeat"] = False
+    if conf["create_target_directory"] in FALSY:
+        conf["create_target_directory"] = False
 
 
 def _check_provider_config(conf, section):
@@ -417,6 +424,8 @@ def create_push_req_message(msg, destination, login):
 def create_local_dir(destination, local_root, mode=0o777):
     """Create the local directory if it doesn't exist and return that path."""
     duri = urlparse(destination)
+    if duri.scheme in ('s3'):
+        return None
     local_dir = os.path.join(*([local_root] + duri.path.split(os.path.sep)))
 
     if not os.path.exists(local_dir):
@@ -470,7 +479,7 @@ def make_uris(msg, destination, login=None):
     duri = urlparse(destination)
     scheme = duri.scheme or 'ssh'
     dest_hostname = duri.hostname or socket.gethostname()
-    if socket.gethostbyname(dest_hostname) in get_local_ips():
+    if scheme not in ('s3') and socket.gethostbyname(dest_hostname) in get_local_ips():
         scheme_, host_ = "ssh", dest_hostname  # local file
     else:
         scheme_, host_ = scheme, dest_hostname  # remote file
@@ -488,12 +497,15 @@ def make_uris(msg, destination, login=None):
 
 
 def replace_mda(msg, kwargs):
-    """Replace messate metadata with itmes in kwargs dict."""
+    """Replace messate metadata with items in kwargs dict."""
     for key in msg.data:
         if key in kwargs:
-            replacement = dict(item.split(':')
-                               for item in kwargs[key].split('|'))
-            msg.data[key] = replacement[msg.data[key]]
+            try:
+                replacement = dict(item.split(':') for item in kwargs[key].split('|'))
+                replacement = replacement[msg.data[key]]
+            except ValueError:
+                replacement = kwargs[key]
+            msg.data[key] = replacement
     return msg
 
 
@@ -612,7 +624,10 @@ def _request_files(huid, destination, login, publisher, **kwargs):
 
         req, fake_req = create_push_req_message(msg, _destination, login)
         LOGGER.info("Requesting: %s", str(fake_req))
-        local_dir = create_local_dir(_destination, kwargs.get('ftp_root', '/'))
+        if kwargs.get('create_target_directory', True):
+            local_dir = create_local_dir(_destination, kwargs.get('ftp_root', '/'))
+        else:
+            local_dir = None
 
         publisher.send(str(fake_req))
 
@@ -622,7 +637,6 @@ def _request_files(huid, destination, login, publisher, **kwargs):
             LOGGER.debug("Server done sending file")
             add_to_file_cache(msg)
             _send_ack_message(msg, publisher)
-
             try:
                 lmsg = unpack_and_create_local_message(response, local_dir, **kwargs)
                 lmsg = _update_local_message(lmsg, _destination, login, response, **kwargs)
@@ -674,6 +688,8 @@ def _update_local_message(lmsg, _destination, login, response, **kwargs):
     lmsg.data.pop('request_address', None)
     lmsg = replace_mda(lmsg, kwargs)
     lmsg.data.pop('destination', None)
+
+    return lmsg
 
 
 class Chain(Thread):

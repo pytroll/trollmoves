@@ -72,8 +72,8 @@ def setup_logging(cmd_args):
     root.addHandler(fh_)
 
 
-def main():
-    """Start and run the dispatcher."""
+def parse_args():
+    """Parse commandline arguments."""
     parser = argparse.ArgumentParser()
     parser.add_argument("config_file",
                         help="The configuration file to run on.")
@@ -93,7 +93,12 @@ def main():
     parser.add_argument("-n", "--publish-nameserver", nargs='*',
                         dest="pub_nameservers",
                         help="Nameserver for publisher to connect to")
-    cmd_args = parser.parse_args()
+    return parser.parse_args()
+
+
+def main():
+    """Start and run the dispatcher."""
+    cmd_args = parse_args()
     setup_logging(cmd_args)
     logger.info("Starting up.")
 

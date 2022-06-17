@@ -95,31 +95,10 @@ ith the -l or --log option::
 import logging
 import logging.handlers
 import argparse
-import signal
-import time
-from trollmoves.move_it_base import MoveItBase, create_publisher
+from trollmoves.server import MoveItServer
 
 LOGGER = logging.getLogger("move_it_server")
 LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
-
-
-class MoveItServer(MoveItBase):
-    """Wrapper class for Trollmoves Server."""
-
-    def __init__(self, cmd_args):
-        """Initialize server."""
-        publisher = create_publisher(cmd_args.port, "move_it_server")
-        super(MoveItServer, self).__init__(cmd_args, "server", publisher=publisher)
-
-    def run(self):
-        """Start the transfer chains."""
-        signal.signal(signal.SIGTERM, self.chains_stop)
-        signal.signal(signal.SIGHUP, self.signal_reload_cfg_file)
-        self.notifier.start()
-        self.running = True
-        while self.running:
-            time.sleep(1)
-            self.publisher.heartbeat(30)
 
 
 def parse_args():
