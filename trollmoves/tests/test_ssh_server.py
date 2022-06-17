@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2019
+# Copyright (c) 2019, 2022
 #
 # Author(s):
 #
@@ -54,6 +54,7 @@ class TestSSHMovers(unittest.TestCase):
 
         self._attrs_empty = {}
         self._attrs_connection_uptime = {'connection_uptime': 0}
+        self._attrs_timeout = {'scpclient_timeout_seconds': 1}
 
     def tearDown(self):
         try:
@@ -180,6 +181,18 @@ class TestSSHMovers(unittest.TestCase):
 
     @patch('trollmoves.movers.SSHClient', autospec=True)
     @patch('trollmoves.movers.SCPClient', autospec=True)
+    def test_scp_copy_custom_timeout(self, mock_scp_client, mock_sshclient):
+        """Check scp copy."""
+        mocked_scp_client = MagicMock()
+        mock_scp_client.return_value = mocked_scp_client
+
+        scp_mover = trollmoves.movers.ScpMover(self.origin, self.destination_no_port, attrs=self._attrs_timeout)
+        scp_mover.copy()
+
+        mocked_scp_client.put.assert_called_once_with(self.origin, urlparse(self.destination_no_port).path)
+
+    @patch('trollmoves.movers.SSHClient', autospec=True)
+    @patch('trollmoves.movers.SCPClient', autospec=True)
     def test_scp_copy_generic_exception(self, mock_scp_client, mock_sshclient):
         """Check scp copy for generic exception."""
         scp_mover = trollmoves.movers.ScpMover(self.origin, self.destination_no_port, attrs=self._attrs_empty)
@@ -214,6 +227,26 @@ class TestSSHMovers(unittest.TestCase):
         mock_scp_client.return_value.put.side_effect = Exception('Test message')
 
         with pytest.raises(Exception):
+            scp_mover.copy()
+
+    @patch('trollmoves.movers.SCPClient', autospec=True)
+    def test_scp_copy_put_SCPException(self, mock_scp_client):
+        """Check scp client.put() raising SCPException."""
+        from scp import SCPException
+        scp_mover = trollmoves.movers.ScpMover(self.origin, self.destination_no_port, attrs=self._attrs_empty)
+        mock_scp_client.return_value.put.side_effect = SCPException('Timeout waiting for scp response')
+
+        with pytest.raises(SCPException, match='Timeout waiting for scp response'):
+            scp_mover.copy()
+
+    @patch('trollmoves.movers.SCPClient', autospec=True)
+    def test_scp_copy_put_SCPException2(self, mock_scp_client):
+        """Check scp client.put() raising SCPException."""
+        from scp import SCPException
+        scp_mover = trollmoves.movers.ScpMover(self.origin, self.destination_no_port, attrs=self._attrs_empty)
+        mock_scp_client.return_value.put.side_effect = SCPException('Other exception')
+
+        with pytest.raises(SCPException, match='Other exception'):
             scp_mover.copy()
 
     @patch('trollmoves.movers.SSHClient', autospec=True)
