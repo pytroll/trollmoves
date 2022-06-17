@@ -376,11 +376,11 @@ class ScpMover(Mover):
                 LOGGER.error("OSError in scp.put: %s", str(osex))
                 raise
         except SCPException as scpe:
-            if str(err) in "Timeout waiting for scp response":
-                LOGGER.error("SCPClient put got a socket timeout. You could add scpclient_timeout_seconds to your config "
-                             "to increase the timeout interval. Default timeout is 10 seconds.")
+            if str(scpe) in "Timeout waiting for scp response":
+                LOGGER.error("SCPClient put got a socket timeout. You could add scpclient_timeout_seconds "
+                             "to your config to increase the timeout interval. Default timeout is 10 seconds.")
             else:
-                LOGGER.error("SCPException: %s", str(err))
+                LOGGER.error("SCPException: %s", str(scpe))
             raise
         except Exception as err:
             LOGGER.error("Something went wrong with scp: %s", str(err))
