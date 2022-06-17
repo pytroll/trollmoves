@@ -22,8 +22,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 """
-Moving and unpacking files
-==========================
+Script for moving and unpacking files.
 
 This program is comprised of two parts: this script and the configuration file.
 
@@ -129,7 +128,6 @@ import glob
 import logging
 import logging.handlers
 import os
-import shutil
 import subprocess
 import sys
 import time
@@ -139,7 +137,6 @@ import argparse
 import signal
 
 import bz2
-from ftplib import FTP, all_errors
 import pyinotify
 from trollsift import globify, parse
 # messaging is optional
@@ -149,6 +146,9 @@ try:
 except ImportError:
     print("\nNOTICE! Import of posttroll failed, "
           "messaging will not be used.\n")
+
+from trollmoves.movers import MOVERS
+
 
 LOGGER = logging.getLogger("move_it")
 LOG_FORMAT = "[%(asctime)s %(levelname)-8s] %(message)s"
@@ -160,8 +160,7 @@ chains = {}
 
 
 def read_config(filename):
-    """Read the config file called *filename*.
-    """
+    """Read the config file called *filename*."""
     cp_ = RawConfigParser()
     cp_.read(filename)
 
@@ -200,8 +199,7 @@ def read_config(filename):
 
 
 def reload_config(filename, disable_backlog=False):
-    """Rebuild chains if needed (if the configuration changed) from *filename*.
-    """
+    """Rebuild chains if needed (if the configuration changed) from *filename*."""
     LOGGER.debug("New config file detected! %s", filename)
 
     new_chains = read_config(filename)
@@ -322,8 +320,7 @@ def reload_config(filename, disable_backlog=False):
 
 
 def check_output(*popenargs, **kwargs):
-    """Copy from python 2.7, `subprocess.check_output`.
-    """
+    """Copy from python 2.7, `subprocess.check_output`."""
     if 'stdout' in kwargs:
         raise ValueError('stdout argument not allowed, it will be overridden.')
     LOGGER.debug("Calling %s", str(popenargs))
@@ -340,8 +337,7 @@ def check_output(*popenargs, **kwargs):
 
 
 def xrit(pathname, destination=None, cmd="./xRITDecompress"):
-    """Unpacks xrit data.
-    """
+    """Unpack xrit data."""
     opath, ofile = os.path.split(pathname)
     destination = destination or "/tmp/"
     dest_url = urlparse(destination)
@@ -361,8 +357,7 @@ BLOCK_SIZE = 1024
 
 
 def bzip(origin, destination=None):
-    """Unzip files.
-    """
+    """Unzip files."""
     ofile = os.path.split(origin)[1]
     destfile = os.path.join(destination or "/tmp/", ofile[:-4])
     with open(destfile, "wb") as dest:
@@ -383,9 +378,7 @@ def bzip(origin, destination=None):
 
 
 def move_it(pathname, destinations, hook=None):
-    """Check if the file pointed by *filename* is in the filelist, and move it
-    if it is.
-    """
+    """Check if the file pointed by *filename* is in the filelist, and move it if it is."""
     err = None
     for dest in destinations:
         LOGGER.debug("Copying to: %s", dest)
@@ -412,112 +405,22 @@ def move_it(pathname, destinations, hook=None):
         raise err
 
 
-class Mover(object):
-
-    """Base mover object. Doesn't do anything as it has to be subclassed.
-    """
-
-    def __init__(self, origin, destination):
-        if isinstance(destination, str):
-            self.destination = urlparse(destination)
-        else:
-            self.destination = destination
-
-        self.origin = origin
-
-    def copy(self):
-        """Copy it !
-        """
-
-        raise NotImplementedError("Copy for scheme " + self.destination.scheme +
-                                  " not implemented (yet).")
-
-    def move(self):
-        """Move it !
-        """
-
-        raise NotImplementedError("Move for scheme " + self.destination.scheme +
-                                  " not implemented (yet).")
-
-
-class FileMover(Mover):
-
-    """Move files in the filesystem.
-    """
-
-    def copy(self):
-        """Copy
-        """
-        try:
-            os.link(self.origin, self.destination.path)
-        except OSError:
-            shutil.copy(self.origin, self.destination.path)
-
-    def move(self):
-        """Move it !
-        """
-        shutil.move(self.origin, self.destination.path)
-
-
-class FtpMover(Mover):
-
-    """Move files over ftp.
-    """
-
-    def move(self):
-        """Push it !
-        """
-        self.copy()
-        os.remove(self.origin)
-
-    def copy(self):
-        """Push it !
-        """
-        connection = FTP()
-        connection.connect(self.destination.hostname,
-                           self.destination.port or 21)
-        if self.destination.username and self.destination.password:
-            connection.login(self.destination.username,
-                             self.destination.password)
-        else:
-            connection.login()
-
-        file_obj = open(self.origin, 'rb')
-        connection.cwd(self.destination.path)
-        connection.storbinary('STOR ' + os.path.basename(self.origin),
-                              file_obj)
-        file_obj.close()
-
-        try:
-            connection.quit()
-        except all_errors:
-            connection.close()
-
-
-MOVERS = {'ftp': FtpMover,
-          'file': FileMover,
-          '': FileMover}
-
-
 # Generic event handler
 
 class EventHandler(pyinotify.ProcessEvent):
-
-    """Handle events with a generic *fun* function.
-    """
+    """Handle events with a generic *fun* function."""
 
     def __init__(self, fun, *args, **kwargs):
+        """Initialize event handler."""
         pyinotify.ProcessEvent.__init__(self, *args, **kwargs)
         self._fun = fun
 
     def process_IN_CLOSE_WRITE(self, event):
-        """On closing a writable file.
-        """
+        """Process on closing a writable file."""
         self._fun(event.pathname)
 
     def process_IN_CREATE(self, event):
-        """On closing after linking.
-        """
+        """Process on closing after linking."""
         try:
             if os.stat(event.pathname).st_nlink > 1:
                 self._fun(event.pathname)
@@ -525,15 +428,12 @@ class EventHandler(pyinotify.ProcessEvent):
             return
 
     def process_IN_MOVED_TO(self, event):
-        """On closing after moving.
-        """
+        """Process on closing after moving."""
         self._fun(event.pathname)
 
 
 def create_notifier(attrs):
-    """Create a notifier from the specified configuration attributes *attrs*.
-    """
-
+    """Create a notifier from the specified configuration attributes *attrs*."""
     tmask = (pyinotify.IN_CLOSE_WRITE |
              pyinotify.IN_MOVED_TO |
              pyinotify.IN_CREATE)
@@ -543,8 +443,7 @@ def create_notifier(attrs):
     opath, ofile = os.path.split(globify(attrs["origin"]))
 
     def fun(pathname):
-        """Execute unpacking and copying/moving of *pathname*
-        """
+        """Execute unpacking and copying/moving of *pathname*."""
         efile = os.path.basename(pathname)
         if fnmatch.fnmatch(efile, ofile):
             LOGGER.info("We have a match: %s", str(pathname))
@@ -601,6 +500,7 @@ def create_notifier(attrs):
 
 
 def terminate(chainss):
+    """Terminate transfer chains."""
     for chain in chainss.itervalues():
         chain["notifier"].stop()
         if "publisher" in chain:
@@ -613,6 +513,7 @@ def terminate(chainss):
 
 
 def parse_args():
+    """Parse commandline arguments."""
     parser = argparse.ArgumentParser()
     parser.add_argument("config_file",
                         help="The configuration file to run on.")
@@ -625,6 +526,7 @@ def parse_args():
 
 
 def setup_logging(cmd_args):
+    """Set up logging."""
     global LOGGER
     LOGGER = logging.getLogger('move_it')
     LOGGER.setLevel(logging.DEBUG)
@@ -646,7 +548,7 @@ def setup_logging(cmd_args):
 
 
 def main():
-
+    """Run move_it."""
     cmd_args = parse_args()
     setup_logging(cmd_args)
 

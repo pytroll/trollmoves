@@ -51,6 +51,10 @@ MSG_COLLECTION_TAR = Message('/topic', 'collection',
                              {'collection':
                               [{'dataset': [{'uid': 'file1.tar.bz2',
                                              'uri': '/tmp/file1.tar.bz2'}]}]})
+MSG_MIRROR = Message('/topic', 'file', {'fname': 'file1', 'uri':
+                                        'scp://user@host/tmp/bar/file1.txt', 'uid':
+                                        'file1.txt', 'destination': 'scp://targethost.domain/tmp/bar/',
+                                        'origin': 'sourcehost.domain:9201'})
 COMPRESSION_CONFIG = """
 [DEFAULT]
 providers = 127.0.0.1:40000
@@ -895,6 +899,24 @@ def test_request_push_duplicate_call(send_ack, send_request, clean_ongoing_trans
     assert len(file_cache) == 1
 
 
+@patch('os.makedirs')
+@patch('trollmoves.client.send_request')
+def test_request_push_disable_directory_creation(send_request, os_makedirs):
+    """Test trollmoves.client.request_push() with target directory creation disabled."""
+    from trollmoves.client import request_push
+
+    send_request.return_value = [MSG_FILE2, 'localhost']
+    publisher = MagicMock()
+    kwargs = {'transfer_req_timeout': 1.0, 'req_timeout': 1.0, 'create_target_directory': False}
+
+    not_local_path = 'scp://host:/path/not/existing/on/this/server'
+    request_push(MSG_FILE2, not_local_path, 'login', publisher=publisher,
+                 **kwargs)
+    os_makedirs.assert_not_called()
+    dest = send_request.mock_calls[0].args[1].data["destination"]
+    assert "scp://login@host/path/not/existing/on/this/server" == dest
+
+
 def test_read_config(client_config_1_item):
     """Test config handling."""
     from trollmoves.client import read_config
@@ -910,7 +932,8 @@ def test_read_config(client_config_1_item):
     section_keys = conf[section_name].keys()
     for key in ["delete", "working_directory", "compression",
                 "heartbeat", "req_timeout", "transfer_req_timeout",
-                "nameservers", "providers", "topic", "publish_port", ]:
+                "nameservers", "providers", "topic", "publish_port",
+                "create_target_directory"]:
         assert key in section_keys
     assert isinstance(conf[section_name]["providers"], list)
 
@@ -1418,3 +1441,66 @@ def test_chain_publisher_needs_restarting_port_modified(Listener, NoisyPublisher
     chain = Chain("foo", config.copy())
     config["publish_port"] = 12346
     assert chain.publisher_needs_restarting(config.copy()) is True
+
+
+def test_replace_mda_for_mirror():
+    """Test that replacing metadata items works properly for Trollmoves Mirror."""
+    from trollmoves.client import replace_mda
+
+    kwargs = {'uri': '/another/path/{filename}.txt'}
+    res = replace_mda(MSG_MIRROR, kwargs)
+    assert res.data['uri'] == kwargs['uri']
+
+
+def test_create_local_dir():
+    """Test creation of local directory."""
+    from tempfile import mkdtemp
+    import shutil
+    from trollmoves.client import create_local_dir
+
+    destination = "ftp://server.foo/public_path/subdir/"
+    local_root = mkdtemp()
+    try:
+        res = create_local_dir(destination, local_root)
+        assert os.path.exists(res)
+    finally:
+        shutil.rmtree(local_root)
+
+
+def test_create_local_dir_s3():
+    """Test that nothing is done when destination is a S3 bucket."""
+    from trollmoves.client import create_local_dir
+
+    destination = "s3://data-bucket/public_path/subdir/"
+    res = create_local_dir(destination, "/foo/bar")
+    assert res is None
+
+
+def test_make_uris_local_destination():
+    """Test that the published messages are formulated correctly for local destinations."""
+    from trollmoves.client import make_uris
+
+    destination = "file://localhost/directory"
+    expected_uri = os.path.join(destination, "file1.png").replace("file://", "ssh://")
+    msg = make_uris(MSG_FILE, destination)
+    assert msg.data['uri'] == expected_uri
+
+
+def test_make_uris_remote_destination():
+    """Test that the published messages are formulated correctly for remote destinations."""
+    from trollmoves.client import make_uris
+
+    destination = "ftp://google.com/directory"
+    expected_uri = os.path.join(destination, "file1.png")
+    msg = make_uris(MSG_FILE, destination)
+    assert msg.data['uri'] == expected_uri
+
+
+def test_make_uris_s3_destination():
+    """Test that the published messages are formulated correctly for S3 destinations."""
+    from trollmoves.client import make_uris
+
+    destination = "s3://data-bucket/directory"
+    expected_uri = destination + "/" + "file1.png"
+    msg = make_uris(MSG_FILE, destination)
+    assert msg.data['uri'] == expected_uri
