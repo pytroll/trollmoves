@@ -360,7 +360,7 @@ class ScpMover(Mover):
 
         try:
             scp = SCPClient(ssh_connection.get_transport(),
-                            socket_timeout=self.attrs.get('scpclient_timeout_seconds', 10.0))
+                            socket_timeout=int(self.attrs.get('scpclient_timeout_seconds', 10)))
         except Exception as err:
             LOGGER.error("Failed to initiate SCPClient: %s", str(err))
             ssh_connection.close()
