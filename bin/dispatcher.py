@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2012-2019
+# Copyright (c) 2012-2019, 2022
 #
 # Author(s):
 #
@@ -28,48 +28,13 @@ configuration file can be triggered with a `kill -10 <dispatcher pid>`.
 
 import argparse
 import logging
-import logging.config
-import logging.handlers
 import os
 import sys
 
-import yaml
-
+from trollmoves.logger import LoggerSetup
 from trollmoves.dispatcher import Dispatcher
 
-LOG_FORMAT = "[%(asctime)s %(levelname)-8s] %(message)s"
-logger = logging.getLogger('dispatcher')
-
-log_levels = {
-    0: logging.WARN,
-    1: logging.INFO,
-    2: logging.DEBUG,
-}
-
-
-def setup_logging(cmd_args):
-    """Set up logging."""
-    if cmd_args.log_config is not None:
-        with open(cmd_args.log_config) as fd:
-            log_dict = yaml.safe_load(fd.read())
-            logging.config.dictConfig(log_dict)
-            return
-
-    root = logging.getLogger('')
-    root.setLevel(log_levels[cmd_args.verbosity])
-
-    if cmd_args.log:
-        fh_ = logging.handlers.TimedRotatingFileHandler(
-            os.path.join(cmd_args.log),
-            "midnight",
-            backupCount=7)
-    else:
-        fh_ = logging.StreamHandler()
-
-    formatter = logging.Formatter(LOG_FORMAT)
-    fh_.setFormatter(formatter)
-
-    root.addHandler(fh_)
+LOG = logging.getLogger('dispatcher')
 
 
 def parse_args():
@@ -99,7 +64,9 @@ def parse_args():
 def main():
     """Start and run the dispatcher."""
     cmd_args = parse_args()
-    setup_logging(cmd_args)
+    logger = LoggerSetup(cmd_args)
+    logger.setup_logging()
+    LOG = logger.get_logger()
     logger.info("Starting up.")
 
     try:
