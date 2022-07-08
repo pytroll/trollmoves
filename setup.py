@@ -1,5 +1,5 @@
 #!/usr/bin/python
-# Copyright (c) 2015, 2020.
+# Copyright (c) 2015 - 2022.
 #
 
 # Author(s):
@@ -36,6 +36,8 @@ for extra_deps in extras_require.values():
     all_extras.extend(extra_deps)
 extras_require['all'] = list(set(all_extras))
 
+test_requires = ['pytroll_monitor'],
+
 setup(name="trollmoves",
       version=versioneer.get_version(),
       description='Pytroll file utilities',
@@ -64,5 +66,6 @@ setup(name="trollmoves",
                         'trollsift', 'netifaces',
                         'pyzmq', 'inotify',
                         'scp', 'paramiko', 'pyyaml', 'watchdog'],
+      tests_require=test_requires,
       extras_require=extras_require,
       )
