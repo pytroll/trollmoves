@@ -23,6 +23,7 @@
 """The log handling.
 """
 
+import os
 import logging
 import logging.config
 import logging.handlers
@@ -53,8 +54,12 @@ class LoggerSetup():
             with open(self._cmd_args.log_config) as fd_:
                 log_dict = yaml.safe_load(fd_.read())
                 logging.config.dictConfig(log_dict)
-                return
+            self._logger = logging.getLogger('')
+        else:
+            self._setup_default_logging(chain_type)
 
+    def _setup_default_logging(self, chain_type):
+        """Setup default logging without using a log-config file."""
         self._logger = logging.getLogger('')
         self._logger.setLevel(log_levels[self._cmd_args.verbosity])
 
