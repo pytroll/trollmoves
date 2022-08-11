@@ -23,6 +23,7 @@
 
 """Movers for the move_it scripts."""
 
+from doctest import ELLIPSIS_MARKER
 import logging
 import os
 import shutil
@@ -35,7 +36,7 @@ import netrc
 
 from ftplib import FTP, all_errors, error_perm
 from paramiko import SSHClient, SSHException, AutoAddPolicy
-from scp import SCPClient
+from scp import SCPClient, SCPException
 try:
     from s3fs import S3FileSystem
 except ImportError:
@@ -358,7 +359,8 @@ class ScpMover(Mover):
                                              self._dest_username)
 
         try:
-            scp = SCPClient(ssh_connection.get_transport())
+            scp = SCPClient(ssh_connection.get_transport(),
+                            socket_timeout=int(self.attrs.get('scpclient_timeout_seconds', 10)))
         except Exception as err:
             LOGGER.error("Failed to initiate SCPClient: %s", str(err))
             ssh_connection.close()
@@ -374,6 +376,13 @@ class ScpMover(Mover):
             else:
                 LOGGER.error("OSError in scp.put: %s", str(osex))
                 raise
+        except SCPException as scpe:
+            if str(scpe) in "Timeout waiting for scp response":
+                LOGGER.error("SCPClient put got a socket timeout. You could add scpclient_timeout_seconds "
+                             "to your config to increase the timeout interval. Default timeout is 10 seconds.")
+            else:
+                LOGGER.error("SCPException: %s", str(scpe))
+            raise
         except Exception as err:
             LOGGER.error("Something went wrong with scp: %s", str(err))
             LOGGER.error("Exception name %s", type(err).__name__)
