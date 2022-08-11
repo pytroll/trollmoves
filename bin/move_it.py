@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2012, 2013, 2014, 2015
+# Copyright (c) 2012 - 2021 Pytroll community
 #
 # Author(s):
 #
@@ -473,7 +473,7 @@ def create_notifier(attrs):
                 if attrs["delete"]:
                     try:
                         os.remove(pathname)
-                        if attrs["delete_hook"]:
+                        if attrs.get("delete_hook"):
                             attrs["delete_hook"](pathname)
                         LOGGER.debug("Removed %s", pathname)
                     except OSError as e__:
