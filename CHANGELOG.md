@@ -1,4 +1,29 @@
 ###############################################################################
+## Version 0.10.0 (2022/08/11)
+
+### Issues Closed
+
+* [Issue 116](https://github.com/pytroll/trollmoves/issues/116) - Adjust move_it.py to use movers from trollmoves.movers ([PR 117](https://github.com/pytroll/trollmoves/pull/117) by [@pnuu](https://github.com/pnuu))
+
+In this release 1 issue was closed.
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 113](https://github.com/pytroll/trollmoves/pull/113) - Fix dispatcher destination url creation and revert test config to intended value
+
+#### Features added
+
+* [PR 119](https://github.com/pytroll/trollmoves/pull/119) - Add an option to disable target directory creation
+* [PR 117](https://github.com/pytroll/trollmoves/pull/117) - Use movers from the trollmoves package ([116](https://github.com/pytroll/trollmoves/issues/116))
+* [PR 115](https://github.com/pytroll/trollmoves/pull/115) - Add a mover for s3:// protocol
+* [PR 112](https://github.com/pytroll/trollmoves/pull/112) - Remove Python 3.7 and add Python 3.10 for running unittests
+
+In this release 5 pull requests were closed.
+
+
+###############################################################################
 ## Version v0.9.0 (2021/12/03)
 
 ### Issues Closed
