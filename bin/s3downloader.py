@@ -63,6 +63,7 @@ LOGGER = logging.getLogger(__name__)
 _DEFAULT_TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 _DEFAULT_LOG_FORMAT = '[%(levelname)s: %(asctime)s : %(name)s] %(message)s'
 
+
 class Listener(Thread):
 
     def __init__(self, queue, config, subscribe_nameserver):
@@ -132,6 +133,7 @@ class Listener(Thread):
             return False
         return True
 
+
 class FilePublisher(Thread):
 
     """A publisher for result files. Picks up the return value from the
@@ -186,6 +188,7 @@ def read_config(filename, debug=True):
 
     return config
 
+
 def setup_logging(config, log_file):
     """
     Init and setup logging
@@ -230,6 +233,7 @@ def setup_logging(config, log_file):
 
     return LOGGER, handler
 
+
 def read_from_queue(subscribe_queue, publish_queue, config):
     # read from queue
     while True:
@@ -237,7 +241,7 @@ def read_from_queue(subscribe_queue, publish_queue, config):
         try:
             msg_data = subscribe_queue.get()
         except KeyboardInterrupt:
-            break  
+            break
         if msg_data is None:
             LOGGER.debug("msg is none ... ")
             continue
@@ -259,7 +263,7 @@ def read_from_queue(subscribe_queue, publish_queue, config):
             LOGGER.exception("S3 download failed with", str(ex))
             pass
         if os.path.exists(os.path.join(config.get('download_destination', '.'), bn)):
-            LOGGER.debug("Successfully downloaded file %s to %s", bn, config.get('download_destination', '.') )
+            LOGGER.debug("Successfully downloaded file %s to %s", bn, config.get('download_destination', '.'))
             to_send = msg.data.copy()
             to_send.pop('dataset', None)
             to_send.pop('collection', None)
