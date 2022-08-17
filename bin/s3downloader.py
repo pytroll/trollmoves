@@ -234,7 +234,10 @@ def read_from_queue(subscribe_queue, publish_queue, config):
     # read from queue
     while True:
         LOGGER.debug("Start reading from queue ... ")
-        msg_data = subscribe_queue.get()
+        try:
+            msg_data = subscribe_queue.get()
+        except KeyboardInterrupt:
+            break  
         if msg_data is None:
             LOGGER.debug("msg is none ... ")
             continue
@@ -324,3 +327,4 @@ if __name__ == "__main__":
 
     listener.stop()
     publisher.stop()
+    LOGGER.info("Exiting s3downloader.")
