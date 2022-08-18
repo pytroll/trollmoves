@@ -21,7 +21,6 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """Test the s3downloader."""
 
-import copy
 from unittest.mock import MagicMock, PropertyMock, patch, call
 from tempfile import NamedTemporaryFile
 import os
@@ -80,11 +79,13 @@ def test_read_config_debug(capsys, config_yaml):
     assert '/destination-directory' in captured.out
 
 
-def test_read_config_exception(config_yaml):
+@patch('yaml.safe_load')
+def test_read_config_exception(patch_yaml, config_yaml):
     """Test read yaml config."""
     from trollmoves.s3downloader import read_config
+    patch_yaml.side_effect = FileNotFoundError
     with pytest.raises(FileNotFoundError):
-        read_config('tst', debug=False)
+        read_config(config_yaml, debug=False)
 
 
 @patch('yaml.safe_load')
@@ -146,9 +147,9 @@ def test_get_one_message(patch_subscribe, patch_publish_queue, patch_get_basenam
     from trollmoves.s3downloader import read_config
     from trollmoves.s3downloader import _get_one_message
     config = read_config(config_yaml, debug=False)
-    to_send = {'some_key': 'with_a_value'}
+    to_send = {'some_key': 'with_a_value', 'uri': 'now-this-is-a-uri'}
     msg = Message('/publish-topic', "file", to_send)
-    patch_subscribe.get().return_value = {'msg': msg}
+    patch_subscribe.get.return_value = {'msg': msg}
     patch_get_basename.return_value = 'filename-basename'
     patch_download_from_s3.return_value = True
     result = _get_one_message(config, patch_subscribe, patch_publish_queue)
@@ -163,9 +164,7 @@ def test_get_one_message_none(patch_subscribe, patch_publish_queue, patch_get_ba
     from trollmoves.s3downloader import read_config
     from trollmoves.s3downloader import _get_one_message
     config = read_config(config_yaml, debug=False)
-    to_send = {'some_key': 'with_a_value'}
-    msg = Message('/publish-topic', "file", to_send)
-    patch_subscribe.get().return_value = None
+    patch_subscribe.get.return_value = None
     patch_get_basename.return_value = 'filename-basename'
     patch_download_from_s3.return_value = True
     result = _get_one_message(config, patch_subscribe, patch_publish_queue)
@@ -181,7 +180,6 @@ def test_get_one_message_download_false(patch_subscribe, patch_publish_queue, pa
     from trollmoves.s3downloader import read_config
     from trollmoves.s3downloader import _get_one_message
     config = read_config(config_yaml, debug=False)
-    patch_subscribe.get().return_value = None
     patch_get_basename.return_value = 'filename-basename'
     patch_download_from_s3.return_value = False
     caplog.set_level(logging.DEBUG)
@@ -210,8 +208,6 @@ def test_read_from_queue(patch_subscribe, patch_publish_queue, patch_get_one_mes
     from trollmoves.s3downloader import read_config
     from trollmoves.s3downloader import read_from_queue
     config = read_config(config_yaml, debug=False)
-    to_send = {'some_key': 'with_a_value'}
-    msg = Message('/publish-topic', "file", to_send)
     patch_get_one_message.return_value = False
     read_from_queue(config, patch_subscribe, patch_publish_queue)
 
@@ -228,3 +224,27 @@ def test_read_from_queue(patch_subscribe, patch_publish_queue, patch_get_one_mes
 #     patch_get_one_message.return_value = True
 #     running = PropertyMock(side_effect=[True, False])
 #     read_from_queue(config, patch_subscribe, patch_publish_queue)
+
+@patch('boto3.client')
+def test_download_from_s3(patch_boto3_client, config_yaml):
+    from trollmoves.s3downloader import read_config
+    from trollmoves.s3downloader import _download_from_s3
+    config = read_config(config_yaml, debug=False)
+    bn = 'filename-basename'
+    result = _download_from_s3(config, bn)
+    assert result == True
+
+@patch('boto3.client')
+def test_download_from_s3_exception(patch_boto3_client, config_yaml):
+    from trollmoves.s3downloader import read_config
+    from trollmoves.s3downloader import _download_from_s3
+    import botocore
+    config = read_config(config_yaml, debug=False)
+    bn = 'filename-basename'
+    error_response = {'Error': {'Code': 'TEST',
+                                'Message': 'Throttling',
+                               }
+                     }
+    patch_boto3_client.return_value.download_file.side_effect = botocore.exceptions.ClientError(error_response=error_response, operation_name='test')
+    result = _download_from_s3(config, bn)
+    assert result == False

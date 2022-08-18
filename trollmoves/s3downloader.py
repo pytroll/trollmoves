@@ -249,8 +249,8 @@ def _download_from_s3(config, bn):
                           aws_access_key_id=config['access_key'],
                           aws_secret_access_key=config['secret_key'])
         s3.download_file(config['bucket'], bn, os.path.join(config.get('download_destination', '.'), bn))
-    except botocore.exceptions.ClientError as ex:
-        LOGGER.exception("S3 download failed with", str(ex))
+    except botocore.exceptions.ClientError:
+        LOGGER.exception("S3 download failed.")
         return False
     return True
 
