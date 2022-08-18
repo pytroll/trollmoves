@@ -225,6 +225,7 @@ def test_read_from_queue(patch_subscribe, patch_publish_queue, patch_get_one_mes
 #     running = PropertyMock(side_effect=[True, False])
 #     read_from_queue(config, patch_subscribe, patch_publish_queue)
 
+
 @patch('boto3.client')
 def test_download_from_s3(patch_boto3_client, config_yaml):
     from trollmoves.s3downloader import read_config
@@ -233,6 +234,7 @@ def test_download_from_s3(patch_boto3_client, config_yaml):
     bn = 'filename-basename'
     result = _download_from_s3(config, bn)
     assert result == True
+
 
 @patch('boto3.client')
 def test_download_from_s3_exception(patch_boto3_client, config_yaml):
@@ -243,8 +245,9 @@ def test_download_from_s3_exception(patch_boto3_client, config_yaml):
     bn = 'filename-basename'
     error_response = {'Error': {'Code': 'TEST',
                                 'Message': 'Throttling',
-                               }
-                     }
-    patch_boto3_client.return_value.download_file.side_effect = botocore.exceptions.ClientError(error_response=error_response, operation_name='test')
+                                }
+                      }
+    patch_boto3_client.return_value.download_file.side_effect = botocore.exceptions.ClientError(
+        error_response=error_response, operation_name='test')
     result = _download_from_s3(config, bn)
     assert result == False
