@@ -47,13 +47,15 @@ secret_key: 'your_secret_key'
 bucket: atms-sdr
 download_destination: '/destination-directory'
 """
-    
+
+
 def _write_named_temporary_config(data):
     with NamedTemporaryFile('w', delete=False) as fid:
         config_fname = fid.name
         fid.write(data)
     return config_fname
-    
+
+
 @pytest.fixture
 def config_yaml():
     yield _write_named_temporary_config(CONFIG_YAML)
@@ -69,6 +71,7 @@ def test_read_config(config_yaml):
                        'secret_key': 'your_secret_key', 'bucket': 'atms-sdr', 'download_destination': '/destination-directory'}
     assert config == expected_config
 
+
 def test_read_config_debug(capsys, config_yaml):
     """Test read yaml config."""
     from trollmoves.s3downloader import read_config
@@ -76,11 +79,13 @@ def test_read_config_debug(capsys, config_yaml):
     captured = capsys.readouterr()
     assert '/destination-directory' in captured.out
 
+
 def test_read_config_exception(config_yaml):
     """Test read yaml config."""
     from trollmoves.s3downloader import read_config
     with pytest.raises(FileNotFoundError):
         read_config('tst', debug=False)
+
 
 @patch('yaml.safe_load')
 def test_read_config_exception2(patch_yaml, config_yaml):
@@ -91,18 +96,21 @@ def test_read_config_exception2(patch_yaml, config_yaml):
     with pytest.raises(yaml.YAMLError):
         read_config(config_yaml, debug=False)
 
+
 def test_setup_logging(config_yaml):
     """Setup logging"""
     from trollmoves.s3downloader import setup_logging
     from trollmoves.s3downloader import read_config
     config = read_config(config_yaml, debug=False)
     setup_logging(config, log_file=None)
-    
+
+
 def test_get_basename():
     from trollmoves.s3downloader import _get_basename
     uri = os.path.join("root", "anypath", "filename-basename")
     bn = _get_basename(uri)
     assert bn == 'filename-basename'
+
 
 @patch('os.path.exists')
 def test_generate_message_if_file_exists_after_download(patch_os_path_exists, config_yaml):
@@ -116,6 +124,7 @@ def test_generate_message_if_file_exists_after_download(patch_os_path_exists, co
     pubmsg = _generate_message_if_file_exists_after_download(config, bn, msg)
     assert 'with_a_value' in pubmsg
 
+
 @patch('os.path.exists')
 def test_generate_message_if_file_does_not_exists_after_download(patch_os_path_exists, config_yaml):
     from trollmoves.s3downloader import read_config
@@ -127,6 +136,7 @@ def test_generate_message_if_file_does_not_exists_after_download(patch_os_path_e
     patch_os_path_exists.return_value = False
     pubmsg = _generate_message_if_file_exists_after_download(config, bn, msg)
     assert pubmsg == None
+
 
 @patch('trollmoves.s3downloader._download_from_s3')
 @patch('trollmoves.s3downloader._get_basename')
@@ -144,6 +154,7 @@ def test_get_one_message(patch_subscribe, patch_publish_queue, patch_get_basenam
     result = _get_one_message(config, patch_subscribe, patch_publish_queue)
     assert result == True
 
+
 @patch('trollmoves.s3downloader._download_from_s3')
 @patch('trollmoves.s3downloader._get_basename')
 @patch('queue.Queue')
@@ -160,6 +171,7 @@ def test_get_one_message_none(patch_subscribe, patch_publish_queue, patch_get_ba
     result = _get_one_message(config, patch_subscribe, patch_publish_queue)
     assert result == True
 
+
 @patch('trollmoves.s3downloader._download_from_s3')
 @patch('trollmoves.s3downloader._get_basename')
 @patch('queue.Queue')
@@ -174,8 +186,9 @@ def test_get_one_message_download_false(patch_subscribe, patch_publish_queue, pa
     patch_download_from_s3.return_value = False
     caplog.set_level(logging.DEBUG)
     result = _get_one_message(config, patch_subscribe, patch_publish_queue)
-    assert 'Could not download file filename-basename for some reason. SKipping this.' in caplog.text    
+    assert 'Could not download file filename-basename for some reason. SKipping this.' in caplog.text
     assert result == True
+
 
 @patch('queue.Queue')
 @patch('queue.Queue')
@@ -199,7 +212,7 @@ def test_read_from_queue(patch_subscribe, patch_publish_queue, patch_get_one_mes
     config = read_config(config_yaml, debug=False)
     to_send = {'some_key': 'with_a_value'}
     msg = Message('/publish-topic', "file", to_send)
-    patch_get_one_message.return_value = False    
+    patch_get_one_message.return_value = False
     read_from_queue(config, patch_subscribe, patch_publish_queue)
 
 # @patch('trollmoves.s3downloader._get_one_message')
@@ -213,5 +226,5 @@ def test_read_from_queue(patch_subscribe, patch_publish_queue, patch_get_one_mes
 #     to_send = {'some_key': 'with_a_value'}
 #     msg = Message('/publish-topic', "file", to_send)
 #     patch_get_one_message.return_value = True
-#     running = PropertyMock(side_effect=[True, False])    
+#     running = PropertyMock(side_effect=[True, False])
 #     read_from_queue(config, patch_subscribe, patch_publish_queue)

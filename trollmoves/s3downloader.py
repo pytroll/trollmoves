@@ -236,21 +236,24 @@ def setup_logging(config, log_file):
 
     return LOGGER, handler
 
+
 def _get_basename(uri):
     up = urlparse(uri)
     bn = os.path.basename(up.path)
     return bn
 
+
 def _download_from_s3(config, bn):
     try:
         s3 = boto3.client('s3', endpoint_url=config['endpoint_url'],
-                            aws_access_key_id=config['access_key'],
-                            aws_secret_access_key=config['secret_key'])
+                          aws_access_key_id=config['access_key'],
+                          aws_secret_access_key=config['secret_key'])
         s3.download_file(config['bucket'], bn, os.path.join(config.get('download_destination', '.'), bn))
     except botocore.exceptions.ClientError as ex:
         LOGGER.exception("S3 download failed with", str(ex))
         return False
     return True
+
 
 def _generate_message_if_file_exists_after_download(config, bn, msg):
     if os.path.exists(os.path.join(config.get('download_destination', '.'), bn)):
@@ -270,6 +273,7 @@ def _generate_message_if_file_exists_after_download(config, bn, msg):
         pubmsg = Message(config['publish-topic'], "file", to_send).encode()
         return pubmsg
     return None
+
 
 def _get_one_message(config, subscribe_queue, publish_queue):
     LOGGER.debug("Start reading from queue ... ")
@@ -291,6 +295,7 @@ def _get_one_message(config, subscribe_queue, publish_queue):
     else:
         LOGGER.error("Could not download file %s for some reason. SKipping this.", bn)
     return True
+
 
 def read_from_queue(subscribe_queue, publish_queue, config):
     # read from queue
