@@ -50,6 +50,7 @@ import boto3
 import queue
 import logging
 import argparse
+import botocore
 from logging import handlers
 from threading import Thread
 from posttroll.message import Message
@@ -250,12 +251,12 @@ def read_from_queue(subscribe_queue, publish_queue, config):
         print(bn)
         print(os.path.join(".", bn))
 
-        s3 = boto3.client('s3', endpoint_url=config['endpoint_url'],
-                          aws_access_key_id=config['access_key'],
-                          aws_secret_access_key=config['secret_key'])
         try:
+            s3 = boto3.client('s3', endpoint_url=config['endpoint_url'],
+                            aws_access_key_id=config['access_key'],
+                            aws_secret_access_key=config['secret_key'])
             s3.download_file(config['bucket'], bn, os.path.join(config.get('download_destination', '.'), bn))
-        except Exception as ex:
+        except botocore.exceptions.ClientError as ex:
             LOGGER.exception("S3 download failed with", str(ex))
             pass
         if os.path.exists(os.path.join(config.get('download_destination', '.'), bn)):
