@@ -310,7 +310,7 @@ if __name__ == "__main__":
     # Set up logging
     try:
         LOGGER, handler = setup_logging(config, cmd_args.log)
-    except:
+    except Exception:
         print("Logging setup failed. Check your config")
         raise
 
