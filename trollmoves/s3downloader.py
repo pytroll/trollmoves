@@ -71,8 +71,6 @@ class Listener(Thread):
         self.loop = True
         self.queue = queue
         self.config = config
-        self.subscr = None
-        self.command_name = None  # command_name
         self.subscribe_nameserver = subscribe_nameserver
 
     def stop(self):
@@ -108,9 +106,7 @@ class Listener(Thread):
                         LOGGER.info("Put the message on the queue...")
                         LOGGER.debug("Message = " + str(msg))
                         msg_data = {}
-                        msg_data['config'] = self.config
                         msg_data['msg'] = msg
-                        msg_data['command_name'] = self.command_name
                         self.queue.put(msg_data)
                         LOGGER.debug("After queue put.")
                     # else:
@@ -136,16 +132,17 @@ class Listener(Thread):
 
 class FilePublisher(Thread):
 
-    """A publisher for result files. Picks up the return value from the
-    run_command when ready, and publishes the files via posttroll"""
+    """A publisher for result files listening to a publish queue.
+    Publishes the files via posttroll"""
 
     def __init__(self, queue, nameservers):
         Thread.__init__(self)
-        self.loop = True
+        #self.loop = True
         self.queue = queue
-        self.jobs = {}
         self.service_name = 's3downloader'
         self.nameservers = nameservers
+
+    loop = True
 
     def stop(self):
         """Stops the file publisher"""
@@ -153,9 +150,7 @@ class FilePublisher(Thread):
         self.queue.put(None)
 
     def run(self):
-
         try:
-            self.loop = True
             LOGGER.debug("Using service_name: {} with nameservers {}".format(self.service_name, self.nameservers))
             with Publish(self.service_name, 0, nameservers=self.nameservers) as publisher:
 

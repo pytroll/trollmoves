@@ -242,9 +242,63 @@ def test_download_from_s3_exception(patch_boto3_client, config_yaml):
     config = read_config(config_yaml, debug=False)
     bn = 'filename-basename'
     error_response = {'Error': {'Code': 'TEST',
-                                'Message': 'Throttling',
+                                'Message': 'TEST MESSAGE',
                                }
                      }
     patch_boto3_client.return_value.download_file.side_effect = botocore.exceptions.ClientError(error_response=error_response, operation_name='test')
     result = _download_from_s3(config, bn)
     assert result == False
+
+@patch('posttroll.publisher.Publish')
+@patch('queue.Queue')
+def test_file_publisher_init(patch_publish_queue, patch_publish):
+    from trollmoves.s3downloader import FilePublisher
+    nameservers = None
+    fp = FilePublisher(patch_publish_queue, nameservers)
+    assert fp.loop == True
+    assert fp.service_name == 's3downloader'
+    assert fp.nameservers == nameservers
+    assert fp.queue == patch_publish_queue
+
+# #@patch('trollmoves.s3downloader.FilePublisher')
+# @patch('posttroll.publisher.Publish')
+# @patch('queue.Queue')
+# def test_file_publisher_run(patch_publish_queue, patch_publish):
+#     from trollmoves.s3downloader import FilePublisher
+#     nameservers = None
+#     # FilePublisher.loop = PropertyMock(side_effect=[True, False])
+#     # fp = FilePublisher(patch_filepublisher)
+#     # fp.run()
+#     #patch_filepublisher.Publish.assert_called()
+    
+#     fp = FilePublisher(patch_publish_queue, nameservers)
+#     # assert fp.loop == True
+#     # assert fp.service_name == 's3downloader'
+#     # assert fp.nameservers == nameservers
+#     # assert fp.queue == patch_publish_queue
+
+#     # print(fp.loop)
+#     sentinel = PropertyMock(return_value=False)
+#     fp.loop = sentinel
+#     # print(fp.loop)
+#     to_send = {'some_key': 'with_a_value', 'uri': 'now-this-is-a-uri'}
+#     msg = Message('/publish-topic', "file", to_send).encode()
+#     patch_publish_queue.get.return_value = msg
+#     fp.run()
+#     print("HER")
+#     fp.stop()
+
+@patch('posttroll.subscriber.Subscribe')
+@patch('queue.Queue')
+def test_listener_init(patch_listener_queue, patch_subscribe, config_yaml):
+    from trollmoves.s3downloader import read_config
+    from trollmoves.s3downloader import Listener
+    config = read_config(config_yaml, debug=False)
+    subscribe_nameserver = 'localhost'
+    l = Listener(patch_listener_queue, config, subscribe_nameserver)
+    assert l.loop == True
+    assert l.queue == patch_listener_queue
+    assert l.config == config
+    assert l.subscribe_nameserver == subscribe_nameserver
+
+    l.run()    
