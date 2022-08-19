@@ -302,5 +302,3 @@ def test_listener_init(patch_listener_queue, patch_subscribe, config_yaml):
     assert l.queue == patch_listener_queue
     assert l.config == config
     assert l.subscribe_nameserver == subscribe_nameserver
-
-    l.run()    
