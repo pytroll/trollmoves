@@ -225,6 +225,7 @@ def test_read_from_queue(patch_subscribe, patch_publish_queue, patch_get_one_mes
 #     running = PropertyMock(side_effect=[True, False])
 #     read_from_queue(config, patch_subscribe, patch_publish_queue)
 
+
 @patch('boto3.client')
 def test_download_from_s3(patch_boto3_client, config_yaml):
     from trollmoves.s3downloader import read_config
@@ -233,6 +234,7 @@ def test_download_from_s3(patch_boto3_client, config_yaml):
     bn = 'filename-basename'
     result = _download_from_s3(config, bn)
     assert result == True
+
 
 @patch('boto3.client')
 def test_download_from_s3_exception(patch_boto3_client, config_yaml):
