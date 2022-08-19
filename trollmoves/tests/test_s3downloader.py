@@ -245,11 +245,13 @@ def test_download_from_s3_exception(patch_boto3_client, config_yaml):
     bn = 'filename-basename'
     error_response = {'Error': {'Code': 'TEST',
                                 'Message': 'TEST MESSAGE',
-                               }
-                     }
-    patch_boto3_client.return_value.download_file.side_effect = botocore.exceptions.ClientError(error_response=error_response, operation_name='test')
+                                }
+                      }
+    patch_boto3_client.return_value.download_file.side_effect = botocore.exceptions.ClientError(
+        error_response=error_response, operation_name='test')
     result = _download_from_s3(config, bn)
     assert result == False
+
 
 @patch('posttroll.publisher.Publish')
 @patch('queue.Queue')
@@ -272,7 +274,7 @@ def test_file_publisher_init(patch_publish_queue, patch_publish):
 #     # fp = FilePublisher(patch_filepublisher)
 #     # fp.run()
 #     #patch_filepublisher.Publish.assert_called()
-    
+
 #     fp = FilePublisher(patch_publish_queue, nameservers)
 #     # assert fp.loop == True
 #     # assert fp.service_name == 's3downloader'
@@ -290,6 +292,7 @@ def test_file_publisher_init(patch_publish_queue, patch_publish):
 #     print("HER")
 #     fp.stop()
 
+
 @patch('posttroll.subscriber.Subscribe')
 @patch('queue.Queue')
 def test_listener_init(patch_listener_queue, patch_subscribe, config_yaml):
@@ -303,4 +306,4 @@ def test_listener_init(patch_listener_queue, patch_subscribe, config_yaml):
     assert l.config == config
     assert l.subscribe_nameserver == subscribe_nameserver
 
-    l.run()    
+    l.run()
