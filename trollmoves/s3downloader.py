@@ -67,7 +67,8 @@ _DEFAULT_LOG_FORMAT = '[%(levelname)s: %(asctime)s : %(name)s] %(message)s'
 class Listener(Thread):
 
     def __init__(self, queue, config, subscribe_nameserver):
-        Thread.__init__(self)
+        # Thread.__init__(self)
+        super(Listener, self).__init__()
         self.loop = True
         self.queue = queue
         self.config = config
@@ -105,9 +106,7 @@ class Listener(Thread):
                     if self.check_message(msg):
                         LOGGER.info("Put the message on the queue...")
                         LOGGER.debug("Message = " + str(msg))
-                        msg_data = {}
-                        msg_data['msg'] = msg
-                        self.queue.put(msg_data)
+                        self.queue.put(msg)
                         LOGGER.debug("After queue put.")
                     # else:
                     #     LOGGER.warning("check_message returned False for some reason. Message is: %s", str(msg))
@@ -273,14 +272,13 @@ def _generate_message_if_file_exists_after_download(config, bn, msg):
 def _get_one_message(config, subscribe_queue, publish_queue):
     LOGGER.debug("Start reading from queue ... ")
     try:
-        msg_data = subscribe_queue.get()
+        msg = subscribe_queue.get()
     except KeyboardInterrupt:
         return False
-    if msg_data is None:
+    if msg is None:
         LOGGER.debug("msg is none ... ")
         return True
     LOGGER.debug("Read from queue ... ")
-    msg = msg_data['msg']
     LOGGER.debug("Read from queue: {}".format(msg))
     bn = _get_basename(msg.data['uri'])
     if _download_from_s3(config, bn):

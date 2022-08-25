@@ -149,7 +149,7 @@ def test_get_one_message(patch_subscribe, patch_publish_queue, patch_get_basenam
     config = read_config(config_yaml, debug=False)
     to_send = {'some_key': 'with_a_value', 'uri': 'now-this-is-a-uri'}
     msg = Message('/publish-topic', "file", to_send)
-    patch_subscribe.get.return_value = {'msg': msg}
+    patch_subscribe.get.return_value = msg
     patch_get_basename.return_value = 'filename-basename'
     patch_download_from_s3.return_value = True
     result = _get_one_message(config, patch_subscribe, patch_publish_queue)
@@ -292,16 +292,109 @@ def test_file_publisher_init(patch_publish_queue, patch_publish):
 #     print("HER")
 #     fp.stop()
 
+# class MockThread:
+#     def __init__(self):
+#         pass
 
-@patch('posttroll.subscriber.Subscribe')
-@patch('queue.Queue')
-def test_listener_init(patch_listener_queue, patch_subscribe, config_yaml):
-    from trollmoves.s3downloader import read_config
+#     def start():
+#         pass
+
+#     def join():
+#         pass
+
+# @patch('threading.Thread')
+# @patch('posttroll.subscriber.Subscribe')
+# @patch('queue.Queue')
+# def test_listener_init(patch_listener_queue, patch_subscribe, patch_thread, config_yaml):
+#     from time import sleep
+#     from trollmoves.s3downloader import read_config
+#     from trollmoves.s3downloader import Listener
+#     config = read_config(config_yaml, debug=False)
+#     subscribe_nameserver = 'localhost'
+#     l = Listener(patch_listener_queue, config, subscribe_nameserver)
+#     assert l.loop == patch_thread.loop
+#     assert l.queue == patch_thread.queue
+#     assert l.config == patch_thread.config
+#     assert l.subscribe_nameserver == patch_thread.subscribe_nameserver
+
+#     print(l.loop)
+#     sentinel = PropertyMock(side_effect=[True, False])
+#     l.loop = sentinel
+#     print(l.loop)
+
+#     l.run()    
+#     l.join()
+#     sleep(1)
+
+MSG_1 = Message('/topic', 'file', data={'uid': 'file1'})
+
+@patch('posttroll.subscriber.Subscriber')
+@patch('posttroll.subscriber.get_pub_address')
+def test_listener_message(patch_get_pub_address, patch_subscriber, caplog, config_yaml):
+    """Test listener push message."""
     from trollmoves.s3downloader import Listener
+    from trollmoves.s3downloader import read_config
+    import queue
     config = read_config(config_yaml, debug=False)
     subscribe_nameserver = 'localhost'
-    l = Listener(patch_listener_queue, config, subscribe_nameserver)
-    assert l.loop == True
-    assert l.queue == patch_listener_queue
-    assert l.config == config
-    assert l.subscribe_nameserver == subscribe_nameserver
+    
+    patch_subscriber.return_value.recv = PropertyMock(side_effect=[[MSG_1, None],])
+    lqueue = queue.Queue()
+    listener = Listener(lqueue, config, subscribe_nameserver)
+    listener.run()
+
+    assert 'Put the message on the queue...' in caplog.text
+    assert lqueue.qsize() == 1
+
+    message = lqueue.get()
+    assert message.type == 'file'
+
+MSG_ACK = Message('/topic', 'ack', data={'uid': 'file1'})
+
+def test_listener_message_check_message(config_yaml):
+    """Test listener push message."""
+    from trollmoves.s3downloader import Listener
+    from trollmoves.s3downloader import read_config
+    import queue
+    config = read_config(config_yaml, debug=False)
+    subscribe_nameserver = 'localhost'
+    lqueue = queue.Queue()
+    listener = Listener(lqueue, config, subscribe_nameserver)
+
+    assert listener.check_message(None) == False
+    assert listener.check_message(MSG_ACK) == False
+    assert listener.check_message(MSG_1) == True
+
+def test_listener_message_stop(config_yaml):
+    """Test listener push message."""
+    from trollmoves.s3downloader import Listener
+    from trollmoves.s3downloader import read_config
+    import queue
+    config = read_config(config_yaml, debug=False)
+    subscribe_nameserver = 'localhost'
+    lqueue = queue.Queue()
+    listener = Listener(lqueue, config, subscribe_nameserver)
+
+    listener.stop()
+    assert listener.loop == False
+    assert listener.queue.qsize() == 1
+    message = lqueue.get()
+    assert message == None
+
+@patch('posttroll.subscriber.Subscriber')
+@patch('posttroll.subscriber.get_pub_address')
+def test_listener_message_check_config(patch_get_pub_address, patch_subscriber, caplog, config_yaml):
+    """Test listener push message."""
+    from trollmoves.s3downloader import Listener
+    from trollmoves.s3downloader import read_config
+    import queue
+    config = read_config(config_yaml, debug=False)
+    config['subscribe-topic'] = 'is-a-string-topic'
+    config['subscriber_addresses'] = 'first_address, second_address'
+    subscribe_nameserver = 'localhost'
+    
+    lqueue = queue.Queue()
+    listener = Listener(lqueue, config, subscribe_nameserver)
+    listener.run()
+    assert isinstance(listener.config["subscribe-topic"], list) == True
+    assert listener.config["services"] == ''
