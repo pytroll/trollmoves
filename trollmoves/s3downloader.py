@@ -136,12 +136,10 @@ class FilePublisher(Thread):
 
     def __init__(self, queue, nameservers):
         Thread.__init__(self)
-        #self.loop = True
+        self.loop = True
         self.queue = queue
         self.service_name = 's3downloader'
         self.nameservers = nameservers
-
-    loop = True
 
     def stop(self):
         """Stops the file publisher"""
