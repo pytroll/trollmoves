@@ -21,12 +21,9 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """Test the s3downloader."""
 
-from unittest.mock import MagicMock, PropertyMock, patch, call
+from unittest.mock import PropertyMock, patch
 from tempfile import NamedTemporaryFile
 import os
-import time
-from threading import Thread
-from collections import deque
 
 import pytest
 from posttroll.message import Message
@@ -67,7 +64,9 @@ def test_read_config(config_yaml):
     expected_config = {'logging': {'log_rotation_days': 1, 'log_rotation_backup': 30, 'logging_mode': 'DEBUG'},
                        'subscribe-topic': ['/yuhu'], 'publish-topic': '/idnt', 'endpoint_url': 'https://your.url.space',
                        'access_key': 'your_access_key',
-                       'secret_key': 'your_secret_key', 'bucket': 'atms-sdr', 'download_destination': '/destination-directory'}
+                       'secret_key': 'your_secret_key',
+                       'bucket': 'atms-sdr',
+                       'download_destination': '/destination-directory'}
     assert config == expected_config
 
 
@@ -160,14 +159,14 @@ def test_get_one_message(patch_subscribe, patch_publish_queue, patch_get_basenam
 @patch('trollmoves.s3downloader._get_basename')
 @patch('queue.Queue')
 @patch('queue.Queue')
-def test_get_one_message_none(patch_subscribe, patch_publish_queue, patch_get_basename, patch_download_from_s3, config_yaml):
+def test_get_one_message_none(patch_sub_q, patch_pub_q, patch_get_basename, patch_download_from_s3, config_yaml):
     from trollmoves.s3downloader import read_config
     from trollmoves.s3downloader import _get_one_message
     config = read_config(config_yaml, debug=False)
-    patch_subscribe.get.return_value = None
+    patch_sub_q.get.return_value = None
     patch_get_basename.return_value = 'filename-basename'
     patch_download_from_s3.return_value = True
-    result = _get_one_message(config, patch_subscribe, patch_publish_queue)
+    result = _get_one_message(config, patch_sub_q, patch_pub_q)
     assert result == True
 
 
@@ -175,15 +174,15 @@ def test_get_one_message_none(patch_subscribe, patch_publish_queue, patch_get_ba
 @patch('trollmoves.s3downloader._get_basename')
 @patch('queue.Queue')
 @patch('queue.Queue')
-def test_get_one_message_download_false(patch_subscribe, patch_publish_queue, patch_get_basename, patch_download_from_s3, caplog, config_yaml):
+def test_get_one_message_download_false(patch_sub_q, patch_pub_q, patch_get_bn, patch_dl_s3, caplog, config_yaml):
     import logging
     from trollmoves.s3downloader import read_config
     from trollmoves.s3downloader import _get_one_message
     config = read_config(config_yaml, debug=False)
-    patch_get_basename.return_value = 'filename-basename'
-    patch_download_from_s3.return_value = False
+    patch_get_bn.return_value = 'filename-basename'
+    patch_dl_s3.return_value = False
     caplog.set_level(logging.DEBUG)
-    result = _get_one_message(config, patch_subscribe, patch_publish_queue)
+    result = _get_one_message(config, patch_sub_q, patch_pub_q)
     assert 'Could not download file filename-basename for some reason. SKipping this.' in caplog.text
     assert result == True
 
@@ -191,7 +190,6 @@ def test_get_one_message_download_false(patch_subscribe, patch_publish_queue, pa
 @patch('queue.Queue')
 @patch('queue.Queue')
 def test_get_one_message_keyboardinterrupt(patch_subscribe, patch_publish_queue, config_yaml):
-    import logging
     from trollmoves.s3downloader import read_config
     from trollmoves.s3downloader import _get_one_message
     config = read_config(config_yaml, debug=False)
@@ -204,7 +202,6 @@ def test_get_one_message_keyboardinterrupt(patch_subscribe, patch_publish_queue,
 @patch('queue.Queue')
 @patch('queue.Queue')
 def test_read_from_queue(patch_subscribe, patch_publish_queue, patch_get_one_message, config_yaml):
-    import logging
     from trollmoves.s3downloader import read_config
     from trollmoves.s3downloader import read_from_queue
     config = read_config(config_yaml, debug=False)
