@@ -263,7 +263,9 @@ def test_file_publisher_init(patch_publish_queue, patch_publish):
     assert fp.nameservers == nameservers
     assert fp.queue == patch_publish_queue
 
+
 MSG_1 = Message('/topic', 'file', data={'uid': 'file1'})
+
 
 @patch('trollmoves.s3downloader.Publish')
 @patch('queue.Queue')
@@ -274,6 +276,7 @@ def test_file_publisher_run(patch_publish_queue, patch_publish):
     fp = FilePublisher(patch_publish_queue, nameservers)
     fp.run()
     patch_publish().__enter__().send.assert_called_once()
+
 
 @patch('trollmoves.s3downloader.Publish')
 @patch('queue.Queue')
@@ -286,6 +289,7 @@ def test_file_publisher_break(patch_publish_queue, patch_publish):
     fp.run()
     patch_publish().__enter__().send.assert_not_called()
 
+
 @patch('trollmoves.s3downloader.Publish')
 @patch('queue.Queue')
 def test_file_publisher_publish_message(patch_publish_queue, patch_publish):
@@ -294,9 +298,10 @@ def test_file_publisher_publish_message(patch_publish_queue, patch_publish):
     fp = FilePublisher(patch_publish_queue, nameservers)
     assert fp._publish_message(MSG_1, patch_publish) is True
     assert fp._publish_message(None, patch_publish) is True
-    
+
     fp.loop = False
     assert fp._publish_message('any message', patch_publish) is False
+
 
 @patch('trollmoves.s3downloader.Publish')
 def test_file_publisher_stop_loop(patch_publish):
@@ -309,6 +314,7 @@ def test_file_publisher_stop_loop(patch_publish):
     assert fp.loop is False
     message = pqueue.get()
     assert message is None
+
 
 @patch('posttroll.subscriber.Subscribe')  # FIXME
 @patch('queue.Queue')
@@ -323,6 +329,7 @@ def test_listener_init(patch_listener_queue, patch_subscribe, config_yaml):
     assert l.queue == patch_listener_queue
     assert l.config == config
     assert l.subscribe_nameserver == subscribe_nameserver
+
 
 @patch('posttroll.subscriber.Subscriber')
 @patch('posttroll.subscriber.get_pub_address')
@@ -346,6 +353,7 @@ def test_listener_message(patch_get_pub_address, patch_subscriber, caplog, confi
 
     message = lqueue.get()
     assert message.type == 'file'
+
 
 MSG_ACK = Message('/topic', 'ack', data={'uid': 'file1'})
 
@@ -400,6 +408,7 @@ def test_listener_message_check_config(patch_get_pub_address, patch_subscriber, 
     assert isinstance(listener.config["subscribe-topic"], list) is True
     assert listener.config["services"] == ''
 
+
 @patch('posttroll.subscriber.Subscriber')
 @patch('posttroll.subscriber.get_pub_address')
 def test_listener_message_exception_1(patch_get_pub_address, patch_subscriber, config_yaml):
@@ -414,6 +423,7 @@ def test_listener_message_exception_1(patch_get_pub_address, patch_subscriber, c
     patch_subscriber.side_effect = KeyError
     with pytest.raises(KeyError):
         listener.run()
+
 
 @patch('posttroll.subscriber.Subscriber')
 @patch('posttroll.subscriber.get_pub_address')
@@ -430,6 +440,7 @@ def test_listener_message_exception_2(patch_get_pub_address, patch_subscriber, c
     with pytest.raises(KeyboardInterrupt):
         listener.run()
 
+
 def test_setup_logging(config_yaml):
     from trollmoves.s3downloader import setup_logging
     from trollmoves.s3downloader import read_config
@@ -440,7 +451,8 @@ def test_setup_logging(config_yaml):
     assert isinstance(LOGGER, logging.Logger) is True
     assert logging.DEBUG == handler.level
     assert isinstance(handler, StreamHandler) is True
-    
+
+
 def test_setup_logging_file(config_yaml):
     from trollmoves.s3downloader import setup_logging
     from trollmoves.s3downloader import read_config
@@ -457,5 +469,5 @@ def test_setup_logging_file(config_yaml):
 
     config['logging'].pop('log_rotation_days')
     LOGGER, handler = setup_logging(config, config_fname)
-    assert handler.interval == 60*60*24
+    assert handler.interval == 60 * 60 * 24
     assert handler.backupCount == 30
