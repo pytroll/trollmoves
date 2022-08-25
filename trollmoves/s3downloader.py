@@ -112,7 +112,7 @@ class Listener(Thread):
                     #     LOGGER.warning("check_message returned False for some reason. Message is: %s", str(msg))
 
         except KeyError as ke:
-            LOGGER.info("Some key error. probably in config:", ke)
+            LOGGER.info("Some key error. probably in config: %s", str(ke))
             raise
         except KeyboardInterrupt:
             LOGGER.info("Received keyboard interrupt. Shutting down.")
@@ -146,18 +146,22 @@ class FilePublisher(Thread):
         self.loop = False
         self.queue.put(None)
 
+    def _publish_message(self, retv, publisher):
+        if not self.loop:
+            return False
+        if retv is not None:
+            LOGGER.info("Publish as service: %s", self.service_name)
+            LOGGER.info("Publish the files...")
+            publisher.send(retv)
+        return True
+
     def run(self):
         try:
             LOGGER.debug("Using service_name: {} with nameservers {}".format(self.service_name, self.nameservers))
             with Publish(self.service_name, 0, nameservers=self.nameservers) as publisher:
-
-                while self.loop:
-                    retv = self.queue.get()
-
-                    if retv is not None:
-                        LOGGER.info("Publish as service: %s", self.service_name)
-                        LOGGER.info("Publish the files...")
-                        publisher.send(retv)
+                for retv in self.queue.get():
+                    if not self._publish_message(retv, publisher):
+                        break
 
         except KeyboardInterrupt:
             LOGGER.info("Received keyboard interrupt. Shutting down")
@@ -224,7 +228,7 @@ def setup_logging(config, log_file):
     logging.getLogger('botocore').setLevel(loglevel)
     logging.getLogger('s3transfer').setLevel(loglevel)
     logging.getLogger('urllib3').setLevel(loglevel)
-    LOGGER = logging.getLogger('pytroll-run-command')
+    LOGGER = logging.getLogger('S3 downloader')
 
     return LOGGER, handler
 
