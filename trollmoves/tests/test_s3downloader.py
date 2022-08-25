@@ -322,11 +322,13 @@ def test_file_publisher_init(patch_publish_queue, patch_publish):
 #     l.loop = sentinel
 #     print(l.loop)
 
-#     l.run()    
+#     l.run()
 #     l.join()
 #     sleep(1)
 
+
 MSG_1 = Message('/topic', 'file', data={'uid': 'file1'})
+
 
 @patch('posttroll.subscriber.Subscriber')
 @patch('posttroll.subscriber.get_pub_address')
@@ -337,8 +339,8 @@ def test_listener_message(patch_get_pub_address, patch_subscriber, caplog, confi
     import queue
     config = read_config(config_yaml, debug=False)
     subscribe_nameserver = 'localhost'
-    
-    patch_subscriber.return_value.recv = PropertyMock(side_effect=[[MSG_1, None],])
+
+    patch_subscriber.return_value.recv = PropertyMock(side_effect=[[MSG_1, None], ])
     lqueue = queue.Queue()
     listener = Listener(lqueue, config, subscribe_nameserver)
     listener.run()
@@ -349,7 +351,9 @@ def test_listener_message(patch_get_pub_address, patch_subscriber, caplog, confi
     message = lqueue.get()
     assert message.type == 'file'
 
+
 MSG_ACK = Message('/topic', 'ack', data={'uid': 'file1'})
+
 
 def test_listener_message_check_message(config_yaml):
     """Test listener push message."""
@@ -364,6 +368,7 @@ def test_listener_message_check_message(config_yaml):
     assert listener.check_message(None) == False
     assert listener.check_message(MSG_ACK) == False
     assert listener.check_message(MSG_1) == True
+
 
 def test_listener_message_stop(config_yaml):
     """Test listener push message."""
@@ -381,6 +386,7 @@ def test_listener_message_stop(config_yaml):
     message = lqueue.get()
     assert message == None
 
+
 @patch('posttroll.subscriber.Subscriber')
 @patch('posttroll.subscriber.get_pub_address')
 def test_listener_message_check_config(patch_get_pub_address, patch_subscriber, caplog, config_yaml):
@@ -392,7 +398,7 @@ def test_listener_message_check_config(patch_get_pub_address, patch_subscriber, 
     config['subscribe-topic'] = 'is-a-string-topic'
     config['subscriber_addresses'] = 'first_address, second_address'
     subscribe_nameserver = 'localhost'
-    
+
     lqueue = queue.Queue()
     listener = Listener(lqueue, config, subscribe_nameserver)
     listener.run()
