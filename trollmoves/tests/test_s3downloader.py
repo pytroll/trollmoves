@@ -135,7 +135,7 @@ def test_generate_message_if_file_does_not_exists_after_download(patch_os_path_e
     config = read_config(config_yaml, debug=False)
     patch_os_path_exists.return_value = False
     pubmsg = _generate_message_if_file_exists_after_download(config, bn, msg)
-    assert pubmsg == None
+    assert pubmsg is None
 
 
 @patch('trollmoves.s3downloader._download_from_s3')
@@ -152,7 +152,7 @@ def test_get_one_message(patch_subscribe, patch_publish_queue, patch_get_basenam
     patch_get_basename.return_value = 'filename-basename'
     patch_download_from_s3.return_value = True
     result = _get_one_message(config, patch_subscribe, patch_publish_queue)
-    assert result == True
+    assert result is True
 
 
 @patch('trollmoves.s3downloader._download_from_s3')
@@ -167,7 +167,7 @@ def test_get_one_message_none(patch_sub_q, patch_pub_q, patch_get_basename, patc
     patch_get_basename.return_value = 'filename-basename'
     patch_download_from_s3.return_value = True
     result = _get_one_message(config, patch_sub_q, patch_pub_q)
-    assert result == True
+    assert result is True
 
 
 @patch('trollmoves.s3downloader._download_from_s3')
@@ -184,7 +184,7 @@ def test_get_one_message_download_false(patch_sub_q, patch_pub_q, patch_get_bn, 
     caplog.set_level(logging.DEBUG)
     result = _get_one_message(config, patch_sub_q, patch_pub_q)
     assert 'Could not download file filename-basename for some reason. SKipping this.' in caplog.text
-    assert result == True
+    assert result is True
 
 
 @patch('queue.Queue')
@@ -195,7 +195,7 @@ def test_get_one_message_keyboardinterrupt(patch_subscribe, patch_publish_queue,
     config = read_config(config_yaml, debug=False)
     patch_subscribe.get.side_effect = KeyboardInterrupt
     result = _get_one_message(config, patch_subscribe, patch_publish_queue)
-    assert result == False
+    assert result is False
 
 
 @patch('trollmoves.s3downloader._get_one_message')
@@ -230,7 +230,7 @@ def test_download_from_s3(patch_boto3_client, config_yaml):
     config = read_config(config_yaml, debug=False)
     bn = 'filename-basename'
     result = _download_from_s3(config, bn)
-    assert result == True
+    assert result is True
 
 
 @patch('boto3.client')
@@ -247,7 +247,7 @@ def test_download_from_s3_exception(patch_boto3_client, config_yaml):
     patch_boto3_client.return_value.download_file.side_effect = botocore.exceptions.ClientError(
         error_response=error_response, operation_name='test')
     result = _download_from_s3(config, bn)
-    assert result == False
+    assert result is False
 
 
 @patch('posttroll.publisher.Publish')
@@ -256,7 +256,7 @@ def test_file_publisher_init(patch_publish_queue, patch_publish):
     from trollmoves.s3downloader import FilePublisher
     nameservers = None
     fp = FilePublisher(patch_publish_queue, nameservers)
-    assert fp.loop == True
+    assert fp.loop is True
     assert fp.service_name == 's3downloader'
     assert fp.nameservers == nameservers
     assert fp.queue == patch_publish_queue
@@ -362,9 +362,9 @@ def test_listener_message_check_message(config_yaml):
     lqueue = queue.Queue()
     listener = Listener(lqueue, config, subscribe_nameserver)
 
-    assert listener.check_message(None) == False
-    assert listener.check_message(MSG_ACK) == False
-    assert listener.check_message(MSG_1) == True
+    assert listener.check_message(None) is False
+    assert listener.check_message(MSG_ACK) is False
+    assert listener.check_message(MSG_1) is True
 
 
 def test_listener_message_stop(config_yaml):
@@ -378,10 +378,10 @@ def test_listener_message_stop(config_yaml):
     listener = Listener(lqueue, config, subscribe_nameserver)
 
     listener.stop()
-    assert listener.loop == False
+    assert listener.loop is False
     assert listener.queue.qsize() == 1
     message = lqueue.get()
-    assert message == None
+    assert message is None
 
 
 @patch('posttroll.subscriber.Subscriber')
@@ -399,5 +399,5 @@ def test_listener_message_check_config(patch_get_pub_address, patch_subscriber, 
     lqueue = queue.Queue()
     listener = Listener(lqueue, config, subscribe_nameserver)
     listener.run()
-    assert isinstance(listener.config["subscribe-topic"], list) == True
+    assert isinstance(listener.config["subscribe-topic"], list) is True
     assert listener.config["services"] == ''
