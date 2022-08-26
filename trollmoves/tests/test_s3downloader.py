@@ -356,6 +356,26 @@ def test_listener_message(patch_get_pub_address, patch_subscriber, caplog, confi
     assert message.type == 'file'
 
 
+@patch('posttroll.subscriber.Subscriber')
+@patch('posttroll.subscriber.get_pub_address')
+@patch('queue.Queue')
+def test_listener_message_break(patch_listener_queue, patch_get_pub_address, patch_subscriber, caplog, config_yaml):
+    """Test listener push message."""
+    from trollmoves.s3downloader import Listener
+    from trollmoves.s3downloader import read_config
+    from trollmoves.s3downloader import setup_logging
+    import queue
+    config = read_config(config_yaml, debug=False)
+    setup_logging(config, None)
+    subscribe_nameserver = 'localhost'
+
+    patch_subscriber.return_value.recv = PropertyMock(side_effect=[[MSG_1, None], ])
+    listener = Listener(patch_listener_queue, config, subscribe_nameserver)
+    listener.loop = False
+    listener.run()
+    patch_listener_queue().put.assert_not_called()
+
+
 MSG_ACK = Message('/topic', 'ack', data={'uid': 'file1'})
 
 
