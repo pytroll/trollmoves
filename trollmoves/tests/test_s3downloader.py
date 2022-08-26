@@ -412,7 +412,7 @@ def test_listener_message_check_config(patch_get_pub_address, patch_subscriber, 
 
 @patch('posttroll.subscriber.Subscriber')
 @patch('posttroll.subscriber.get_pub_address')
-def test_listener_message_check_message(patch_get_pub_address, patch_subscriber, config_yaml):
+def test_listener_message_check_message_and_put(patch_get_pub_address, patch_subscriber, config_yaml):
     """Test listener push message."""
     from trollmoves.s3downloader import Listener
     from trollmoves.s3downloader import read_config
