@@ -318,9 +318,8 @@ def test_file_publisher_exception_1(patch_publish_queue, patch_publish):
         fp.run()
 
 
-@patch('posttroll.subscriber.Subscribe')  # FIXME
 @patch('queue.Queue')
-def test_listener_init(patch_listener_queue, patch_subscribe, config_yaml):
+def test_listener_init(patch_listener_queue, config_yaml):
     from trollmoves.s3downloader import read_config
     from trollmoves.s3downloader import Listener
     config = read_config(config_yaml, debug=False)
