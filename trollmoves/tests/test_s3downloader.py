@@ -316,6 +316,18 @@ def test_file_publisher_stop_loop(patch_publish):
     assert message is None
 
 
+@patch('trollmoves.s3downloader.Publish')
+@patch('queue.Queue')
+def test_file_publisher_exception_1(patch_publish_queue, patch_publish):
+    import queue
+    from trollmoves.s3downloader import FilePublisher
+    nameservers = None
+    patch_publish_queue.get.side_effect = KeyboardInterrupt
+    fp = FilePublisher(patch_publish_queue, nameservers)
+    with pytest.raises(KeyboardInterrupt):
+        fp.run()
+
+
 @patch('posttroll.subscriber.Subscribe')  # FIXME
 @patch('queue.Queue')
 def test_listener_init(patch_listener_queue, patch_subscribe, config_yaml):
@@ -407,6 +419,27 @@ def test_listener_message_check_config(patch_get_pub_address, patch_subscriber, 
     listener.run()
     assert isinstance(listener.config["subscribe-topic"], list) is True
     assert listener.config["services"] == ''
+
+
+@patch('posttroll.subscriber.Subscriber')
+@patch('posttroll.subscriber.get_pub_address')
+def test_listener_message_check_config(patch_get_pub_address, patch_subscriber, config_yaml):
+    """Test listener push message."""
+    from trollmoves.s3downloader import Listener
+    from trollmoves.s3downloader import read_config
+    import queue
+    config = read_config(config_yaml, debug=False)
+    config['subscribe-topic'] = 'is-a-string-topic'
+    config['subscriber_addresses'] = 'first_address, second_address'
+    subscribe_nameserver = 'localhost'
+
+    lqueue = queue.Queue()
+    listener = Listener(lqueue, config, subscribe_nameserver)
+    assert listener._check_and_put_message_to_queue(MSG_1) is True
+    assert listener._check_and_put_message_to_queue(None) is True
+
+    listener.loop = False
+    assert listener._check_and_put_message_to_queue(MSG_1) is False
 
 
 @patch('posttroll.subscriber.Subscriber')

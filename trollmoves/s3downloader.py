@@ -80,6 +80,19 @@ class Listener(Thread):
         self.loop = False
         self.queue.put(None)
 
+    def _check_and_put_message_to_queue(self, msg):
+        if not self.loop:
+            LOGGER.warning("Self.loop false in FileListener %s", self.loop)
+            return False
+
+        # Check if it is a relevant message:
+        if self.check_message(msg):
+            LOGGER.info("Put the message on the queue...")
+            LOGGER.debug("Message = " + str(msg))
+            self.queue.put(msg)
+            LOGGER.debug("After queue put.")
+        return True
+
     def run(self):
         LOGGER.debug("Entering run in FileListener ...")
         if type(self.config["subscribe-topic"]) not in (tuple, list, set):
@@ -97,19 +110,8 @@ class Listener(Thread):
 
                 LOGGER.debug("Entering for loop subscr.recv")
                 for msg in subscr.recv(timeout=1):
-                    if not self.loop:
-                        # LOGGER.debug("Self.loop false in FileListener {}".format(self.loop))
+                    if not self._check_and_put_message_to_queue(msg):
                         break
-
-                    # LOGGER.debug("Before checking message.")
-                    # Check if it is a relevant message:
-                    if self.check_message(msg):
-                        LOGGER.info("Put the message on the queue...")
-                        LOGGER.debug("Message = " + str(msg))
-                        self.queue.put(msg)
-                        LOGGER.debug("After queue put.")
-                    # else:
-                    #     LOGGER.warning("check_message returned False for some reason. Message is: %s", str(msg))
 
         except KeyError as ke:
             LOGGER.info("Some key error. probably in config: %s", str(ke))
@@ -165,7 +167,7 @@ class FilePublisher(Thread):
 
         except KeyboardInterrupt:
             LOGGER.info("Received keyboard interrupt. Shutting down")
-
+            raise
 
 # Config management
 def read_config(filename, debug=True):
