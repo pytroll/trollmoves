@@ -170,6 +170,8 @@ class FilePublisher(Thread):
             raise
 
 # Config management
+
+
 def read_config(filename, debug=True):
     """Read the config file called *filename*.
     """
