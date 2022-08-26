@@ -22,8 +22,7 @@
 """Test the s3downloader."""
 
 from logging import StreamHandler
-from unittest import mock
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import PropertyMock, patch
 from tempfile import NamedTemporaryFile
 import os
 
@@ -97,14 +96,6 @@ def test_read_config_exception2(patch_yaml, config_yaml):
     patch_yaml.side_effect = yaml.YAMLError
     with pytest.raises(yaml.YAMLError):
         read_config(config_yaml, debug=False)
-
-
-def test_setup_logging(config_yaml):
-    """Setup logging"""
-    from trollmoves.s3downloader import setup_logging
-    from trollmoves.s3downloader import read_config
-    config = read_config(config_yaml, debug=False)
-    setup_logging(config, log_file=None)
 
 
 def test_get_basename():
@@ -319,7 +310,6 @@ def test_file_publisher_stop_loop(patch_publish):
 @patch('trollmoves.s3downloader.Publish')
 @patch('queue.Queue')
 def test_file_publisher_exception_1(patch_publish_queue, patch_publish):
-    import queue
     from trollmoves.s3downloader import FilePublisher
     nameservers = None
     patch_publish_queue.get.side_effect = KeyboardInterrupt
@@ -331,16 +321,15 @@ def test_file_publisher_exception_1(patch_publish_queue, patch_publish):
 @patch('posttroll.subscriber.Subscribe')  # FIXME
 @patch('queue.Queue')
 def test_listener_init(patch_listener_queue, patch_subscribe, config_yaml):
-    from time import sleep
     from trollmoves.s3downloader import read_config
     from trollmoves.s3downloader import Listener
     config = read_config(config_yaml, debug=False)
     subscribe_nameserver = 'localhost'
-    l = Listener(patch_listener_queue, config, subscribe_nameserver)
-    assert l.loop is True
-    assert l.queue == patch_listener_queue
-    assert l.config == config
-    assert l.subscribe_nameserver == subscribe_nameserver
+    listenr = Listener(patch_listener_queue, config, subscribe_nameserver)
+    assert listenr.loop is True
+    assert listenr.queue == patch_listener_queue
+    assert listenr.config == config
+    assert listenr.subscribe_nameserver == subscribe_nameserver
 
 
 @patch('posttroll.subscriber.Subscriber')
@@ -423,7 +412,7 @@ def test_listener_message_check_config(patch_get_pub_address, patch_subscriber, 
 
 @patch('posttroll.subscriber.Subscriber')
 @patch('posttroll.subscriber.get_pub_address')
-def test_listener_message_check_config(patch_get_pub_address, patch_subscriber, config_yaml):
+def test_listener_message_check_message(patch_get_pub_address, patch_subscriber, config_yaml):
     """Test listener push message."""
     from trollmoves.s3downloader import Listener
     from trollmoves.s3downloader import read_config
