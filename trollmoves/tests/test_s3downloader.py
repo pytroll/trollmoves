@@ -364,7 +364,6 @@ def test_listener_message_break(patch_listener_queue, patch_get_pub_address, pat
     from trollmoves.s3downloader import Listener
     from trollmoves.s3downloader import read_config
     from trollmoves.s3downloader import setup_logging
-    import queue
     config = read_config(config_yaml, debug=False)
     setup_logging(config, None)
     subscribe_nameserver = 'localhost'
