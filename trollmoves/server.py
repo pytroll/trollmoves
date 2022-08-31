@@ -52,6 +52,8 @@ from posttroll.publisher import get_own_ip
 from posttroll.subscriber import Subscribe
 from trollsift import globify, parse
 
+from trollmoves import FALSY
+from trollmoves import TRUTHY
 from trollmoves.client import DEFAULT_REQ_TIMEOUT
 from trollmoves.movers import move_it
 from trollmoves.utils import (clean_url, gen_dict_contains, gen_dict_extract,
@@ -257,7 +259,7 @@ class RequestManager(Thread):
             self._deleter.add(pathname)
 
     def _is_delete_set(self):
-        return self._attrs.get('delete', 'False').lower() in ["1", "yes", "true", "on"]
+        return self._attrs.get('delete', 'False').lower() in TRUTHY
 
     def ack(self, message):
         """Reply with ack to a publication."""
@@ -429,7 +431,7 @@ class Listener(Thread):
     def run(self):
         """Start listening to messages."""
         nameserver = self.attrs.get('nameserver')
-        if nameserver in ('false', 'False'):
+        if nameserver in FALSY:
             nameserver = False
         addresses = self.attrs.get('adrresses')
         if addresses:

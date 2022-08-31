@@ -45,6 +45,8 @@ from posttroll.publisher import create_publisher_from_dict_config
 from posttroll.subscriber import Subscriber
 from trollsift.parser import compose
 
+from trollmoves import FALSY
+from trollmoves import TRUTHY
 from trollmoves import heartbeat_monitor
 from trollmoves.utils import get_local_ips
 from trollmoves.utils import gen_dict_extract, translate_dict
@@ -102,10 +104,6 @@ def _set_config_defaults(conf):
     conf.setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
     conf.setdefault("nameservers", None)
     conf.setdefault("create_target_directory", True)
-
-
-FALSY = ["", "False", "false", "0", "off"]
-TRUTHY = ["True", "true", "on", "1"]
 
 
 def _parse_boolean_config_items(conf):
