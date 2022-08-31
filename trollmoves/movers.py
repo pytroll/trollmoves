@@ -34,8 +34,16 @@ from urllib.parse import urlparse
 import netrc
 
 from ftplib import FTP, all_errors, error_perm
-from paramiko import SSHClient, SSHException, AutoAddPolicy
-from scp import SCPClient
+try:
+    from paramiko import SSHClient, SSHException, AutoAddPolicy
+except ImportError:
+    SSHClient = None
+    SSHException = None
+    AutoAddPolicy = None
+try:
+    from scp import SCPClient
+except ImportError:
+    SCPClient = None
 try:
     from s3fs import S3FileSystem
 except ImportError:
@@ -90,6 +98,7 @@ class Mover(object):
     """Base mover object. Doesn't do anything as it has to be subclassed."""
 
     def __init__(self, origin, destination, attrs=None):
+        """Initialize the Mover."""
         try:
             self.destination = urlparse(destination)
         except AttributeError:
@@ -184,13 +193,13 @@ class CTimer(Thread):
 
     """
 
-    def __init__(self, interval, function, args=(), kwargs={}):
+    def __init__(self, interval, function, args=(), kwargs=None):
         """Initialize the timer."""
         Thread.__init__(self)
         self.interval = interval
         self.function = function
         self.args = args
-        self.kwargs = kwargs
+        self.kwargs = kwargs or {}
         self.finished = Event()
 
     def cancel(self):
@@ -212,7 +221,7 @@ class FtpMover(Mover):
     active_connection_lock = Lock()
 
     def _get_netrc_authentication(self):
-        """Get login authentications from netrc file if available"""
+        """Get login authentications from netrc file if available."""
         try:
             secrets = netrc.netrc()
         except (netrc.NetrcParseError, FileNotFoundError) as e__:
@@ -297,6 +306,8 @@ class ScpMover(Mover):
 
     def open_connection(self):
         """Open a connection."""
+        if SSHClient is None or SCPClient is None:
+            raise ImportError("ScpMover needs 'paramiko' and 'scp' to be installed.")
         retries = 3
         ssh_key_filename = self.attrs.get("ssh_key_filename", None)
         while retries > 0:
@@ -387,16 +398,18 @@ class SftpMover(Mover):
     """Move files over sftp."""
 
     def move(self):
-        """Push it !"""
+        """Push the file."""
         self.copy()
         os.remove(self.origin)
 
     def _agent_auth(self, transport):
-        """Attempt to authenticate to the given transport using any of the private
-        keys available from an SSH agent ... or from a local private RSA key file
-        (assumes no pass phrase).
+        """Attempt to authenticate to the given transport.
+
+        Use any of the private keys available from an SSH agent ... or
+        from a local private RSA key file (assumes no pass phrase).
 
         PFE: http://code.activestate.com/recipes/576810-copy-files-over-ssh-using-paramiko/
+
         """
         import paramiko
 
