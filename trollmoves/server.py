@@ -431,11 +431,15 @@ class Listener(Thread):
         nameserver = self.attrs.get('nameserver')
         if nameserver in ('false', 'False'):
             nameserver = False
+        addresses = self.attrs.get('adrresses')
+        if addresses:
+            addresses = addresses.split()
+
         with Subscribe(
             services=self.attrs.get('services', ''),
             topics=self.attrs.get('topics', self.attrs['listen']),
             addr_listener=bool(self.attrs.get('addr_listener', True)),
-            addresses=self.attrs.get('addresses'),
+            addresses=addresses,
             timeout=int(self.attrs.get('timeout')),
             translate=bool(self.attrs.get('translate', False)),
             nameserver=nameserver,
