@@ -428,7 +428,18 @@ class Listener(Thread):
 
     def run(self):
         """Start listening to messages."""
-        with Subscribe('', topics=self.attrs['listen'], addr_listener=True) as sub:
+        nameserver = self.attrs.get('nameserver')
+        if nameserver in ('false', 'False'):
+            nameserver = False
+        with Subscribe(
+            services=self.attrs.get('services', ''),
+            topics=self.attrs.get('topics', self.attrs['listen']),
+            addr_listener=bool(self.attrs.get('addr_listener', True)),
+            addresses=self.attrs.get('addresses'),
+            timeout=int(self.attrs.get('timeout')),
+            translate=bool(self.attrs.get('translate', False)),
+            nameserver=nameserver,
+        ) as sub:
             self._run(sub)
 
     def _run(self, sub):

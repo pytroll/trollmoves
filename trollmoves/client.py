@@ -41,7 +41,7 @@ from zmq import LINGER, POLLIN, REQ, Poller
 import bz2
 from posttroll import get_context
 from posttroll.message import Message, MessageError
-from posttroll.publisher import NoisyPublisher
+from posttroll.publisher import create_publisher_from_dict_config
 from posttroll.subscriber import Subscriber
 from trollsift.parser import compose
 
@@ -700,7 +700,6 @@ class Chain(Thread):
         super(Chain, self).__init__()
         self._config = config
         self._name = name
-        self._np = None
         self.publisher = None
         self.listeners = {}
         self.listener_died_event = Event()
@@ -709,16 +708,19 @@ class Chain(Thread):
 
     def setup_publisher(self):
         """Initialize publisher."""
-        if self._np is None:
+        if self.publisher is None:
             try:
                 nameservers = self._config["nameservers"]
+                if nameservers in FALSY:
+                    nameservers = False
                 if nameservers:
                     nameservers = nameservers.split()
-                self._np = NoisyPublisher(
-                    "move_it_" + self._name,
-                    port=self._config["publish_port"],
-                    nameservers=nameservers)
-                self.publisher = self._np.start()
+                pub_settings = {
+                    "name": "move_it_" + self._name,
+                    "port": self._config["publish_port"],
+                    "nameservers": nameservers,
+                }
+                self.publisher = create_publisher_from_dict_config(pub_settings).start()
             except (KeyError, NameError):
                 pass
 
@@ -854,9 +856,9 @@ class Chain(Thread):
         self.reset_listeners()
 
     def _stop_publisher(self):
-        if self._np:
-            self._np.stop()
-            self._np = None
+        if self.publisher:
+            self.publisher.stop()
+            self.publisher = None
 
     def restart(self):
         """Restart the chain, return a new running instance."""
