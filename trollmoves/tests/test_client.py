@@ -133,6 +133,18 @@ publish_port = 0
 processing_delay = 0.02
 """
 
+CLIENT_CONFIG_1_ITEM_NAMESERVERS_IS_FALSE = """
+# Example acting as a hot spare
+[eumetcast_hrit_0deg_scp_hot_spare]
+providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
+destination = scp:///tmp/foo
+login = user
+topic = /1b/hrit-segment/0deg
+publish_port = 0
+processing_delay = 0.02
+nameservers = False
+"""
+
 CLIENT_CONFIG_2_ITEMS = """
 # Example acting as a hot spare
 [eumetcast_hrit_0deg_scp_hot_spare]
@@ -238,6 +250,12 @@ def client_config_1_pub_item_modified():
 
 
 @pytest.fixture
+def client_config_1_item_nameservers_is_false():
+    """Create a fixture for a client config."""
+    yield _write_named_temporary_config(CLIENT_CONFIG_1_ITEM_NAMESERVERS_IS_FALSE)
+
+
+@pytest.fixture
 def client_config_2_items():
     """Create a fixture for a client config."""
     yield _write_named_temporary_config(CLIENT_CONFIG_2_ITEMS)
@@ -263,13 +281,26 @@ def test_txt_file_2():
 
 @pytest.fixture
 def chain_config_with_one_item(client_config_1_item):
-    """Create a fixture for confif with one item."""
+    """Create a fixture for config with one item."""
     from trollmoves.client import read_config
 
     try:
         conf = read_config(client_config_1_item)
     finally:
         os.remove(client_config_1_item)
+
+    yield conf
+
+
+@pytest.fixture
+def chain_config_with_one_item_nameservers_is_false(client_config_1_item_nameservers_is_false):
+    """Create a fixture for config with one item where nameservers is se to False."""
+    from trollmoves.client import read_config
+
+    try:
+        conf = read_config(client_config_1_item_nameservers_is_false)
+    finally:
+        os.remove(client_config_1_item_nameservers_is_false)
 
     yield conf
 
@@ -1461,6 +1492,20 @@ def test_chain_publisher_needs_restarting_port_modified(Listener, create_publish
     chain = Chain("foo", config.copy())
     config["publish_port"] = 12346
     assert chain.publisher_needs_restarting(config.copy()) is True
+
+
+@patch('trollmoves.client.create_publisher_from_dict_config')
+@patch('trollmoves.client.Listener')
+def test_chain_nameservers_is_false(Listener, create_publisher_from_dict_config,
+                                    chain_config_with_one_item_nameservers_is_false):
+    """Test the Chain object."""
+    from trollmoves.client import Chain
+
+    name = 'eumetcast_hrit_0deg_scp_hot_spare'
+    _ = Chain(name, chain_config_with_one_item_nameservers_is_false[name])
+
+    expected = {'name': 'move_it_eumetcast_hrit_0deg_scp_hot_spare', 'port': 0, 'nameservers': False}
+    create_publisher_from_dict_config.assert_called_with(expected)
 
 
 def test_replace_mda_for_mirror():
