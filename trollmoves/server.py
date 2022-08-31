@@ -433,7 +433,7 @@ class Listener(Thread):
         nameserver = self.attrs.get('nameserver')
         if nameserver in FALSY:
             nameserver = False
-        addresses = self.attrs.get('adrresses')
+        addresses = self.attrs.get('addresses')
         if addresses:
             addresses = addresses.split()
 
@@ -442,7 +442,7 @@ class Listener(Thread):
             topics=self.attrs.get('topics', self.attrs['listen']),
             addr_listener=bool(self.attrs.get('addr_listener', True)),
             addresses=addresses,
-            timeout=int(self.attrs.get('timeout')),
+            timeout=int(self.attrs.get('timeout', 10)),
             translate=bool(self.attrs.get('translate', False)),
             nameserver=nameserver,
         ) as sub:
