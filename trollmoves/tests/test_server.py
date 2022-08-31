@@ -22,7 +22,7 @@
 
 """Test Trollmoves server."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, call
 import unittest
 from tempfile import TemporaryDirectory
 import os
@@ -166,3 +166,25 @@ class TestDeleter(unittest.TestCase):
         """Test that empty init arguments still work."""
         from trollmoves.server import Deleter
         Deleter(dict()).add('bla')
+
+
+@patch("trollmoves.server.Listener._run")
+@patch("trollmoves.server.Subscribe")
+def test_listener_subscribe_default_settings(Subscribe, _run):
+    """Test the default usage of trollmoves.server.Listener."""
+    from trollmoves.server import Listener
+
+    attrs = {'listen': '/topic'}
+    publisher = 'foo'
+    expected = call(
+        services='',
+        topics=attrs['listen'],
+        addr_listener=True,
+        addresses=None,
+        timeout=10,
+        translate=False,
+        nameserver=None,
+    )
+    listener = Listener(attrs, publisher)
+    listener.run()
+    assert expected in Subscribe.mock_calls
