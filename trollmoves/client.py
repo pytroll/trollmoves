@@ -45,8 +45,6 @@ from posttroll.publisher import create_publisher_from_dict_config
 from posttroll.subscriber import Subscriber
 from trollsift.parser import compose
 
-from trollmoves import FALSY
-from trollmoves import TRUTHY
 from trollmoves import heartbeat_monitor
 from trollmoves.utils import get_local_ips
 from trollmoves.utils import gen_dict_extract, translate_dict
@@ -75,6 +73,10 @@ LISTENER_CHECK_INTERVAL = 1
 
 def read_config(filename):
     """Read the config file called *filename*."""
+    return _read_ini_config(filename)
+
+
+def _read_ini_config(filename):
     cp_ = RawConfigParser()
     cp_.read(filename)
 
@@ -83,7 +85,8 @@ def read_config(filename):
     for section in cp_.sections():
         res[section] = dict(cp_.items(section))
         _set_config_defaults(res[section])
-        _parse_boolean_config_items(res[section])
+        _parse_boolean_config_items(res[section], cp_[section])
+        _parse_nameservers(res[section], cp_[section])
         if not _check_provider_config(res, section):
             continue
         if not _check_destination(res, section):
@@ -106,15 +109,24 @@ def _set_config_defaults(conf):
     conf.setdefault("create_target_directory", True)
 
 
-def _parse_boolean_config_items(conf):
-    if conf["delete"] in FALSY:
-        conf["delete"] = False
-    if conf["delete"] in TRUTHY:
-        conf["delete"] = True
-    if conf["heartbeat"] in FALSY:
-        conf["heartbeat"] = False
-    if conf["create_target_directory"] in FALSY:
-        conf["create_target_directory"] = False
+def _parse_boolean_config_items(conf, raw_conf):
+    for key in ["delete", "heartbeat", "create_target_directory"]:
+        try:
+            val = raw_conf.getboolean(key)
+        except ValueError:
+            continue
+        if val is not None:
+            conf[key] = val
+
+
+def _parse_nameservers(conf, raw_conf):
+    try:
+        val = raw_conf.getboolean("nameservers")
+    except ValueError:
+        val = conf["nameservers"]
+    if isinstance(val, str):
+        val = val.split()
+    conf["nameservers"] = val
 
 
 def _check_provider_config(conf, section):
@@ -709,10 +721,6 @@ class Chain(Thread):
         if self.publisher is None:
             try:
                 nameservers = self._config["nameservers"]
-                if nameservers in FALSY:
-                    nameservers = False
-                if nameservers:
-                    nameservers = nameservers.split()
                 pub_settings = {
                     "name": "move_it_" + self._name,
                     "port": self._config["publish_port"],
