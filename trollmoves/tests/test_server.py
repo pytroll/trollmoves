@@ -24,6 +24,7 @@
 
 from unittest.mock import MagicMock, patch, call
 import unittest
+from tempfile import NamedTemporaryFile
 from tempfile import TemporaryDirectory
 import os
 from collections import deque
@@ -188,3 +189,63 @@ def test_listener_subscribe_default_settings(Subscribe, _run):
     listener = Listener(attrs, publisher)
     listener.run()
     assert expected in Subscribe.mock_calls
+
+
+def _write_named_temporary_config(data):
+    with NamedTemporaryFile('w', delete=False) as fid:
+        config_fname = fid.name
+        fid.write(data)
+    return config_fname
+
+
+CONFIG_MINIMAL = """
+[test]
+origin = /path/{filename}.txt
+topic = /topic
+request_port = 9011
+"""
+
+CONFIG_OVERRIDE_DEFAULTS = """
+[test]
+origin = /path/{filename}.txt
+topic = /topic
+request_port = 9011
+delete = True
+nameserver = localhost
+addresses = host:port
+publish_port = 9111
+"""
+
+
+def test_read_config_minimal():
+    """Test reading a minimal config file."""
+    from trollmoves.server import read_config
+
+    with NamedTemporaryFile('w') as fid:
+        fid.write(CONFIG_MINIMAL)
+        fid.flush()
+        conf = read_config(fid.name)
+    # Values set in the config
+    assert 'origin' in conf['test']
+    assert 'topic' in conf['test']
+    assert 'request_port' in conf['test']
+    # Important config items that have default values
+    assert conf['test']['delete'] is False
+    assert conf['test']['nameserver'] is None
+    assert conf['test']['addresses'] is None
+    assert conf['test']['publish_port'] == 0
+
+
+def test_read_config_override_defaults():
+    """Test reading a config file that overrides the defaults."""
+    from trollmoves.server import read_config
+
+    with NamedTemporaryFile('w') as fid:
+        fid.write(CONFIG_OVERRIDE_DEFAULTS)
+        fid.flush()
+        conf = read_config(fid.name)
+    assert conf['test']['delete'] is True
+    assert conf['test']['nameserver'] == "localhost"
+    assert isinstance(conf['test']['addresses'], (list, tuple))
+    assert "host:port" in conf['test']['addresses']
+    assert conf['test']['publish_port'] == 9111

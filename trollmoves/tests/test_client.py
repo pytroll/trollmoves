@@ -161,6 +161,7 @@ destination = scp:///tmp/foo
 login = user
 topic = /1b/hrit-segment/0deg
 publish_port = 0
+nameservers = ns1 ns2
 """
 
 LOCAL_DIR = "/local"
@@ -1569,3 +1570,25 @@ def test_make_uris_s3_destination():
     expected_uri = destination + "/" + "file1.png"
     msg = make_uris(MSG_FILE, destination)
     assert msg.data['uri'] == expected_uri
+
+
+def test_read_config_nameservers_is_false(client_config_1_item_nameservers_is_false):
+    """Test config reading when nameservers is set to False."""
+    from trollmoves.client import read_config
+
+    try:
+        conf = read_config(client_config_1_item_nameservers_is_false)
+    finally:
+        os.remove(client_config_1_item_nameservers_is_false)
+    assert conf['eumetcast_hrit_0deg_scp_hot_spare']['nameservers'] is False
+
+
+def test_read_config_nameservers_are_a_list_or_tuple(client_config_2_items):
+    """Test that two nameservers are given as a list or a tuple."""
+    from trollmoves.client import read_config
+
+    try:
+        conf = read_config(client_config_2_items)
+    finally:
+        os.remove(client_config_2_items)
+    assert isinstance(conf['foo']['nameservers'], (list, tuple))
