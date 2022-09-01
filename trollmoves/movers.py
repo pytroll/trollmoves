@@ -35,16 +35,6 @@ import netrc
 
 from ftplib import FTP, all_errors, error_perm
 try:
-    from paramiko import SSHClient, SSHException, AutoAddPolicy
-except ImportError:
-    SSHClient = None
-    SSHException = None
-    AutoAddPolicy = None
-try:
-    from scp import SCPClient
-except ImportError:
-    SCPClient = None
-try:
     from s3fs import S3FileSystem
 except ImportError:
     S3FileSystem = None
@@ -306,8 +296,8 @@ class ScpMover(Mover):
 
     def open_connection(self):
         """Open a connection."""
-        if SSHClient is None or SCPClient is None:
-            raise ImportError("ScpMover needs 'paramiko' and 'scp' to be installed.")
+        from paramiko import SSHClient, SSHException, AutoAddPolicy
+
         retries = 3
         ssh_key_filename = self.attrs.get("ssh_key_filename", None)
         while retries > 0:
@@ -364,6 +354,8 @@ class ScpMover(Mover):
 
     def copy(self):
         """Upload the file."""
+        from scp import SCPClient
+
         ssh_connection = self.get_connection(self.destination.hostname,
                                              self.destination.port or 22,
                                              self._dest_username)
