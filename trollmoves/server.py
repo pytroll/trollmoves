@@ -253,11 +253,8 @@ class RequestManager(Thread):
         return error_message
 
     def _add_to_deleter(self, pathname):
-        if self._attrs.get('compression') or self._is_delete_set():
+        if self._attrs.get('compression') or self._attrs['delete']:
             self._deleter.add(pathname)
-
-    def _is_delete_set(self):
-        return self._attrs.get('delete', 'False').lower() in ["1", "yes", "true", "on"]
 
     def ack(self, message):
         """Reply with ack to a publication."""
@@ -428,7 +425,15 @@ class Listener(Thread):
 
     def run(self):
         """Start listening to messages."""
-        with Subscribe('', topics=self.attrs['listen'], addr_listener=True) as sub:
+        with Subscribe(
+            services=self.attrs.get('services', ''),
+            topics=self.attrs.get('topics', self.attrs['listen']),
+            addr_listener=bool(self.attrs.get('addr_listener', True)),
+            addresses=self.attrs.get('addresses'),
+            timeout=int(self.attrs.get('timeout', 10)),
+            translate=bool(self.attrs.get('translate', False)),
+            nameserver=self.attrs.get('nameserver'),
+        ) as sub:
             self._run(sub)
 
     def _run(self, sub):
@@ -506,6 +511,10 @@ class WatchdogHandler(FileSystemEventHandler):
 
 def read_config(filename):
     """Read the config file called *filename*."""
+    return _read_ini_config(filename)
+
+
+def _read_ini_config(filename):
     cp_ = RawConfigParser()
     cp_.read(filename)
 
@@ -514,6 +523,9 @@ def read_config(filename):
     for section in cp_.sections():
         res[section] = dict(cp_.items(section))
         _set_config_defaults(res[section])
+        _parse_nameserver(res[section], cp_[section])
+        _parse_addresses(res[section])
+        _parse_delete(res[section], cp_[section])
         if not _check_origin_and_listen(res, section):
             continue
         if not _check_topic(res, section):
@@ -528,6 +540,28 @@ def _set_config_defaults(conf):
     conf.setdefault("req_timeout", DEFAULT_REQ_TIMEOUT)
     conf.setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
     conf.setdefault("ssh_key_filename", None)
+    conf.setdefault("delete", False)
+
+
+def _parse_nameserver(conf, raw_conf):
+    try:
+        val = raw_conf.getboolean("nameserver")
+    except ValueError:
+        val = conf["nameserver"]
+    conf["nameserver"] = val
+
+
+def _parse_addresses(conf):
+    val = conf.get("addresses")
+    if isinstance(val, str):
+        val = val.split()
+    conf["addresses"] = val
+
+
+def _parse_delete(conf, raw_conf):
+    val = raw_conf.getboolean("delete")
+    if val is not None:
+        conf["delete"] = val
 
 
 def _check_origin_and_listen(res, section):
