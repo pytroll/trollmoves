@@ -123,7 +123,7 @@ def test_get_basename(s3dl):
     assert bn == 'filename-basename'
 
 @patch('os.path.exists')
-def test_generate_message_if_file_exists_after_download(patch_os_path_exists, s3dl, config_yaml):
+def test_generate_message_if_file_exists_after_download(patch_os_path_exists, s3dl):
     s3dl.read_config(debug=False)
     bn = 'filename-basename'
     to_send = {'some_key': 'with_a_value'}
@@ -147,17 +147,14 @@ def test_generate_message_if_file_does_not_exists_after_download(patch_os_path_e
 @patch('trollmoves.s3downloader.s3downloader._download_from_s3')
 @patch('trollmoves.s3downloader.s3downloader._get_basename')
 @patch('queue.Queue')
-@patch('queue.Queue')
-def test_get_one_message(patch_subscribe, patch_publish_queue, patch_get_basename, patch_download_from_s3, config_yaml):
-    from trollmoves.s3downloader import parse_args
-    from trollmoves.s3downloader import s3downloader
-    parse = parse_args(['--config-file=' + config_yaml])
-    s3dl = s3downloader(parse)
+def test_get_one_message(patch_subscribe, patch_get_basename, patch_download_from_s3, s3dl):
     s3dl.read_config(debug=False)
     s3dl.setup_logging()
     to_send = {'some_key': 'with_a_value', 'uri': 'now-this-is-a-uri'}
     msg = Message('/publish-topic', "file", to_send)
-    patch_subscribe.get.return_value = msg
+    print("LQ", s3dl.listener_queue)
+    s3dl.listener_queue = patch_subscribe
+    s3dl.listener_queue.get.return_value = msg
     patch_get_basename.return_value = 'filename-basename'
     patch_download_from_s3.return_value = True
     result = s3dl._get_one_message()
@@ -167,15 +164,11 @@ def test_get_one_message(patch_subscribe, patch_publish_queue, patch_get_basenam
 @patch('trollmoves.s3downloader.s3downloader._download_from_s3')
 @patch('trollmoves.s3downloader.s3downloader._get_basename')
 @patch('queue.Queue')
-@patch('queue.Queue')
-def test_get_one_message_none(patch_sub_q, patch_pub_q, patch_get_basename, patch_download_from_s3, config_yaml):
-    from trollmoves.s3downloader import parse_args
-    from trollmoves.s3downloader import s3downloader
-    parse = parse_args(['--config-file=' + config_yaml])
-    s3dl = s3downloader(parse)
+def test_get_one_message_none(patch_sub_q,patch_get_basename, patch_download_from_s3, s3dl):
     s3dl.read_config(debug=False)
     s3dl.setup_logging()
-    patch_sub_q.get.return_value = None
+    s3dl.listener_queue = patch_sub_q
+    s3dl.listener_queue.get.return_value = None
     patch_get_basename.return_value = 'filename-basename'
     patch_download_from_s3.return_value = True
     result = s3dl._get_one_message()
@@ -185,56 +178,39 @@ def test_get_one_message_none(patch_sub_q, patch_pub_q, patch_get_basename, patc
 @patch('trollmoves.s3downloader.s3downloader._download_from_s3')
 @patch('trollmoves.s3downloader.s3downloader._get_basename')
 @patch('queue.Queue')
-@patch('queue.Queue')
-def test_get_one_message_download_false(patch_sub_q, patch_pub_q, patch_get_bn, patch_dl_s3, caplog, config_yaml):
+def test_get_one_message_download_false(patch_sub_q, patch_get_bn, patch_dl_s3, caplog, s3dl):
     import logging
-    from trollmoves.s3downloader import parse_args
-    from trollmoves.s3downloader import s3downloader
-    parse = parse_args(['--config-file=' + config_yaml])
-    s3dl = s3downloader(parse)
     s3dl.read_config(debug=False)
     s3dl.setup_logging()
     patch_get_bn.return_value = 'filename-basename'
     patch_dl_s3.return_value = False
     caplog.set_level(logging.DEBUG)
+    s3dl.listener_queue = patch_sub_q
     result = s3dl._get_one_message()
     assert 'Could not download file filename-basename for some reason. SKipping this.' in caplog.text
     assert result is True
 
 
 @patch('queue.Queue')
-def test_get_one_message_keyboardinterrupt(patch_subscribe, config_yaml):
-    from trollmoves.s3downloader import parse_args
-    from trollmoves.s3downloader import s3downloader
-    parse = parse_args(['--config-file=' + config_yaml])
-    s3dl = s3downloader(parse)
+def test_get_one_message_keyboardinterrupt(patch_subscribe, s3dl):
     s3dl.read_config(debug=False)
     s3dl.setup_logging()
+    s3dl.listener_queue = patch_subscribe
     s3dl.listener_queue.get.side_effect = KeyboardInterrupt
     result = s3dl._get_one_message()
     assert result is False
 
 
 @patch('trollmoves.s3downloader.s3downloader._get_one_message')
-@patch('queue.Queue')
-@patch('queue.Queue')
-def test_read_from_queue(patch_subscribe, patch_publish_queue, patch_get_one_message, config_yaml):
-    from trollmoves.s3downloader import parse_args
-    from trollmoves.s3downloader import s3downloader
-    parse = parse_args(['--config-file=' + config_yaml])
-    s3dl = s3downloader(parse)
+def test_read_from_queue(patch_get_one_message, s3dl):
     s3dl.read_config(debug=False)
     s3dl.setup_logging()
     patch_get_one_message.return_value = False
     s3dl._read_from_queue()
-
+    # TODO: what does this tests?
 
 @patch('boto3.client')
-def test_download_from_s3(patch_boto3_client, config_yaml):
-    from trollmoves.s3downloader import parse_args
-    from trollmoves.s3downloader import s3downloader
-    parse = parse_args(['--config-file=' + config_yaml])
-    s3dl = s3downloader(parse)
+def test_download_from_s3(patch_boto3_client, s3dl):
     s3dl.read_config(debug=False)
     s3dl.setup_logging()
     bn = 'filename-basename'
@@ -243,12 +219,8 @@ def test_download_from_s3(patch_boto3_client, config_yaml):
 
 
 @patch('boto3.client')
-def test_download_from_s3_exception(patch_boto3_client, config_yaml):
+def test_download_from_s3_exception(patch_boto3_client, s3dl):
     import botocore
-    from trollmoves.s3downloader import parse_args
-    from trollmoves.s3downloader import s3downloader
-    parse = parse_args(['--config-file=' + config_yaml])
-    s3dl = s3downloader(parse)
     s3dl.read_config(debug=False)
     s3dl.setup_logging()
     bn = 'filename-basename'
@@ -262,12 +234,8 @@ def test_download_from_s3_exception(patch_boto3_client, config_yaml):
     assert result is False
 
 
-def test_setup_logging(config_yaml):
+def test_setup_logging(s3dl):
     import logging
-    from trollmoves.s3downloader import parse_args
-    from trollmoves.s3downloader import s3downloader
-    parse = parse_args(['--config-file=' + config_yaml])
-    s3dl = s3downloader(parse)
     s3dl.read_config(debug=False)
 
     LOGGER, handler = s3dl.setup_logging()
