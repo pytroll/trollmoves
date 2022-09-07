@@ -47,6 +47,8 @@ import os
 import sys
 import yaml
 import boto3
+import queue
+import argparse
 import logging
 import botocore
 from logging import handlers
@@ -146,7 +148,7 @@ class FilePublisher(Thread):
     def stop(self):
         """Stops the file publisher"""
         self.loop = False
-        self.queue.put(None)
+        self.queue.put("STOP")
 
     def _publish_message(self, retv, publisher):
         if not self.loop:
@@ -169,136 +171,190 @@ class FilePublisher(Thread):
             LOGGER.info("Received keyboard interrupt. Shutting down")
             raise
 
-# Config management
+
+class s3downloader():
+    
+    def __init__(self, cmd_args):
+        self.config = None
+        self.cmd_args = cmd_args
+        self.listener_queue = queue.Queue()
+        self.publisher_queue = queue.Queue()
+        self.listener = None
+        self.publisher = None
+
+    def _stop(self):
+        self.listener.stop()
+        self.publisher.stop()
+        LOGGER.info("Exiting s3downloader.")
+
+    def start(self):
+        LOGGER.info("Starting up.")
+        self.listener = Listener(self.listener_queue, self.config, subscribe_nameserver=self.cmd_args.subscribe_nameserver)
+        self.listener.start()
+
+        self.publisher = FilePublisher(self.publisher_queue, self.cmd_args.nameservers)
+        self.publisher.start()
+
+        self._read_from_queue()
+
+        self._stop()
+
+    def read_config(self, debug=True):
+        """Read the config file from cmd args.
+        """
+        if self.cmd_args.config_file and os.path.exists(self.cmd_args.config_file):
+            with open(self.cmd_args.config_file, 'r') as stream:
+                try:
+                    self.config = yaml.safe_load(stream)
+                    if debug:
+                        import pprint
+                        pp = pprint.PrettyPrinter(indent=4)
+                        pp.pprint(self.config)
+                except FileNotFoundError:
+                    print("Could not find you config file:", self.cmd_args.config_file)
+                    raise
+                except yaml.YAMLError as exc:
+                    print("Failed reading yaml config file: {} with: {}".format(self.cmd_args.config_file, exc))
+                    raise yaml.YAMLError
+        else:
+            raise FileNotFoundError(self.cmd_args.config_file)
+
+        return self.config
 
 
-def read_config(filename, debug=True):
-    """Read the config file called *filename*.
-    """
-    with open(filename, 'r') as stream:
+    def setup_logging(self):
+        """
+        Init and setup logging
+        """
+        # Set up logging
         try:
-            config = yaml.safe_load(stream)
-            if debug:
-                import pprint
-                pp = pprint.PrettyPrinter(indent=4)
-                pp.pprint(config)
-        except FileNotFoundError:
-            print("Could not find you config file:", filename)
+            loglevel = logging.INFO
+            if self.cmd_args.log and 'logging' in self.config:
+                ndays = 1
+                ncount = 30
+                try:
+                    ndays = int(self.config['logging']["log_rotation_days"])
+                    ncount = int(self.config['logging']["log_rotation_backup"])
+                except KeyError:
+                    pass
+
+                handler = handlers.TimedRotatingFileHandler(self.cmd_args.log,
+                                                            when='midnight',
+                                                            interval=ndays,
+                                                            backupCount=ncount,
+                                                            encoding=None,
+                                                            delay=False,
+                                                            utc=True)
+
+                handler.doRollover()
+            else:
+                handler = logging.StreamHandler(sys.stderr)
+
+            if 'logging_mode' in self.config['logging'] and self.config['logging']["logging_mode"] == "DEBUG":
+                loglevel = logging.DEBUG
+
+            handler.setLevel(loglevel)
+            logging.getLogger('').setLevel(loglevel)
+            logging.getLogger('').addHandler(handler)
+
+            formatter = logging.Formatter(fmt=_DEFAULT_LOG_FORMAT,
+                                        datefmt=_DEFAULT_TIME_FORMAT)
+            handler.setFormatter(formatter)
+            logging.getLogger('posttroll').setLevel(loglevel)
+            logging.getLogger('botocore').setLevel(loglevel)
+            logging.getLogger('s3transfer').setLevel(loglevel)
+            logging.getLogger('urllib3').setLevel(loglevel)
+            LOGGER = logging.getLogger('S3 downloader')
+        except Exception:
+            print("Logging setup failed. Check your config")
             raise
-        except yaml.YAMLError as exc:
-            print("Failed reading yaml config file: {} with: {}".format(filename, exc))
-            raise yaml.YAMLError
 
-    return config
+        return LOGGER, handler
 
 
-def setup_logging(config, log_file):
-    """
-    Init and setup logging
-    """
-    loglevel = logging.INFO
-    if log_file and 'logging' in config:
-        ndays = 1
-        ncount = 30
+    def _get_basename(self, uri):
+        up = urlparse(uri)
+        bn = os.path.basename(up.path)
+        return bn
+
+
+    def _download_from_s3(self, bn):
         try:
-            ndays = int(config['logging']["log_rotation_days"])
-            ncount = int(config['logging']["log_rotation_backup"])
-        except KeyError:
-            pass
-
-        handler = handlers.TimedRotatingFileHandler(os.path.join(log_file),
-                                                    when='midnight',
-                                                    interval=ndays,
-                                                    backupCount=ncount,
-                                                    encoding=None,
-                                                    delay=False,
-                                                    utc=True)
-
-        handler.doRollover()
-    else:
-        handler = logging.StreamHandler(sys.stderr)
-
-    if 'logging_mode' in config['logging'] and config['logging']["logging_mode"] == "DEBUG":
-        loglevel = logging.DEBUG
-
-    handler.setLevel(loglevel)
-    logging.getLogger('').setLevel(loglevel)
-    logging.getLogger('').addHandler(handler)
-
-    formatter = logging.Formatter(fmt=_DEFAULT_LOG_FORMAT,
-                                  datefmt=_DEFAULT_TIME_FORMAT)
-    handler.setFormatter(formatter)
-    logging.getLogger('posttroll').setLevel(loglevel)
-    logging.getLogger('botocore').setLevel(loglevel)
-    logging.getLogger('s3transfer').setLevel(loglevel)
-    logging.getLogger('urllib3').setLevel(loglevel)
-    LOGGER = logging.getLogger('S3 downloader')
-
-    return LOGGER, handler
-
-
-def _get_basename(uri):
-    up = urlparse(uri)
-    bn = os.path.basename(up.path)
-    return bn
-
-
-def _download_from_s3(config, bn):
-    try:
-        s3 = boto3.client('s3', endpoint_url=config['endpoint_url'],
-                          aws_access_key_id=config['access_key'],
-                          aws_secret_access_key=config['secret_key'])
-        s3.download_file(config['bucket'], bn, os.path.join(config.get('download_destination', '.'), bn))
-    except botocore.exceptions.ClientError:
-        LOGGER.exception("S3 download failed.")
-        return False
-    return True
-
-
-def _generate_message_if_file_exists_after_download(config, bn, msg):
-    if os.path.exists(os.path.join(config.get('download_destination', '.'), bn)):
-        LOGGER.debug("Successfully downloaded file %s to %s", bn, config.get('download_destination', '.'))
-        to_send = msg.data.copy()
-        to_send.pop('dataset', None)
-        to_send.pop('collection', None)
-        to_send.pop('filename', None)
-        to_send.pop('compress', None)
-        to_send.pop('tst', None)
-        to_send.pop('uri', None)
-        to_send.pop('uid', None)
-        to_send.pop('file_list', None)
-        to_send.pop('path', None)
-        to_send['uri'] = os.path.join(config.get('download_destination', '.'), bn)
-
-        pubmsg = Message(config['publish-topic'], "file", to_send).encode()
-        return pubmsg
-    return None
-
-
-def _get_one_message(config, subscribe_queue, publish_queue):
-    LOGGER.debug("Start reading from queue ... ")
-    try:
-        msg = subscribe_queue.get()
-    except KeyboardInterrupt:
-        return False
-    if msg is None:
-        LOGGER.debug("msg is none ... ")
+            s3 = boto3.client('s3', endpoint_url=self.config['endpoint_url'],
+                            aws_access_key_id=self.config['access_key'],
+                            aws_secret_access_key=self.config['secret_key'])
+            s3.download_file(self.config['bucket'], bn, os.path.join(self.config.get('download_destination', '.'), bn))
+        except botocore.exceptions.ClientError:
+            LOGGER.exception("S3 download failed.")
+            return False
         return True
-    LOGGER.debug("Read from queue ... ")
-    LOGGER.debug("Read from queue: {}".format(msg))
-    bn = _get_basename(msg.data['uri'])
-    if _download_from_s3(config, bn):
-        pubmsg = _generate_message_if_file_exists_after_download(config, bn, msg)
-        LOGGER.info("Sending: " + str(pubmsg))
-        publish_queue.put(pubmsg)
-    else:
-        LOGGER.error("Could not download file %s for some reason. SKipping this.", bn)
-    return True
 
 
-def read_from_queue(subscribe_queue, publish_queue, config):
-    # read from queue
-    running = True
-    while running:
-        if not _get_one_message(config, subscribe_queue, publish_queue):
-            running = False
+    def _generate_message_if_file_exists_after_download(self, bn, msg):
+        if os.path.exists(os.path.join(self.config.get('download_destination', '.'), bn)):
+            LOGGER.debug("Successfully downloaded file %s to %s", bn, self.config.get('download_destination', '.'))
+            to_send = msg.data.copy()
+            to_send.pop('dataset', None)
+            to_send.pop('collection', None)
+            to_send.pop('filename', None)
+            to_send.pop('compress', None)
+            to_send.pop('tst', None)
+            to_send.pop('uri', None)
+            to_send.pop('uid', None)
+            to_send.pop('file_list', None)
+            to_send.pop('path', None)
+            to_send['uri'] = os.path.join(self.config.get('download_destination', '.'), bn)
+
+            pubmsg = Message(self.config['publish-topic'], "file", to_send).encode()
+            return pubmsg
+        return None
+
+
+    def _get_one_message(self):
+        LOGGER.debug("Start reading from queue ... ")
+        try:
+            msg = self.listener_queue.get()
+        except KeyboardInterrupt:
+            return False
+        if msg is None:
+            LOGGER.debug("msg is none ... ")
+            return True
+        LOGGER.debug("Read from queue ... ")
+        LOGGER.debug("Read from queue: {}".format(msg))
+        bn = self._get_basename(msg.data['uri'])
+        if self._download_from_s3(bn):
+            pubmsg = self._generate_message_if_file_exists_after_download(bn, msg)
+            LOGGER.info("Sending: " + str(pubmsg))
+            self.publisher_queue.put(pubmsg)
+        else:
+            LOGGER.error("Could not download file %s for some reason. SKipping this.", bn)
+        return True
+
+
+    def _read_from_queue(self):
+        # read from queue
+        running = True
+        while running:
+            if not self._get_one_message():
+                running = False
+
+
+def parse_args(args):
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("-c", "--config-file",
+                        help="The configuration file to run on.")
+    parser.add_argument("-l", "--log",
+                        help="The file to log to. stdout otherwise.")
+    parser.add_argument("-r", "--subscribe-nameserver",
+                        type=str,
+                        dest='subscribe_nameserver',
+                        default="localhost",
+                        help="subscribe nameserver, defaults to localhost")
+    parser.add_argument("-n", "--nameservers",
+                        type=str,
+                        dest='nameservers',
+                        default=None,
+                        nargs='*',
+                        help="nameservers, defaults to localhost")
+    return parser.parse_args(args)

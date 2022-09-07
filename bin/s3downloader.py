@@ -43,62 +43,21 @@ download_destination: './'
 
 """
 
-import os
-import queue
+import sys
 import logging
-import argparse
 
-from trollmoves.s3downloader import read_config, setup_logging
-from trollmoves.s3downloader import Listener, FilePublisher
-from trollmoves.s3downloader import read_from_queue
+from trollmoves.s3downloader import parse_args
+from trollmoves.s3downloader import s3downloader
 
 LOGGER = logging.getLogger(__name__)
+  
+def main():
+  cmd_args = parse_args(sys.argv[1:])
+
+  s3dl = s3downloader(cmd_args)
+  s3dl.read_config(debug=False)
+  s3dl.setup_logging()
+  s3dl.start()
 
 if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument("-c", "--config-file",
-                        help="The configuration file to run on.")
-    parser.add_argument("-l", "--log",
-                        help="The file to log to. stdout otherwise.")
-    parser.add_argument("-r", "--subscribe-nameserver",
-                        type=str,
-                        dest='subscribe_nameserver',
-                        default="localhost",
-                        help="subscribe nameserver, defaults to localhost")
-    parser.add_argument("-n", "--nameservers",
-                        type=str,
-                        dest='nameservers',
-                        default=None,
-                        nargs='*',
-                        help="nameservers, defaults to localhost")
-    cmd_args = parser.parse_args()
-
-    config = None
-    if os.path.exists(cmd_args.config_file):
-        config = read_config(cmd_args.config_file, debug=False)
-
-    # Set up logging
-    try:
-        LOGGER, handler = setup_logging(config, cmd_args.log)
-    except Exception:
-        print("Logging setup failed. Check your config")
-        raise
-
-    LOGGER.info("Starting up.")
-
-    listener_queue = queue.Queue()
-    publisher_queue = queue.Queue()
-
-    listener = Listener(listener_queue, config, subscribe_nameserver=cmd_args.subscribe_nameserver)
-    listener.start()
-
-    publisher = FilePublisher(publisher_queue, cmd_args.nameservers)
-    publisher.start()
-
-    read_from_queue(listener_queue, publisher_queue, config)
-
-    listener.stop()
-    publisher.stop()
-    LOGGER.info("Exiting s3downloader.")
+  main()
