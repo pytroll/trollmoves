@@ -26,7 +26,6 @@ from unittest.mock import PropertyMock, patch
 from tempfile import NamedTemporaryFile
 import os
 
-import argparse
 import pytest
 from posttroll.message import Message
 
@@ -330,7 +329,7 @@ def test_file_publisher_stop_loop(patch_publish):
     fp.stop()
     assert fp.loop is False
     message = pqueue.get()
-    assert message is "STOP"
+    assert message == "STOP"
 
 
 @patch('trollmoves.s3downloader.Publish')
