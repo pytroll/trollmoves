@@ -173,7 +173,7 @@ class FilePublisher(Thread):
 
 
 class s3downloader():
-    
+
     def __init__(self, cmd_args):
         self.config = None
         self.cmd_args = cmd_args
@@ -189,7 +189,8 @@ class s3downloader():
 
     def start(self):
         LOGGER.info("Starting up.")
-        self.listener = Listener(self.listener_queue, self.config, subscribe_nameserver=self.cmd_args.subscribe_nameserver)
+        self.listener = Listener(self.listener_queue, self.config,
+                                 subscribe_nameserver=self.cmd_args.subscribe_nameserver)
         self.listener.start()
 
         self.publisher = FilePublisher(self.publisher_queue, self.cmd_args.nameservers)
@@ -220,7 +221,6 @@ class s3downloader():
             raise FileNotFoundError(self.cmd_args.config_file)
 
         return self.config
-
 
     def setup_logging(self):
         """
@@ -258,7 +258,7 @@ class s3downloader():
             logging.getLogger('').addHandler(handler)
 
             formatter = logging.Formatter(fmt=_DEFAULT_LOG_FORMAT,
-                                        datefmt=_DEFAULT_TIME_FORMAT)
+                                          datefmt=_DEFAULT_TIME_FORMAT)
             handler.setFormatter(formatter)
             logging.getLogger('posttroll').setLevel(loglevel)
             logging.getLogger('botocore').setLevel(loglevel)
@@ -271,24 +271,21 @@ class s3downloader():
 
         return LOGGER, handler
 
-
     def _get_basename(self, uri):
         up = urlparse(uri)
         bn = os.path.basename(up.path)
         return bn
 
-
     def _download_from_s3(self, bn):
         try:
             s3 = boto3.client('s3', endpoint_url=self.config['endpoint_url'],
-                            aws_access_key_id=self.config['access_key'],
-                            aws_secret_access_key=self.config['secret_key'])
+                              aws_access_key_id=self.config['access_key'],
+                              aws_secret_access_key=self.config['secret_key'])
             s3.download_file(self.config['bucket'], bn, os.path.join(self.config.get('download_destination', '.'), bn))
         except botocore.exceptions.ClientError:
             LOGGER.exception("S3 download failed.")
             return False
         return True
-
 
     def _generate_message_if_file_exists_after_download(self, bn, msg):
         if os.path.exists(os.path.join(self.config.get('download_destination', '.'), bn)):
@@ -309,7 +306,6 @@ class s3downloader():
             return pubmsg
         return None
 
-
     def _get_one_message(self):
         LOGGER.debug("Start reading from queue ... ")
         try:
@@ -329,7 +325,6 @@ class s3downloader():
         else:
             LOGGER.error("Could not download file %s for some reason. SKipping this.", bn)
         return True
-
 
     def _read_from_queue(self):
         # read from queue

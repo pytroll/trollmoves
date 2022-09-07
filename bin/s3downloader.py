@@ -50,14 +50,16 @@ from trollmoves.s3downloader import parse_args
 from trollmoves.s3downloader import s3downloader
 
 LOGGER = logging.getLogger(__name__)
-  
-def main():
-  cmd_args = parse_args(sys.argv[1:])
 
-  s3dl = s3downloader(cmd_args)
-  s3dl.read_config(debug=False)
-  s3dl.setup_logging()
-  s3dl.start()
+
+def main():
+    cmd_args = parse_args(sys.argv[1:])
+
+    s3dl = s3downloader(cmd_args)
+    s3dl.read_config(debug=False)
+    s3dl.setup_logging()
+    s3dl.start()
+
 
 if __name__ == "__main__":
-  main()
+    main()

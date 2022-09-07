@@ -46,6 +46,7 @@ bucket: atms-sdr
 download_destination: '/destination-directory'
 """
 
+
 def _write_named_temporary_config(data):
     with NamedTemporaryFile('w', delete=False) as fid:
         config_fname = fid.name
@@ -116,11 +117,13 @@ def s3dl(config_yaml):
     from trollmoves.s3downloader import s3downloader
     parse = parse_args(['--config-file=' + config_yaml])
     return s3downloader(parse)
-    
+
+
 def test_get_basename(s3dl):
     uri = os.path.join("root", "anypath", "filename-basename")
     bn = s3dl._get_basename(uri)
     assert bn == 'filename-basename'
+
 
 @patch('os.path.exists')
 def test_generate_message_if_file_exists_after_download(patch_os_path_exists, s3dl):
@@ -164,7 +167,7 @@ def test_get_one_message(patch_subscribe, patch_get_basename, patch_download_fro
 @patch('trollmoves.s3downloader.s3downloader._download_from_s3')
 @patch('trollmoves.s3downloader.s3downloader._get_basename')
 @patch('queue.Queue')
-def test_get_one_message_none(patch_sub_q,patch_get_basename, patch_download_from_s3, s3dl):
+def test_get_one_message_none(patch_sub_q, patch_get_basename, patch_download_from_s3, s3dl):
     s3dl.read_config(debug=False)
     s3dl.setup_logging()
     s3dl.listener_queue = patch_sub_q
@@ -209,6 +212,7 @@ def test_read_from_queue(patch_get_one_message, s3dl):
     s3dl._read_from_queue()
     # TODO: what does this tests?
 
+
 @patch('boto3.client')
 def test_download_from_s3(patch_boto3_client, s3dl):
     s3dl.read_config(debug=False)
@@ -227,7 +231,7 @@ def test_download_from_s3_exception(patch_boto3_client, s3dl):
     error_response = {'Error': {'Code': 'TEST',
                                 'Message': 'TEST MESSAGE',
                                 }
-                    }
+                      }
     patch_boto3_client.return_value.download_file.side_effect = botocore.exceptions.ClientError(
         error_response=error_response, operation_name='test')
     result = s3dl._download_from_s3(bn)
