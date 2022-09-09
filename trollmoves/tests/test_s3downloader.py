@@ -255,6 +255,15 @@ def test_setup_logging(s3dl):
     assert isinstance(handler, StreamHandler) is True
 
 
+@patch('logging.StreamHandler')
+def test_setup_logging_exception(patch_stream_handler, s3dl):
+    import logging
+    s3dl.read_config(debug=False)
+    patch_stream_handler.side_effect = Exception
+    with pytest.raises(Exception):
+        s3dl.setup_logging()
+
+
 def test_setup_logging_file(config_yaml):
     import logging
     from trollmoves.s3downloader import parse_args
