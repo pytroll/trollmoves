@@ -118,6 +118,14 @@ def s3dl(config_yaml):
     return s3downloader(parse)
 
 
+@patch('os.path.exists')
+def test_read_config_exception3(patch_os_path_exists, s3dl):
+    """Test read yaml config."""
+    patch_os_path_exists.return_value = False
+    with pytest.raises(FileNotFoundError):
+        s3dl.read_config(debug=False)
+
+
 def test_get_basename(s3dl):
     uri = os.path.join("root", "anypath", "filename-basename")
     bn = s3dl._get_basename(uri)
@@ -489,3 +497,31 @@ def test_listener_message_exception_2(patch_get_pub_address, patch_subscriber):
     patch_subscriber.side_effect = KeyboardInterrupt
     with pytest.raises(KeyboardInterrupt):
         listener.run()
+
+
+@patch('trollmoves.s3downloader.s3downloader._get_one_message')
+@patch('trollmoves.s3downloader.FilePublisher')
+@patch('trollmoves.s3downloader.Listener')
+def test_start_stop(patch_listener, patch_publisher, patch_get_one_message, s3dl):
+    s3dl.read_config(debug=False)
+    s3dl.setup_logging()
+    patch_get_one_message.return_value = False
+    s3dl.start()
+
+    patch_listener().start.assert_called_once()
+    patch_publisher().start.assert_called_once()
+    patch_get_one_message.assert_called_once()
+    patch_listener().stop.assert_called_once()
+    patch_publisher().stop.assert_called_once()
+
+
+@patch('trollmoves.s3downloader.FilePublisher')
+@patch('trollmoves.s3downloader.Listener')
+def test_stop(patch_listener, patch_publisher, s3dl):
+    s3dl.read_config(debug=False)
+    s3dl.setup_logging()
+    s3dl.listener = patch_listener
+    s3dl.publisher = patch_publisher
+    s3dl._stop()
+    patch_listener.stop.assert_called_once()
+    patch_publisher.stop.assert_called_once()
