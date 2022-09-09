@@ -6,6 +6,8 @@ The common nominator is the use of Posttroll messaging to make requests, and to
 publish the completed transfers. These messages can be used to trigger further
 processing.
 
+The required libraries are listed for each of the parts below.
+
 ## Server/Client
 
 Setup where one or more Server processes announce new files, and one or more
@@ -18,6 +20,17 @@ a message when a matching file appears. If a Client makes a request for a file,
 the file is transferred using one of the built-in movers (see below) based on the
 destination given in the request.
 
+Required libraries:
+- ``netifaces``
+- ``posttroll``
+- ``pyinotify``
+- ``pyzmq``
+- ``trollsift``
+- ``watchdog``
+
+In addition, the required packages for the transfer protocol(s) to be used. See the
+mover documentation below for more details.
+
 ### Trollmoves Client
 
 Trollmoves Client is configured to subscribe to a specific topic, and to make requests
@@ -27,6 +40,13 @@ the request message. The Server handles the actual transfer.
 Client can be configured to listen to multiple sources for the same files. The request
 is made to the Server where the first announcement were received from.
 
+Required libraries:
+- ``netifaces``
+- ``posttroll``
+- ``pyinotify``
+- ``pyzmq``
+- ``trollsift``
+
 ### Trollmoves Mirror
 
 Trollmoves Mirror is a setup of back-to-back Server and Client that is used for
@@ -35,12 +55,33 @@ Mirror receives announcements from the internal network, publishes the file on
 external network, and upon receiving a request handles the transfer from internal
 Server to temporary directory and further on to the external destination.
 
+Required libraries:
+- ``netifaces``
+- ``posttroll``
+- ``pyinotify``
+- ``pyzmq``
+- ``trollsift``
+- ``watchdog``
+
+In addition, the required packages for the transfer protocol(s) to be used. See the
+mover documentation below for more details.
+
 ## Trollmoves Dispatcher
 
 Trollmoves Dispatcher can push files from local file system to any destination supported
 by the built-in movers. The dispatching is triggered by Posttroll messages published
 by a process creating the files, or otherwise following the arrival/creation of
 files.
+
+Required libraries:
+- ``netifaces``
+- ``posttroll``
+- ``pyinotify``
+- ``pyzmq``
+- ``trollsift``
+
+In addition, the required packages for the transfer protocol(s) to be used. See the
+mover documentation below for more details.
 
 ## Individual movers
 
@@ -52,18 +93,32 @@ module.
 
 ``FileMover`` copies or moves a file between local filesystems.
 
+Additional required packages: none.
+
 ### ``FtpMover``
 
 ``FtpMover`` transfers a local file to a FTP server.
+
+Additional required packages: none.
 
 ### ``ScpMover``
 
 ``ScpMover`` uses SSH to transfer a local file to another (or the same) server.
 
+Additional required packages:
+- ``scp``
+- ``paramiko``
+
 ### ``SftpMover``
 
 ``SftpMover`` uses SFTP protocol to transfer a local file to an SFTP server.
 
+Additional required packages:
+- ``paramiko``
+
 ### ``S3Mover``
 
 ``S3Mover`` uploads a file to an S3 object storage.
+
+Additional required packages:
+- ``s3fs``
