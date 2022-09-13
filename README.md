@@ -10,7 +10,7 @@ The required libraries are listed for each of the parts below.
 
 ## Server/Client
 
-Setup where one or more Server processes announce new files, and one or more
+Setup where one or more Server processes announce new files, and one or two
 Client processes make transfer requests for the configured files.
 
 ### Trollmoves Server
@@ -28,8 +28,8 @@ Required libraries:
 - ``trollsift``
 - ``watchdog``
 
-In addition, the required packages for the transfer protocol(s) to be used. See the
-mover documentation below for more details.
+In addition, the required packages for the transfer protocol(s) to be used need to be
+installed. See the mover documentation below for more details.
 
 ### Trollmoves Client
 
@@ -39,6 +39,12 @@ the request message. The Server handles the actual transfer.
 
 Client can be configured to listen to multiple sources for the same files. The request
 is made to the Server where the first announcement were received from.
+
+Two clients can be configured to handle requests for a given data. This makes it possible
+to make updates without outages, and in general add redundancy. One of the Client
+processes is considered the primary, and the secondary will process the leftover
+messages after a small (for example 0.2 s - 1 s) delay. The Clients communicate
+which files are already handled, so duplicate transfers should not happen.
 
 Required libraries:
 - ``netifaces``
