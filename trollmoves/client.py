@@ -41,7 +41,7 @@ from zmq import LINGER, POLLIN, REQ, Poller
 import bz2
 from posttroll import get_context
 from posttroll.message import Message, MessageError
-from posttroll.publisher import NoisyPublisher
+from posttroll.publisher import create_publisher_from_dict_config
 from posttroll.subscriber import Subscriber
 from trollsift.parser import compose
 
@@ -73,6 +73,10 @@ LISTENER_CHECK_INTERVAL = 1
 
 def read_config(filename):
     """Read the config file called *filename*."""
+    return _read_ini_config(filename)
+
+
+def _read_ini_config(filename):
     cp_ = RawConfigParser()
     cp_.read(filename)
 
@@ -81,7 +85,8 @@ def read_config(filename):
     for section in cp_.sections():
         res[section] = dict(cp_.items(section))
         _set_config_defaults(res[section])
-        _parse_boolean_config_items(res[section])
+        _parse_boolean_config_items(res[section], cp_[section])
+        _parse_nameservers(res[section], cp_[section])
         if not _check_provider_config(res, section):
             continue
         if not _check_destination(res, section):
@@ -104,19 +109,24 @@ def _set_config_defaults(conf):
     conf.setdefault("create_target_directory", True)
 
 
-FALSY = ["", "False", "false", "0", "off"]
-TRUTHY = ["True", "true", "on", "1"]
+def _parse_boolean_config_items(conf, raw_conf):
+    for key in ["delete", "heartbeat", "create_target_directory"]:
+        try:
+            val = raw_conf.getboolean(key)
+        except ValueError:
+            continue
+        if val is not None:
+            conf[key] = val
 
 
-def _parse_boolean_config_items(conf):
-    if conf["delete"] in FALSY:
-        conf["delete"] = False
-    if conf["delete"] in TRUTHY:
-        conf["delete"] = True
-    if conf["heartbeat"] in FALSY:
-        conf["heartbeat"] = False
-    if conf["create_target_directory"] in FALSY:
-        conf["create_target_directory"] = False
+def _parse_nameservers(conf, raw_conf):
+    try:
+        val = raw_conf.getboolean("nameservers")
+    except ValueError:
+        val = conf["nameservers"]
+    if isinstance(val, str):
+        val = val.split()
+    conf["nameservers"] = val
 
 
 def _check_provider_config(conf, section):
@@ -700,7 +710,6 @@ class Chain(Thread):
         super(Chain, self).__init__()
         self._config = config
         self._name = name
-        self._np = None
         self.publisher = None
         self.listeners = {}
         self.listener_died_event = Event()
@@ -709,16 +718,15 @@ class Chain(Thread):
 
     def setup_publisher(self):
         """Initialize publisher."""
-        if self._np is None:
+        if self.publisher is None:
             try:
                 nameservers = self._config["nameservers"]
-                if nameservers:
-                    nameservers = nameservers.split()
-                self._np = NoisyPublisher(
-                    "move_it_" + self._name,
-                    port=self._config["publish_port"],
-                    nameservers=nameservers)
-                self.publisher = self._np.start()
+                pub_settings = {
+                    "name": "move_it_" + self._name,
+                    "port": self._config["publish_port"],
+                    "nameservers": nameservers,
+                }
+                self.publisher = create_publisher_from_dict_config(pub_settings).start()
             except (KeyError, NameError):
                 pass
 
@@ -854,9 +862,9 @@ class Chain(Thread):
         self.reset_listeners()
 
     def _stop_publisher(self):
-        if self._np:
-            self._np.stop()
-            self._np = None
+        if self.publisher:
+            self.publisher.stop()
+            self.publisher = None
 
     def restart(self):
         """Restart the chain, return a new running instance."""

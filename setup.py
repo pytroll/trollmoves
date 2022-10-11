@@ -28,7 +28,13 @@ import versioneer
 extras_require = {
     's3': [
         's3fs',
-    ]
+    ],
+    'server': [
+        'inotify',
+        'paramiko',
+        'scp',
+        'watchdog',
+    ],
 }
 
 all_extras = []
@@ -64,8 +70,7 @@ setup(name="trollmoves",
       zip_safe=False,
       install_requires=['pyinotify', 'posttroll>=1.5.1',
                         'trollsift', 'netifaces',
-                        'pyzmq', 'inotify',
-                        'scp', 'paramiko', 'pyyaml', 'watchdog'],
+                        'pyzmq', 'scp', 'pyyaml', 'watchdog'],
       tests_require=test_requires,
       extras_require=extras_require,
       )
