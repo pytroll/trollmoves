@@ -268,7 +268,7 @@ def check_message_for_filesystem_info_and_untarring(subscriber, tmp_path, moved_
     expected_filesystem = {"cls": "fsspec.implementations.tar.TarFileSystem",
                            "protocol": "tar",
                            "args": [],
-                           "target_options": {"host": host, "protocol": "ssh"},
+                           "target_options": {"host": host},
                            "target_protocol": "ssh",
                            "fo": os.fspath(moved_filename)}
 

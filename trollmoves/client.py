@@ -40,7 +40,7 @@ from zmq import LINGER, POLLIN, REQ, Poller
 import bz2
 from posttroll import get_context
 from posttroll.message import Message, MessageError
-from posttroll.publisher import NoisyPublisher
+from posttroll.publisher import create_publisher_from_dict_config
 from posttroll.subscriber import Subscriber
 from trollsift.parser import compose
 
@@ -82,7 +82,8 @@ def read_config(filename):
     for section in cp_.sections():
         res[section] = dict(cp_.items(section))
         _set_config_defaults(res[section])
-        _parse_boolean_config_items(res[section])
+        _parse_boolean_config_items(res[section], cp_[section])
+        _parse_nameservers(res[section], cp_[section])
         if not _check_provider_config(res, section):
             continue
         if not _check_destination(res, section):
@@ -102,15 +103,27 @@ def _set_config_defaults(conf):
     conf.setdefault("req_timeout", DEFAULT_REQ_TIMEOUT)
     conf.setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
     conf.setdefault("nameservers", None)
+    conf.setdefault("create_target_directory", True)
 
 
-def _parse_boolean_config_items(conf):
-    if conf["delete"] in ["", "False", "false", "0", "off"]:
-        conf["delete"] = False
-    if conf["delete"] in ["True", "true", "on", "1"]:
-        conf["delete"] = True
-    if conf["heartbeat"] in ["", "False", "false", "0", "off"]:
-        conf["heartbeat"] = False
+def _parse_boolean_config_items(conf, raw_conf):
+    for key in ["delete", "heartbeat", "create_target_directory"]:
+        try:
+            val = raw_conf.getboolean(key)
+        except ValueError:
+            continue
+        if val is not None:
+            conf[key] = val
+
+
+def _parse_nameservers(conf, raw_conf):
+    try:
+        val = raw_conf.getboolean("nameservers")
+    except ValueError:
+        val = conf["nameservers"]
+    if isinstance(val, str):
+        val = val.split()
+    conf["nameservers"] = val
 
 
 def _check_provider_config(conf, section):
@@ -418,6 +431,8 @@ def create_push_req_message(msg, destination, login):
 def create_local_dir(destination, local_root, mode=0o777):
     """Create the local directory if it doesn't exist and return that path."""
     duri = urlparse(destination)
+    if duri.scheme in ('s3'):
+        return None
     local_dir = os.path.join(*([local_root] + duri.path.split(os.path.sep)))
 
     if not os.path.exists(local_dir):
@@ -471,7 +486,7 @@ def make_uris(msg, destination, login=None):
     duri = urlparse(destination)
     scheme = duri.scheme or 'ssh'
     dest_hostname = duri.hostname or socket.gethostname()
-    if socket.gethostbyname(dest_hostname) in get_local_ips():
+    if scheme not in ('s3') and socket.gethostbyname(dest_hostname) in get_local_ips():
         scheme_, host_ = "ssh", dest_hostname  # local file
     else:
         scheme_, host_ = scheme, dest_hostname  # remote file
@@ -616,7 +631,10 @@ def _request_files(huid, destination, login, publisher, **kwargs):
 
         req, fake_req = create_push_req_message(msg, _destination, login)
         LOGGER.info("Requesting: %s", str(fake_req))
-        local_dir = create_local_dir(_destination, kwargs.get('ftp_root', '/'))
+        if kwargs.get('create_target_directory', True):
+            local_dir = create_local_dir(_destination, kwargs.get('ftp_root', '/'))
+        else:
+            local_dir = None
 
         publisher.send(str(fake_req))
 
@@ -690,7 +708,6 @@ class Chain(Thread):
         super(Chain, self).__init__()
         self._config = config
         self._name = name
-        self._np = None
         self.publisher = None
         self.listeners = {}
         self.listener_died_event = Event()
@@ -699,16 +716,15 @@ class Chain(Thread):
 
     def setup_publisher(self):
         """Initialize publisher."""
-        if self._np is None:
+        if self.publisher is None:
             try:
                 nameservers = self._config["nameservers"]
-                if nameservers:
-                    nameservers = nameservers.split()
-                self._np = NoisyPublisher(
-                    "move_it_" + self._name,
-                    port=self._config["publish_port"],
-                    nameservers=nameservers)
-                self.publisher = self._np.start()
+                pub_settings = {
+                    "name": "move_it_" + self._name,
+                    "port": self._config["publish_port"],
+                    "nameservers": nameservers,
+                }
+                self.publisher = create_publisher_from_dict_config(pub_settings).start()
             except (KeyError, NameError):
                 pass
 
@@ -844,9 +860,9 @@ class Chain(Thread):
         self.reset_listeners()
 
     def _stop_publisher(self):
-        if self._np:
-            self._np.stop()
-            self._np = None
+        if self.publisher:
+            self.publisher.stop()
+            self.publisher = None
 
     def restart(self):
         """Restart the chain, return a new running instance."""

@@ -34,8 +34,10 @@ from urllib.parse import urlparse
 import netrc
 
 from ftplib import FTP, all_errors, error_perm
-from paramiko import SSHClient, SSHException, AutoAddPolicy
-from scp import SCPClient
+try:
+    from s3fs import S3FileSystem
+except ImportError:
+    S3FileSystem = None
 
 from trollmoves.utils import clean_url
 
@@ -43,8 +45,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 def move_it(pathname, destination, attrs=None, hook=None, rel_path=None):
-    """Check if the file pointed by *pathname* is in the filelist, and move it
-    if it is.
+    """Check if the file pointed by *pathname* is in the filelist, and move it if it is.
 
     The *destination* provided is used, and if *rel_path* is provided, it will
     be appended to the destination path.
@@ -87,6 +88,7 @@ class Mover(object):
     """Base mover object. Doesn't do anything as it has to be subclassed."""
 
     def __init__(self, origin, destination, attrs=None):
+        """Initialize the Mover."""
         try:
             self.destination = urlparse(destination)
         except AttributeError:
@@ -100,12 +102,12 @@ class Mover(object):
         self.attrs = attrs or {}
 
     def copy(self):
-        """Copy it !"""
+        """Copy the file."""
         raise NotImplementedError("Copy for scheme " + self.destination.scheme +
                                   " not implemented (yet).")
 
     def move(self):
-        """Move it !"""
+        """Move the file."""
         raise NotImplementedError("Move for scheme " + self.destination.scheme +
                                   " not implemented (yet).")
 
@@ -134,6 +136,7 @@ class Mover(object):
             return connection
 
     def delete_connection(self, connection):
+        """Delete active connection *connection*."""
         with self.active_connection_lock:
             LOGGER.debug('Closing connection to %s@%s:%s',
                          self._dest_username, self.destination.hostname, self.destination.port)
@@ -152,12 +155,10 @@ class Mover(object):
 
 
 class FileMover(Mover):
-    """Move files in the filesystem.
-    """
+    """Move files in the filesystem."""
 
     def copy(self):
-        """Copy
-        """
+        """Copy the file."""
         dirname = os.path.dirname(self.destination.path)
         if not os.path.exists(dirname):
             os.makedirs(dirname)
@@ -167,8 +168,7 @@ class FileMover(Mover):
             shutil.copy(self.origin, self.destination.path)
 
     def move(self):
-        """Move it !
-        """
+        """Move the file."""
         shutil.move(self.origin, self.destination.path)
 
 
@@ -183,19 +183,21 @@ class CTimer(Thread):
 
     """
 
-    def __init__(self, interval, function, args=(), kwargs={}):
+    def __init__(self, interval, function, args=(), kwargs=None):
+        """Initialize the timer."""
         Thread.__init__(self)
         self.interval = interval
         self.function = function
         self.args = args
-        self.kwargs = kwargs
+        self.kwargs = kwargs or {}
         self.finished = Event()
 
     def cancel(self):
-        """Stop the timer if it hasn't finished yet"""
+        """Stop the timer if it hasn't finished yet."""
         self.finished.set()
 
     def run(self):
+        """Run the timer."""
         self.finished.wait(self.interval)
         if not self.finished.is_set():
             self.function(*self.args, **self.kwargs)
@@ -203,14 +205,13 @@ class CTimer(Thread):
 
 
 class FtpMover(Mover):
-    """Move files over ftp.
-    """
+    """Move files over ftp."""
 
     active_connections = dict()
     active_connection_lock = Lock()
 
     def _get_netrc_authentication(self):
-        """Get login authentications from netrc file if available"""
+        """Get login authentications from netrc file if available."""
         try:
             secrets = netrc.netrc()
         except (netrc.NetrcParseError, FileNotFoundError) as e__:
@@ -226,7 +227,6 @@ class FtpMover(Mover):
 
     def open_connection(self):
         """Open the connection and login."""
-
         connection = FTP(timeout=10)
         LOGGER.debug("Connect...")
         connection.connect(self.destination.hostname,
@@ -246,6 +246,7 @@ class FtpMover(Mover):
 
     @staticmethod
     def is_connected(connection):
+        """Check if the connection *connection* is active."""
         try:
             connection.voidcmd("NOOP")
             return True
@@ -256,20 +257,19 @@ class FtpMover(Mover):
 
     @staticmethod
     def close_connection(connection):
+        """Close connection *connection*."""
         try:
             connection.quit()
         except all_errors:
             connection.close()
 
     def move(self):
-        """Push it !
-        """
+        """Upload the file and delete afterwards."""
         self.copy()
         os.remove(self.origin)
 
     def copy(self):
-        """Push it !
-        """
+        """Upload the file."""
         connection = self.get_connection(self.destination.hostname, self.destination.port, self._dest_username)
 
         def cd_tree(current_dir):
@@ -289,13 +289,14 @@ class FtpMover(Mover):
 
 
 class ScpMover(Mover):
+    """Move files over ssh with scp."""
 
-    """Move files over ssh with scp.
-    """
     active_connections = dict()
     active_connection_lock = Lock()
 
     def open_connection(self):
+        """Open a connection."""
+        from paramiko import SSHClient, SSHException, AutoAddPolicy
 
         retries = 3
         ssh_key_filename = self.attrs.get("ssh_key_filename", None)
@@ -328,6 +329,7 @@ class ScpMover(Mover):
 
     @staticmethod
     def is_connected(connection):
+        """Check if the connection *connection* is active."""
         LOGGER.debug("checking ssh connection")
         try:
             is_active = connection.get_transport().is_active()
@@ -339,18 +341,20 @@ class ScpMover(Mover):
 
     @staticmethod
     def close_connection(connection):
+        """Close connection *connection*."""
         if isinstance(connection, tuple):
             connection[0].close()
         else:
             connection.close()
 
     def move(self):
-        """Push it !"""
+        """Upload the file and delete it afterwards."""
         self.copy()
         os.remove(self.origin)
 
     def copy(self):
-        """Push it !"""
+        """Upload the file."""
+        from scp import SCPClient
 
         ssh_connection = self.get_connection(self.destination.hostname,
                                              self.destination.port or 22,
@@ -386,16 +390,18 @@ class SftpMover(Mover):
     """Move files over sftp."""
 
     def move(self):
-        """Push it !"""
+        """Push the file."""
         self.copy()
         os.remove(self.origin)
 
     def _agent_auth(self, transport):
-        """Attempt to authenticate to the given transport using any of the private
-        keys available from an SSH agent ... or from a local private RSA key file
-        (assumes no pass phrase).
+        """Attempt to authenticate to the given transport.
+
+        Use any of the private keys available from an SSH agent ... or
+        from a local private RSA key file (assumes no pass phrase).
 
         PFE: http://code.activestate.com/recipes/576810-copy-files-over-ssh-using-paramiko/
+
         """
         import paramiko
 
@@ -426,7 +432,7 @@ class SftpMover(Mover):
         raise IOError("RSA key auth failed!")
 
     def copy(self):
-        """Push it !"""
+        """Upload the file."""
         import paramiko
 
         transport = paramiko.Transport((self.destination.hostname,
@@ -451,9 +457,61 @@ class SftpMover(Mover):
         transport.close()
 
 
+class S3Mover(Mover):
+    """Move files to S3 cloud storage.
+
+    The transfer is initiated by Trollmoves Client by having destination that starts with "s3://".
+
+    All the connection configurations and such are done using the `fsspec` configuration system:
+
+    https://filesystem-spec.readthedocs.io/en/latest/features.html#configuration
+
+    An example configuration could be for example placed in `~/.config/fsspec/s3.json`::
+
+        {
+            "s3": {
+                "client_kwargs": {"endpoint_url": "https://s3.server.foo.com"},
+                "secret": "VERYBIGSECRET",
+                "key": "ACCESSKEY"
+            }
+        }
+
+    """
+
+    def copy(self):
+        """Copy the file to a bucket."""
+        if S3FileSystem is None:
+            raise ImportError("S3Mover requires 's3fs' to be installed.")
+        s3 = S3FileSystem()
+        destination_file_path = self._get_destination()
+        _create_s3_destination_path(s3, destination_file_path)
+        s3.put(self.origin, destination_file_path)
+
+    def _get_destination(self):
+        bucket_parts = []
+        bucket_parts.append(self.destination.netloc)
+        if self.destination.path != '/':
+            bucket_parts.append(self.destination.path.strip('/'))
+        bucket_parts.append(os.path.basename(self.origin))
+
+        return '/'.join(bucket_parts)
+
+    def move(self):
+        """Move the file."""
+        self.copy()
+        os.remove(self.origin)
+
+
+def _create_s3_destination_path(s3, destination_file_path):
+    destination_path = os.path.dirname(destination_file_path)
+    if not s3.exists(destination_path):
+        s3.mkdirs(destination_path)
+
+
 MOVERS = {'ftp': FtpMover,
           'file': FileMover,
           '': FileMover,
           'scp': ScpMover,
-          'sftp': SftpMover
+          'sftp': SftpMover,
+          's3': S3Mover,
           }
