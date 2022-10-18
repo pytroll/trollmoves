@@ -35,7 +35,7 @@ extras_require = {
         'scp',
         'watchdog',
     ],
-    "remote_fs": ["pytroll-collectors"],
+    "remote_fs": ["pytroll-collectors>=0.13.0"],
 }
 
 all_extras = []
