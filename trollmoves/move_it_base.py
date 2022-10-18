@@ -49,7 +49,6 @@ class MoveItBase(ABC):
         self.notifier = None
         self.watchman = None
         self.publisher = publisher
-        self._np = None
         self.chains = {}
         self.setup_logging()
         LOGGER.info("Starting up.")
@@ -68,7 +67,7 @@ class MoveItBase(ABC):
         except RuntimeError as err:
             LOGGER.warning("Could not stop notifier: %s", err)
         with suppress(AttributeError):
-            self._np.stop()
+            self.publisher.stop()
         self.terminate()
 
     @abstractmethod

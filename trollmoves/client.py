@@ -705,10 +705,11 @@ class Chain(Thread):
 
     def __init__(self, name, config):
         """Init a chain object."""
-        super(Chain, self).__init__()
+        super().__init__()
         self._config = config
         self._name = name
         self.publisher = None
+        self._pub_starter = None
         self.listeners = {}
         self.listener_died_event = Event()
         self.running = True
@@ -717,16 +718,15 @@ class Chain(Thread):
     def setup_publisher(self):
         """Initialize publisher."""
         if self.publisher is None:
-            try:
+            with suppress(KeyError, NameError):
                 nameservers = self._config["nameservers"]
                 pub_settings = {
                     "name": "move_it_" + self._name,
                     "port": self._config["publish_port"],
                     "nameservers": nameservers,
                 }
-                self.publisher = create_publisher_from_dict_config(pub_settings).start()
-            except (KeyError, NameError):
-                pass
+                self._pub_starter = create_publisher_from_dict_config(pub_settings)
+                self.publisher = self._pub_starter.start()
 
     def setup_listeners(self, keep_providers=None):
         """Set up the listeners."""
@@ -861,7 +861,8 @@ class Chain(Thread):
 
     def _stop_publisher(self):
         if self.publisher:
-            self.publisher.stop()
+            self._pub_starter.stop()
+            self._pub_starter = None
             self.publisher = None
 
     def restart(self):
@@ -907,7 +908,7 @@ def reload_config(filename, chains):
     LOGGER.debug("Reloaded config from %s", filename)
 
 
-class PushRequester(object):
+class PushRequester:
     """Base requester class."""
 
     request_retries = 3
