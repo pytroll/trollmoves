@@ -24,16 +24,16 @@
 """Movers for the move_it scripts."""
 
 import logging
+import netrc
 import os
 import shutil
 import sys
 import time
 import traceback
+from ftplib import FTP, all_errors, error_perm
 from threading import Event, Lock, Thread, current_thread
 from urllib.parse import urlparse
-import netrc
 
-from ftplib import FTP, all_errors, error_perm
 try:
     from s3fs import S3FileSystem
 except ImportError:
@@ -296,7 +296,7 @@ class ScpMover(Mover):
 
     def open_connection(self):
         """Open a connection."""
-        from paramiko import SSHClient, SSHException, AutoAddPolicy
+        from paramiko import SSHClient, SSHException
 
         retries = 3
         ssh_key_filename = self.attrs.get("ssh_key_filename", None)
@@ -304,7 +304,6 @@ class ScpMover(Mover):
             retries -= 1
             try:
                 ssh_connection = SSHClient()
-                ssh_connection.set_missing_host_key_policy(AutoAddPolicy())
                 ssh_connection.load_system_host_keys()
                 ssh_connection.connect(self.destination.hostname,
                                        username=self._dest_username,
@@ -394,67 +393,21 @@ class SftpMover(Mover):
         self.copy()
         os.remove(self.origin)
 
-    def _agent_auth(self, transport):
-        """Attempt to authenticate to the given transport.
+    def copy(self):
+        """Copy files.
 
-        Use any of the private keys available from an SSH agent ... or
-        from a local private RSA key file (assumes no pass phrase).
-
-        PFE: http://code.activestate.com/recipes/576810-copy-files-over-ssh-using-paramiko/
-
+        Uses high level paramiko functions.
         """
         import paramiko
-
-        agent = paramiko.Agent()
-
-        private_key_file = self.attrs.get("ssh_private_key_file", None)
-        if private_key_file:
-            private_key_file = os.path.expanduser(private_key_file)
-            LOGGER.info("Loading keys from local file %s", private_key_file)
-            agent_keys = (paramiko.RSAKey.from_private_key_file(private_key_file),)
-        else:
-            LOGGER.info("Loading keys from SSH agent")
-            agent_keys = agent.get_keys()
-        if len(agent_keys) == 0:
-            raise IOError("No available keys")
-
-        for key in agent_keys:
-            LOGGER.debug('Trying ssh key %s',
-                         key.get_fingerprint().encode('hex'))
-            try:
-                transport.auth_publickey(self._dest_username, key)
-                LOGGER.debug('... ssh key success!')
-                return
-            except paramiko.SSHException:
-                continue
-
-        # We found no valid key
-        raise IOError("RSA key auth failed!")
-
-    def copy(self):
-        """Upload the file."""
-        import paramiko
-
-        transport = paramiko.Transport((self.destination.hostname,
-                                        self.destination.port or 22))
-        transport.start_client()
-
-        self._agent_auth(transport)
-
-        if not transport.is_authenticated():
-            raise IOError("RSA key auth failed!")
-
-        sftp = transport.open_session()
-        sftp = paramiko.SFTPClient.from_transport(transport)
-        # sftp.get_channel().settimeout(300)
-
-        try:
-            sftp.mkdir(os.path.dirname(self.destination.path))
-        except IOError:
-            # Assuming remote directory exist
-            pass
-        sftp.put(self.origin, self.destination.path)
-        transport.close()
+        with paramiko.SSHClient() as ssh:
+            ssh.load_system_host_keys()
+            ssh.connect(self.destination.hostname,
+                        port=self.destination.port or 22,
+                        username=self._dest_username,
+                        allow_agent=True,
+                        key_filename=self.attrs.get("ssh_private_key_file"))
+            with ssh.open_sftp() as sftp:
+                sftp.put(self.origin, self.destination.path)
 
 
 class S3Mover(Mover):
