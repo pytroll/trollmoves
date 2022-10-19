@@ -24,16 +24,16 @@
 """Movers for the move_it scripts."""
 
 import logging
+import netrc
 import os
 import shutil
 import sys
 import time
 import traceback
+from ftplib import FTP, all_errors, error_perm
 from threading import Event, Lock, Thread, current_thread
 from urllib.parse import urlparse
-import netrc
 
-from ftplib import FTP, all_errors, error_perm
 try:
     from s3fs import S3FileSystem
 except ImportError:

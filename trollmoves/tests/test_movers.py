@@ -22,9 +22,10 @@
 
 """Test the movers."""
 
-from unittest.mock import patch
 import os
+from unittest.mock import patch
 from urllib.parse import urlunparse
+
 import pytest
 
 ORIGIN = '/path/to/mydata/filename.ext'
