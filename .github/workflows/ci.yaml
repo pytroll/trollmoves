@@ -37,6 +37,10 @@ jobs:
         run: |
           ssh-keygen -b 2048 -t rsa -f /home/runner/.ssh/id_rsa -N ""
 
+      - name: Create authorized_keys file
+        run: |
+          cp /home/runner/.ssh/id_rsa.pub /home/runner/.ssh/authorized_keys
+
       - name: Run unit tests
         run: |
           pytest --cov=trollmoves trollmoves/tests --cov-report=xml
