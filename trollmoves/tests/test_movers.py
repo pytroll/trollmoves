@@ -111,3 +111,31 @@ def test_s3_move(S3FileSystem):
     except AssertionError:
         os.remove(fname)
         raise OSError("File was not deleted after transfer.")
+
+
+def test_sftp_copy(tmp_path):
+    """Test the sftp mover's copy functionality."""
+    origin = tmp_path / "file.ext"
+    destination = tmp_path / "dest.ext"
+    with open(origin, mode="w") as fd:
+        fd.write("trying sftp")
+    from trollmoves.movers import SftpMover
+    import os
+    from urllib.parse import urlunparse
+    dest = urlunparse(("sftp", "localhost", os.fspath(destination), None, None, None))
+    SftpMover(origin, dest).copy()
+    assert os.path.exists(destination)
+
+
+def test_sftp_copy_custom_port(tmp_path):
+    """Test the sftp mover with a custom port."""
+    origin = tmp_path / "file.ext"
+    destination = tmp_path / "dest.ext"
+    with open(origin, mode="w") as fd:
+        fd.write("trying sftp")
+    from trollmoves.movers import SftpMover
+    import os
+    from urllib.parse import urlunparse
+    dest = urlunparse(("sftp", "localhost:22", os.fspath(destination), None, None, None))
+    SftpMover(origin, dest).copy()
+    assert os.path.exists(destination)
