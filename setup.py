@@ -36,6 +36,7 @@ extras_require = {
     'dispatcher': [
         'inotify',
         'netifaces',
+        'posttroll>=1.5.1',
         'pyyaml',
         'trollsift',
     ],
