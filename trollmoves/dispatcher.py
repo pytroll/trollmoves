@@ -166,8 +166,9 @@ from posttroll.publisher import NoisyPublisher
 from posttroll.message import Message
 from trollsift import compose
 
+from trollmoves.client import is_file_local
 from trollmoves.movers import move_it
-from trollmoves.utils import (clean_url, is_file_local)
+from trollmoves.utils import clean_url
 
 logger = logging.getLogger(__name__)
 

@@ -22,13 +22,7 @@
 
 """Utility functions for Trollmoves."""
 
-import socket
 from urllib.parse import urlparse, urlunparse
-
-try:
-    import netifaces
-except ImportError:
-    netifaces = None
 
 
 def clean_url(url):
@@ -39,20 +33,6 @@ def clean_url(url):
         urlobj = url
     return urlunparse((urlobj.scheme, urlobj.hostname,
                        urlobj.path, "", "", ""))
-
-
-def get_local_ips():
-    """Get the ips of the current machine."""
-    if netifaces is None:
-        raise ImportError("get_local_ips() requires 'netifaces' to be installed.")
-    inet_addrs = [netifaces.ifaddresses(iface).get(netifaces.AF_INET)
-                  for iface in netifaces.interfaces()]
-    ips = []
-    for addr in inet_addrs:
-        if addr is not None:
-            for add in addr:
-                ips.append(add['addr'])
-    return ips
 
 
 def gen_dict_extract(var, key):
@@ -136,11 +116,3 @@ def translate_dict(var, keys, callback, **kwargs):
         return newvar
     else:
         return var
-
-
-def is_file_local(urlobj):
-    """Check that a url path is for a local file."""
-    if urlobj.scheme not in ['', 'file'] and not socket.gethostbyname(urlobj.netloc) in get_local_ips():
-        return False
-
-    return True

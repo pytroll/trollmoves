@@ -53,9 +53,9 @@ from posttroll.subscriber import Subscribe
 from trollsift import globify, parse
 
 from trollmoves.client import DEFAULT_REQ_TIMEOUT
+from trollmoves.client import is_file_local
 from trollmoves.movers import move_it
-from trollmoves.utils import (clean_url, gen_dict_contains, gen_dict_extract,
-                              is_file_local)
+from trollmoves.utils import (clean_url, gen_dict_contains, gen_dict_extract)
 from trollmoves.move_it_base import MoveItBase, create_publisher, EventHandler
 
 LOGGER = logging.getLogger(__name__)

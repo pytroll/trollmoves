@@ -36,6 +36,7 @@ from urllib.parse import urlparse, urlunparse
 import subprocess
 from contextlib import suppress
 
+import netifaces
 import tarfile
 from zmq import LINGER, POLLIN, REQ, Poller
 import bz2
@@ -46,7 +47,6 @@ from posttroll.subscriber import Subscriber
 from trollsift.parser import compose
 
 from trollmoves import heartbeat_monitor
-from trollmoves.utils import get_local_ips
 from trollmoves.utils import gen_dict_extract, translate_dict
 from trollmoves.movers import CTimer
 
@@ -1011,3 +1011,25 @@ def terminate(chains):
           " See you soon on pytroll.org!")
     time.sleep(1)
     sys.exit(0)
+
+
+def get_local_ips():
+    """Get the ips of the current machine."""
+    if netifaces is None:
+        raise ImportError("get_local_ips() requires 'netifaces' to be installed.")
+    inet_addrs = [netifaces.ifaddresses(iface).get(netifaces.AF_INET)
+                  for iface in netifaces.interfaces()]
+    ips = []
+    for addr in inet_addrs:
+        if addr is not None:
+            for add in addr:
+                ips.append(add['addr'])
+    return ips
+
+
+def is_file_local(urlobj):
+    """Check that a url path is for a local file."""
+    if urlobj.scheme not in ['', 'file'] and not socket.gethostbyname(urlobj.netloc) in get_local_ips():
+        return False
+
+    return True
