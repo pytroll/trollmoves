@@ -35,7 +35,7 @@ jobs:
 
       - name: Create ssh keys for mover testing
         run: |
-          ssh-keygen -b 2048 -t rsa -f /home/runner/.ssh/id_rsa -q -N ""
+          ssh-keygen -b 2048 -t rsa -f /home/runner/.ssh/id_rsa -N "test"
 
       - name: Run unit tests
         run: |
