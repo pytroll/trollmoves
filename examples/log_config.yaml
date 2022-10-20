@@ -9,6 +9,17 @@ handlers:
     level: DEBUG
     formatter: pytroll
     stream: ext://sys.stdout
+  monitor:
+    (): pytroll_monitor.op5_logger.AsyncOP5Handler
+    auth: [{{ monitor_user }}, {{ monitor_password}}]
+    service: check_{{ chain_name }}_regional
+    server: {{op5_server}}/api/command/PROCESS_SERVICE_CHECK_RESULT
+    host: {{ inventory_hostname }}
+loggers:
+  posttroll:
+    level: ERROR
+    propagate: false
+    handlers: [console, monitor]
 root:
   level: DEBUG
   handlers: [console, monitor]

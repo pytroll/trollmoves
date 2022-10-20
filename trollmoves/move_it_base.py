@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2012, 2013, 2014, 2015, 2016
+# Copyright (c) 2012, 2013, 2014, 2015, 2016, 2022
 #
 # Author(s):
 #
@@ -29,9 +29,8 @@ import os
 
 import pyinotify
 from posttroll.publisher import Publisher
-
+from trollmoves.logger import LoggerSetup
 LOGGER = logging.getLogger("move_it_base")
-LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
 
 
 class MoveItBase(object):
@@ -39,6 +38,7 @@ class MoveItBase(object):
 
     def __init__(self, cmd_args, chain_type, publisher=None):
         """Initialize the class."""
+        global LOGGER
         self.cmd_args = cmd_args
         self.chain_type = chain_type
         self.running = False
@@ -47,7 +47,12 @@ class MoveItBase(object):
         self.publisher = publisher
         self._np = None
         self.chains = {}
-        setup_logging(cmd_args, chain_type)
+
+        logger = LoggerSetup(cmd_args, LOGGER)
+        logger.setup_logging(chain_type)
+        LOGGER = logger.get_logger()
+        logger.init_pyinotify_logging()
+
         LOGGER.info("Starting up.")
         self.setup_watchers(cmd_args)
 
@@ -105,34 +110,6 @@ class MoveItBase(object):
                                      cmd_filename=self.cmd_args.config_file)
         self.notifier = pyinotify.ThreadedNotifier(self.watchman, event_handler)
         self.watchman.add_watch(os.path.dirname(cmd_args.config_file), mask)
-
-
-def setup_logging(cmd_args, chain_type):
-    """Set up logging."""
-    global LOGGER
-    LOGGER = logging.getLogger('')
-    if cmd_args.verbose:
-        LOGGER.setLevel(logging.DEBUG)
-
-    if cmd_args.log:
-        fh_ = logging.handlers.TimedRotatingFileHandler(
-            os.path.join(cmd_args.log),
-            "midnight",
-            backupCount=7)
-    else:
-        fh_ = logging.StreamHandler()
-
-    formatter = logging.Formatter(LOG_FORMAT)
-    fh_.setFormatter(formatter)
-
-    LOGGER.addHandler(fh_)
-    logger_name = "move_it_server"
-    if chain_type == "client":
-        logger_name = "move_it_client"
-    elif chain_type == "mirror":
-        logger_name = "move_it_mirror"
-    LOGGER = logging.getLogger(logger_name)
-    pyinotify.log.handlers = [fh_]
 
 
 def create_publisher(port, publisher_name):

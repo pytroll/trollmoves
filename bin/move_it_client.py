@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2012, 2013, 2014, 2015, 2016
+# Copyright (c) 2012-2022 Pytroll Developers
 #
 # Author(s):
 #
@@ -77,7 +77,6 @@ with the -l or --log option::
 
 # TODO: implement ping and server selection
 import logging
-import logging.handlers
 import argparse
 import signal
 import time
@@ -85,7 +84,6 @@ import time
 from trollmoves.move_it_base import MoveItBase
 
 LOGGER = logging.getLogger("move_it_client")
-LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
 
 
 class MoveItClient(MoveItBase):
@@ -116,6 +114,8 @@ def parse_args():
                         help="The configuration file to run on.")
     parser.add_argument("-l", "--log",
                         help="The file to log to. stdout otherwise.")
+    parser.add_argument("-c", "--log-config",
+                        help="Log config file to use instead of the standard logging.")
     parser.add_argument("-v", "--verbose", default=False, action="store_true",
                         help="Toggle verbose logging")
     return parser.parse_args()

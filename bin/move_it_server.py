@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2012, 2013, 2014, 2015, 2016
+# Copyright (c) 2012, 2013, 2014, 2015, 2016, 2022
 #
 # Author(s):
 #
@@ -93,9 +93,9 @@ ith the -l or --log option::
 """
 
 import logging
-import logging.handlers
 import argparse
 from trollmoves.server import MoveItServer
+from trollmoves.logger import setup_logger
 
 LOGGER = logging.getLogger("move_it_server")
 LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
@@ -108,6 +108,8 @@ def parse_args():
                         help="The configuration file to run on.")
     parser.add_argument("-l", "--log",
                         help="The file to log to. stdout otherwise.")
+    parser.add_argument("-c", "--log-config",
+                        help="Log config file to use instead of the standard logging.")
     parser.add_argument("-p", "--port",
                         help="The port to publish on. 9010 is the default",
                         default=9010)
@@ -125,6 +127,7 @@ def parse_args():
 def main():
     """Start the server."""
     cmd_args = parse_args()
+    setup_logging(cmd_args)
     server = MoveItServer(cmd_args)
 
     try:
