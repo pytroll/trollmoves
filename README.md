@@ -1,1 +1,130 @@
-# pytroll-file-utils
+# Trollmoves
+
+Trollmoves is a package providing software for file transfers.
+
+The common nominator is the use of Posttroll messaging to make requests, and to
+publish the completed transfers. These messages can be used to trigger further
+processing.
+
+The required libraries are listed for each of the parts below.
+
+## Server/Client
+
+Setup where one or more Server processes announce new files, and one or two
+Client processes make transfer requests for the configured files.
+
+### Trollmoves Server
+
+Trollmoves Server is a process that follows a directory for new files, and publishes
+a message when a matching file appears. If a Client makes a request for a file,
+the file is transferred using one of the built-in movers (see below) based on the
+destination given in the request.
+
+Required libraries:
+- ``netifaces``
+- ``posttroll``
+- ``pyinotify``
+- ``pyzmq``
+- ``trollsift``
+- ``watchdog``
+
+In addition, the required packages for the transfer protocol(s) to be used need to be
+installed. See the mover documentation below for more details.
+
+### Trollmoves Client
+
+Trollmoves Client is configured to subscribe to a specific topic, and to make requests
+for matching files published by a Server. The destination of the file is given in
+the request message. The Server handles the actual transfer.
+
+Client can be configured to listen to multiple sources for the same files. The request
+is made to the Server where the first announcement were received from.
+
+Two clients can be configured to handle requests for a given data. This makes it possible
+to make updates without outages, and in general add redundancy. One of the Client
+processes is considered the primary, and the secondary will process the leftover
+messages after a small (for example 0.2 s - 1 s) delay. The Clients communicate
+which files are already handled, so duplicate transfers should not happen.
+
+Required libraries:
+- ``netifaces``
+- ``posttroll``
+- ``pyinotify``
+- ``pyzmq``
+- ``trollsift``
+
+### Trollmoves Mirror
+
+Trollmoves Mirror is a setup of back-to-back Server and Client that is used for
+example to handle transfers from internal network to external Client processes. The
+Mirror receives announcements from the internal network, publishes the file on
+external network, and upon receiving a request handles the transfer from internal
+Server to temporary directory and further on to the external destination.
+
+Required libraries:
+- ``netifaces``
+- ``posttroll``
+- ``pyinotify``
+- ``pyzmq``
+- ``trollsift``
+- ``watchdog``
+
+In addition, the required packages for the transfer protocol(s) to be used. See the
+mover documentation below for more details.
+
+## Trollmoves Dispatcher
+
+Trollmoves Dispatcher can push files from local file system to any destination supported
+by the built-in movers. The dispatching is triggered by Posttroll messages published
+by a process creating the files, or otherwise following the arrival/creation of
+files.
+
+Required libraries:
+- ``netifaces``
+- ``posttroll``
+- ``pyinotify``
+- ``pyzmq``
+- ``trollsift``
+
+In addition, the required packages for the transfer protocol(s) to be used. See the
+mover documentation below for more details.
+
+## Individual movers
+
+The individual movers can be used via the above listed processes, or used directly
+in other applications. The movers can be imported from the ``trollmoves.movers``
+module.
+
+### ``FileMover``
+
+``FileMover`` copies or moves a file between local filesystems.
+
+Additional required packages: none.
+
+### ``FtpMover``
+
+``FtpMover`` transfers a local file to a FTP server.
+
+Additional required packages: none.
+
+### ``ScpMover``
+
+``ScpMover`` uses SSH to transfer a local file to another (or the same) server.
+
+Additional required packages:
+- ``scp``
+- ``paramiko``
+
+### ``SftpMover``
+
+``SftpMover`` uses SFTP protocol to transfer a local file to an SFTP server.
+
+Additional required packages:
+- ``paramiko``
+
+### ``S3Mover``
+
+``S3Mover`` uploads a file to an S3 object storage.
+
+Additional required packages:
+- ``s3fs``

@@ -22,7 +22,11 @@
 
 """Test the movers."""
 
+import os
 from unittest.mock import patch
+from urllib.parse import urlunparse
+
+import pytest
 
 ORIGIN = '/path/to/mydata/filename.ext'
 USERNAME = 'username'
@@ -111,3 +115,38 @@ def test_s3_move(S3FileSystem):
     except AssertionError:
         os.remove(fname)
         raise OSError("File was not deleted after transfer.")
+
+
+@pytest.mark.parametrize("hostname", ["localhost", "localhost:22"])
+def test_sftp_copy(tmp_file, tmp_path, monkeypatch, hostname):
+    """Test the sftp mover's copy functionality."""
+    patch_ssh_client_for_auto_add_policy(monkeypatch)
+    origin = tmp_file
+    destination = tmp_path / "dest.ext"
+    from trollmoves.movers import SftpMover
+
+    dest = urlunparse(("sftp", hostname, os.fspath(destination), None, None, None))
+    SftpMover(origin, dest).copy()
+    assert os.path.exists(destination)
+
+
+def patch_ssh_client_for_auto_add_policy(monkeypatch):
+    """Patch the `paramiko.SSHClient` to use the `AutoAddPolicy`."""
+    import paramiko
+    SSHClient = paramiko.SSHClient
+
+    def new_ssh_client(*args, **kwargs):
+        client = SSHClient(*args, **kwargs)
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        return client
+
+    monkeypatch.setattr(paramiko, "SSHClient", new_ssh_client)
+
+
+@pytest.fixture
+def tmp_file(tmp_path):
+    """Create a simple file with content."""
+    path = tmp_path / "file.ext"
+    with open(path, mode="w") as fd:
+        fd.write("dummy file")
+    yield path
