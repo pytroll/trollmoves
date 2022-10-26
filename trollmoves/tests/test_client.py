@@ -32,6 +32,7 @@ from collections import deque
 
 import pytest
 from posttroll.message import Message
+from trollmoves.client import MoveItClient, parse_args
 
 
 MSG_FILE = Message('/topic', 'file', {'uid': 'file1.png',
@@ -943,24 +944,6 @@ def test_request_push_duplicate_call(send_ack, send_request, clean_ongoing_trans
     assert len(file_cache) == 1
 
 
-@patch('os.makedirs')
-@patch('trollmoves.client.send_request')
-def test_request_push_disable_directory_creation(send_request, os_makedirs):
-    """Test trollmoves.client.request_push() with target directory creation disabled."""
-    from trollmoves.client import request_push
-
-    send_request.return_value = [MSG_FILE2, 'localhost']
-    publisher = MagicMock()
-    kwargs = {'transfer_req_timeout': 1.0, 'req_timeout': 1.0, 'create_target_directory': False}
-
-    not_local_path = 'scp://host:/path/not/existing/on/this/server'
-    request_push(MSG_FILE2, not_local_path, 'login', publisher=publisher,
-                 **kwargs)
-    os_makedirs.assert_not_called()
-    dest = send_request.mock_calls[0].args[1].data["destination"]
-    assert "scp://login@host/path/not/existing/on/this/server" == dest
-
-
 def test_read_config(client_config_1_item):
     """Test config handling."""
     from trollmoves.client import read_config
@@ -976,8 +959,7 @@ def test_read_config(client_config_1_item):
     section_keys = conf[section_name].keys()
     for key in ["delete", "working_directory", "compression",
                 "heartbeat", "req_timeout", "transfer_req_timeout",
-                "nameservers", "providers", "topic", "publish_port",
-                "create_target_directory"]:
+                "nameservers", "providers", "topic", "publish_port", ]:
         assert key in section_keys
     assert isinstance(conf[section_name]["providers"], list)
 
@@ -1084,8 +1066,7 @@ def test_reload_config_publisher_items_not_changed(Listener, create_publisher_fr
 @patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
 def test_reload_config_publisher_items_changed(Listener, create_publisher_from_dict_config, request_push,
-                                               client_config_1_item,
-                                               client_config_1_pub_item_modified):
+                                               client_config_1_item, client_config_1_pub_item_modified):
     """Test trollmoves.client.reload_config() when publisher related items are changed."""
     from trollmoves.client import reload_config
 
@@ -1106,8 +1087,7 @@ def test_reload_config_publisher_items_changed(Listener, create_publisher_from_d
 @patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
 def test_reload_config_providers_not_changed(Listener, create_publisher_from_dict_config, request_push,
-                                             client_config_1_item,
-                                             client_config_1_item_non_pub_provider_item_modified):
+                                             client_config_1_item, client_config_1_item_non_pub_provider_item_modified):
     """Test trollmoves.client.reload_config() when other than provider related options are changed."""
     from trollmoves.client import reload_config
 
@@ -1159,8 +1139,7 @@ def _check_providers_listeners_and_listener_calls(chains, Listener, call_count=N
 @patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
 def test_reload_config_providers_removed(Listener, create_publisher_from_dict_config, request_push,
-                                         client_config_1_item,
-                                         client_config_1_item_two_providers):
+                                         client_config_1_item, client_config_1_item_two_providers):
     """Test trollmoves.client.reload_config() when providers are removed."""
     from trollmoves.client import reload_config
 
@@ -1186,8 +1165,7 @@ def test_reload_config_providers_removed(Listener, create_publisher_from_dict_co
 @patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
 def test_reload_config_provider_topic_changed(Listener, create_publisher_from_dict_config, request_push,
-                                              client_config_1_item,
-                                              client_config_1_item_topic_changed):
+                                              client_config_1_item, client_config_1_item_topic_changed):
     """Test trollmoves.client.reload_config() when the message topic is changed."""
     from trollmoves.client import reload_config
 
@@ -1516,6 +1494,63 @@ def test_replace_mda_for_mirror():
     kwargs = {'uri': '/another/path/{filename}.txt'}
     res = replace_mda(MSG_MIRROR, kwargs)
     assert res.data['uri'] == kwargs['uri']
+
+
+config_file = b"""
+[eumetcast_hrit_0deg_ftp]
+providers = satmottag2:9010 satmottag:9010 explorer:9010
+destination = ftp:///san1/geo_in/0deg/
+login = user:pass
+topic = /1b/hrit-segment/0deg
+publish_port = 0
+nameservers = localhost 192.168.0.10 192.168.0.11
+heartbeat_alarm_scale = 10
+"""
+
+
+class TestMoveItClient:
+    """Test the move it client."""
+
+    def test_reloads_config_crashes_when_config_file_does_not_exist(self):
+        """Test that reloading a non existing config file crashes."""
+        cmd_args = parse_args(["somefile99999.cfg"])
+        client = MoveItClient(cmd_args)
+        with pytest.raises(FileNotFoundError):
+            client.reload_cfg_file(cmd_args.config_file)
+
+    @patch("trollmoves.move_it_base.Publisher")
+    def test_reloads_config_on_example_config(self, fake_publisher):
+        """Test that config can be reloaded with basic example."""
+        with NamedTemporaryFile() as temporary_config_file:
+            temporary_config_file.write(config_file)
+            config_filename = temporary_config_file.name
+            cmd_args = parse_args([config_filename])
+            client = MoveItClient(cmd_args)
+            client.reload_cfg_file(cmd_args.config_file)
+
+    @patch("trollmoves.move_it_base.Publisher")
+    @patch("trollmoves.client.reload_config")
+    def test_reloads_config_calls_reload_config(self, mock_reload_config, mock_publisher):
+        """Test that config file can be reloaded."""
+        with NamedTemporaryFile() as temporary_config_file:
+            temporary_config_file.write(config_file)
+            config_filename = temporary_config_file.name
+            cmd_args = parse_args([config_filename])
+            client = MoveItClient(cmd_args)
+            client.reload_cfg_file(cmd_args.config_file)
+            mock_reload_config.assert_called_once()
+
+    @patch("trollmoves.move_it_base.Publisher")
+    @patch("trollmoves.client.reload_config")
+    def test_signal_reloads_config_calls_reload_config(self, mock_reload_config, mock_publisher):
+        """Test that config file can be reloaded through signal."""
+        with NamedTemporaryFile() as temporary_config_file:
+            temporary_config_file.write(config_file)
+            config_filename = temporary_config_file.name
+            cmd_args = parse_args([config_filename])
+            client = MoveItClient(cmd_args)
+            client.signal_reload_cfg_file()
+            mock_reload_config.assert_called_once()
 
 
 def test_create_local_dir():

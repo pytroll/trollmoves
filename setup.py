@@ -35,6 +35,7 @@ extras_require = {
         'scp',
         'watchdog',
     ],
+    "remote_fs": ["pytroll-collectors>=0.13.0"],
 }
 
 all_extras = []
@@ -74,5 +75,6 @@ setup(name="trollmoves",
           'pyyaml',
           'pyzmq',
       ],
+      tests_require=["pytest", "pytest-reraise", "pytest-bdd"],
       extras_require=extras_require,
       )

@@ -22,14 +22,13 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 """Trollmoves client."""
-
+import argparse
 import logging
 import os
 import socket
-import sys
 import time
 from collections import deque
-from configparser import RawConfigParser
+from configparser import ConfigParser
 from threading import Lock, Thread, Event
 import hashlib
 from urllib.parse import urlparse, urlunparse
@@ -46,6 +45,7 @@ from posttroll.subscriber import Subscriber
 from trollsift.parser import compose
 
 from trollmoves import heartbeat_monitor
+from trollmoves.move_it_base import MoveItBase
 from trollmoves.utils import get_local_ips
 from trollmoves.utils import gen_dict_extract, translate_dict
 from trollmoves.movers import CTimer
@@ -73,12 +73,9 @@ LISTENER_CHECK_INTERVAL = 1
 
 def read_config(filename):
     """Read the config file called *filename*."""
-    return _read_ini_config(filename)
-
-
-def _read_ini_config(filename):
-    cp_ = RawConfigParser()
-    cp_.read(filename)
+    cp_ = ConfigParser(interpolation=None)
+    with open(filename) as config_file:
+        cp_.read_file(config_file)
 
     res = {}
 
@@ -507,7 +504,7 @@ def make_uris(msg, destination, login=None):
 
 
 def replace_mda(msg, kwargs):
-    """Replace messate metadata with items in kwargs dict."""
+    """Replace message metadata with items in kwargs dict."""
     for key in msg.data:
         if key in kwargs:
             try:
@@ -647,6 +644,7 @@ def _request_files(huid, destination, login, publisher, **kwargs):
             LOGGER.debug("Server done sending file")
             add_to_file_cache(msg)
             _send_ack_message(msg, publisher)
+
             try:
                 lmsg = unpack_and_create_local_message(response, local_dir, **kwargs)
                 lmsg = _update_local_message(lmsg, _destination, login, response, **kwargs)
@@ -707,10 +705,11 @@ class Chain(Thread):
 
     def __init__(self, name, config):
         """Init a chain object."""
-        super(Chain, self).__init__()
+        super().__init__()
         self._config = config
         self._name = name
         self.publisher = None
+        self._pub_starter = None
         self.listeners = {}
         self.listener_died_event = Event()
         self.running = True
@@ -719,16 +718,15 @@ class Chain(Thread):
     def setup_publisher(self):
         """Initialize publisher."""
         if self.publisher is None:
-            try:
+            with suppress(KeyError, NameError):
                 nameservers = self._config["nameservers"]
                 pub_settings = {
                     "name": "move_it_" + self._name,
                     "port": self._config["publish_port"],
                     "nameservers": nameservers,
                 }
-                self.publisher = create_publisher_from_dict_config(pub_settings).start()
-            except (KeyError, NameError):
-                pass
+                self._pub_starter = create_publisher_from_dict_config(pub_settings)
+                self.publisher = self._pub_starter.start()
 
     def setup_listeners(self, keep_providers=None):
         """Set up the listeners."""
@@ -863,7 +861,8 @@ class Chain(Thread):
 
     def _stop_publisher(self):
         if self.publisher:
-            self.publisher.stop()
+            self._pub_starter.stop()
+            self._pub_starter = None
             self.publisher = None
 
     def restart(self):
@@ -909,7 +908,7 @@ def reload_config(filename, chains):
     LOGGER.debug("Reloaded config from %s", filename)
 
 
-class PushRequester(object):
+class PushRequester:
     """Base requester class."""
 
     request_retries = 3
@@ -1002,12 +1001,45 @@ class PushRequester(object):
         return rep
 
 
-def terminate(chains):
-    """Terminate client chains."""
-    for chain in chains.values():
-        chain.stop()
-    LOGGER.info("Shutting down.")
-    print("Thank you for using pytroll/move_it_client."
-          " See you soon on pytroll.org!")
-    time.sleep(1)
-    sys.exit(0)
+def parse_args(args=None):
+    """Parse commandline arguments."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config_file",
+                        help="The configuration file to run on.")
+    parser.add_argument("-l", "--log",
+                        help="The file to log to. stdout otherwise.")
+    parser.add_argument("-v", "--verbose", default=False, action="store_true",
+                        help="Toggle verbose logging")
+    return parser.parse_args(args)
+
+
+class MoveItClient(MoveItBase):
+    """Trollmoves client class."""
+
+    def __init__(self, cmd_args):
+        """Initialize client."""
+        self.name = "move_it_client"
+        super().__init__(cmd_args)
+
+    def reload_cfg_file(self, filename, *args, **kwargs):
+        """Reload configuration file."""
+        reload_config(filename, self.chains, *args, **kwargs)
+
+    def signal_reload_cfg_file(self, *args):
+        """Handle reload signal."""
+        reload_config(self.cmd_args.config_file, self.chains,
+                      publisher=self.publisher)
+
+    def _run(self):
+        for chain_name in self.chains:
+            if not self.chains[chain_name].is_alive():
+                self.chains[chain_name] = self.chains[chain_name].restart()
+            self.chains[chain_name].publisher.heartbeat(30)
+
+    def terminate(self):
+        """Terminate client chains."""
+        for chain in self.chains.values():
+            chain.stop()
+        LOGGER.info("Shutting down.")
+        print("Thank you for using pytroll/move_it_client."
+              " See you soon on pytroll.org!")

@@ -31,6 +31,15 @@ Required libraries:
 In addition, the required packages for the transfer protocol(s) to be used need to be
 installed. See the mover documentation below for more details.
 
+#### Running the server without a client
+In some situations, it might be difficult to use the server/client architecture,
+and thus there is a possibility to run the server in stand alone mode. To do
+this, the only thing to do is omit the `request_port` configuration item in the
+server configuration. From that point on, the server will send full uris in
+the messages it publishes, along with a json representation of a `fsspec`
+filesystem. From there, processes accepting these (eg `trollflow2`) will be able
+to use `fsspec` to read and process the remote files.
+
 ### Trollmoves Client
 
 Trollmoves Client is configured to subscribe to a specific topic, and to make requests

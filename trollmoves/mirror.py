@@ -21,11 +21,9 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 """All you need for mirroring."""
-
+import argparse
 import os
 import logging
-import signal
-import time
 
 from urllib.parse import urlparse, urlunparse
 from threading import Lock, Timer
@@ -35,9 +33,8 @@ from posttroll.publisher import get_own_ip
 
 from trollmoves.client import Listener
 from trollmoves.client import request_push
-from trollmoves.server import RequestManager, Deleter
-from trollmoves.move_it_base import MoveItBase, create_publisher
-from trollmoves.server import reload_config
+from trollmoves.server import RequestManager, Deleter, AbstractMoveItServer
+from trollmoves.move_it_base import create_publisher
 
 
 LOGGER = logging.getLogger(__name__)
@@ -85,18 +82,19 @@ def publish_mirror_message(mirror_message, publisher_send):
     publisher_send(str(mirror_message))
 
 
-class MoveItMirror(MoveItBase):
+class MoveItMirror(AbstractMoveItServer):
     """Mirror for move_it."""
 
     def __init__(self, cmd_args):
         """Set up the mirror."""
-        publisher = create_publisher(cmd_args.port, "move_it_mirror")
-        super(MoveItMirror, self).__init__(cmd_args, "mirror", publisher=publisher)
+        self.name = "move_it_mirror"
+        publisher = create_publisher(cmd_args.port, self.name)
+        super().__init__(cmd_args, publisher=publisher)
+        self.request_manager = MirrorRequestManager
 
     def reload_cfg_file(self, filename):
         """Reload the config file."""
-        reload_config(filename, self.chains, self.create_listener_notifier,
-                      MirrorRequestManager, publisher=self.publisher, disable_backlog=True)
+        self.reload_config(filename, self.create_listener_notifier, disable_backlog=True)
 
     def signal_reload_cfg_file(self, *args):
         """Reload the config file when we get a signal."""
@@ -110,16 +108,6 @@ class MoveItMirror(MoveItBase):
         listeners = Listeners(attrs.pop("client_topic"), attrs.pop("providers"), **attrs)
 
         return listeners, noop
-
-    def run(self):
-        """Start the transfer chains."""
-        signal.signal(signal.SIGTERM, self.chains_stop)
-        signal.signal(signal.SIGHUP, self.signal_reload_cfg_file)
-        self.notifier.start()
-        self.running = True
-        while self.running:
-            time.sleep(1)
-            self.publisher.heartbeat(30)
 
 
 def noop(*args, **kwargs):
@@ -204,3 +192,21 @@ class MirrorDeleter(Deleter):
         Deleter.delete(filename)
         # Pop is atomic, so we don't need a lock.
         file_registry.pop(os.path.basename(filename), None)
+
+
+def parse_args(args=None):
+    """Parse the command line arguments."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config_file",
+                        help="The configuration file to run on.")
+    parser.add_argument("-l",
+                        "--log",
+                        help="The file to log to. stdout otherwise.")
+    parser.add_argument("-p",
+                        "--port",
+                        help="The port to publish on. 9010 is the default",
+                        default=9010)
+    parser.add_argument("-v", "--verbose", default=False, action="store_true",
+                        help="Toggle verbose logging")
+
+    return parser.parse_args(args)

@@ -23,30 +23,11 @@
 """Move it Mirror."""
 
 import logging.handlers
-import argparse
 
-from trollmoves.mirror import MoveItMirror
+from trollmoves.mirror import MoveItMirror, parse_args
 
 LOGGER = logging.getLogger("move_it_mirror")
 LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
-
-
-def parse_args():
-    """Parse the command line arguments."""
-    parser = argparse.ArgumentParser()
-    parser.add_argument("config_file",
-                        help="The configuration file to run on.")
-    parser.add_argument("-l",
-                        "--log",
-                        help="The file to log to. stdout otherwise.")
-    parser.add_argument("-p",
-                        "--port",
-                        help="The port to publish on. 9010 is the default",
-                        default=9010)
-    parser.add_argument("-v", "--verbose", default=False, action="store_true",
-                        help="Toggle verbose logging")
-
-    return parser.parse_args()
 
 
 def main():
