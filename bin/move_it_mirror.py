@@ -21,25 +21,21 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """Move it Mirror."""
-
-import logging.handlers
-
+from trollmoves.logging import setup_logging
 from trollmoves.mirror import MoveItMirror, parse_args
-
-LOGGER = logging.getLogger("move_it_mirror")
-LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
 
 
 def main():
     """Start the mirroring."""
     cmd_args = parse_args()
+    logger = setup_logging("move_it_mirror", cmd_args)
     mirror = MoveItMirror(cmd_args)
 
     try:
         mirror.reload_cfg_file(cmd_args.config_file)
         mirror.run()
     except KeyboardInterrupt:
-        LOGGER.debug("Interrupting")
+        logger.debug("Interrupting")
     finally:
         if mirror.running:
             mirror.chains_stop()
