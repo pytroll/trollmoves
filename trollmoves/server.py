@@ -55,6 +55,7 @@ from trollmoves.movers import move_it
 from trollmoves.utils import (clean_url, gen_dict_contains, gen_dict_extract,
                               is_file_local)
 from trollmoves.move_it_base import MoveItBase, create_publisher, EventHandler
+from trollmoves.logging import add_logging_options_to_parser
 
 LOGGER = logging.getLogger(__name__)
 
@@ -942,17 +943,13 @@ def parse_args(args=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("config_file",
                         help="The configuration file to run on.")
-    parser.add_argument("-l", "--log",
-                        help="The file to log to. stdout otherwise.")
     parser.add_argument("-p", "--port",
                         help="The port to publish on. 9010 is the default",
                         default=9010)
-    parser.add_argument("-v", "--verbose", default=False, action="store_true",
-                        help="Toggle verbose logging")
     parser.add_argument("--disable-backlog",
                         help="Disable glob and handling of backlog of files at start/restart",
                         action='store_true')
     parser.add_argument("-w", "--watchdog", default=False, action="store_true",
                         help="Use Watchdog instead of inotify")
-
+    add_logging_options_to_parser(parser, legacy=True)
     return parser.parse_args(args)

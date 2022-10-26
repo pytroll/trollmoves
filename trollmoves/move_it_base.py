@@ -36,7 +36,6 @@ import pyinotify
 from posttroll.publisher import Publisher
 
 LOGGER = logging.getLogger("move_it_base")
-LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
 
 
 class MoveItBase(ABC):
@@ -50,7 +49,6 @@ class MoveItBase(ABC):
         self.watchman = None
         self.publisher = publisher
         self.chains = {}
-        self.setup_logging()
         LOGGER.info("Starting up.")
         self.setup_watchers()
         self.run_lock = Lock()
@@ -87,28 +85,6 @@ class MoveItBase(ABC):
                                      cmd_filename=self.cmd_args.config_file)
         self.notifier = pyinotify.ThreadedNotifier(self.watchman, event_handler)
         self.watchman.add_watch(os.path.dirname(self.cmd_args.config_file), mask)
-
-    def setup_logging(self):
-        """Set up logging."""
-        global LOGGER
-        LOGGER = logging.getLogger('')
-        if self.cmd_args.verbose:
-            LOGGER.setLevel(logging.DEBUG)
-
-        if self.cmd_args.log:
-            fh_ = logging.handlers.TimedRotatingFileHandler(
-                os.path.join(self.cmd_args.log),
-                "midnight",
-                backupCount=7)
-        else:
-            fh_ = logging.StreamHandler()
-
-        formatter = logging.Formatter(LOG_FORMAT)
-        fh_.setFormatter(formatter)
-
-        LOGGER.addHandler(fh_)
-        LOGGER = logging.getLogger(self.name)
-        pyinotify.log.handlers = [fh_]
 
     def run(self):
         """Start the transfer chains."""
