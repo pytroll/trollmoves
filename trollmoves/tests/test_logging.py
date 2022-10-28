@@ -127,3 +127,22 @@ def test_legacy_arguments_raise_warnings():
     args = ["-v"]
     with pytest.warns(RuntimeWarning, match='deprecation'):
         parser.parse_args(args)
+
+
+def test_legacy_activation_still_uses_config_first(tmp_path):
+    """Test that legacy arguments do now override config-file."""
+    handlers = logging.getLogger("").handlers.copy()
+    parser = argparse.ArgumentParser()
+    add_logging_options_to_parser(parser, legacy=True)
+
+    config_file = os.fspath(tmp_path / "my_log_config")
+    with open(config_file, "w") as fd:
+        fd.write(log_config)
+
+    cmd_args = parser.parse_args(["-l", "somefile", "-c", config_file, "-v"])
+
+    logger = setup_logging("my_logger", cmd_args)
+
+    handlers = list(set(logger.handlers + logger.parent.handlers) - set(handlers))
+    assert len(handlers) == 1
+    assert isinstance(handlers[0], logging.NullHandler)

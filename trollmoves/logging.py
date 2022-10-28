@@ -30,11 +30,10 @@ import yaml
 
 def add_logging_options_to_parser(parser, legacy=False):
     """Add logging options to parser."""
-    if not legacy:
-        parser.add_argument("-c", "--log-config",
-                            help="Log config file to use instead of the standard logging.",
-                            type=pathlib.Path)
-    else:
+    parser.add_argument("-c", "--log-config",
+                        help="Log config file to use instead of the standard logging.",
+                        type=pathlib.Path)
+    if legacy:
         parser.add_argument("-l", "--log",
                             help="The file to log to. stdout otherwise.",
                             type=pathlib.Path,
@@ -55,7 +54,7 @@ class DeprecationWarningAction(argparse.Action):
 def setup_logging(name, cmd_args=None):
     """Set up the logging."""
     with suppress(AttributeError):
-        with open(cmd_args.log_config) as fd:
+        with cmd_args.log_config.open() as fd:
             log_dict = yaml.safe_load(fd.read())
             logging.config.dictConfig(log_dict)
             return logging.getLogger(name)
