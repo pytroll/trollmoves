@@ -86,29 +86,26 @@ For example::
 Logging
 -------
 
-The logging is done on stdout per default. It is however possible to specify a file to log to (instead of stdout) w
-ith the -l or --log option::
+The logging is done on stdout per default. It is however possible to specify a logging config file with the -c
+or --log-config option::
 
-  move_it_server --log /path/to/mylogfile.log myconfig.ini
+  move_it_server --log-config /path/to/mylogconfig.yaml myconfig.ini
 """
-
-import logging.handlers
+from trollmoves.logging import setup_logging
 from trollmoves.server import MoveItServer, parse_args
-
-LOGGER = logging.getLogger("move_it_server")
-LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
 
 
 def main():
     """Start the server."""
     cmd_args = parse_args()
+    logger = setup_logging("move_it_server", cmd_args)
     server = MoveItServer(cmd_args)
 
     try:
         server.reload_cfg_file(cmd_args.config_file)
         server.run()
     except KeyboardInterrupt:
-        LOGGER.debug("Stopping Trollmoves server")
+        logger.debug("Stopping Trollmoves server")
     finally:
         if server.running:
             server.chains_stop()

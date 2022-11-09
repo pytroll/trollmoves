@@ -33,6 +33,7 @@ from posttroll.publisher import get_own_ip
 
 from trollmoves.client import Listener
 from trollmoves.client import request_push
+from trollmoves.logging import add_logging_options_to_parser
 from trollmoves.server import RequestManager, Deleter, AbstractMoveItServer
 from trollmoves.move_it_base import create_publisher
 
@@ -199,14 +200,10 @@ def parse_args(args=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("config_file",
                         help="The configuration file to run on.")
-    parser.add_argument("-l",
-                        "--log",
-                        help="The file to log to. stdout otherwise.")
     parser.add_argument("-p",
                         "--port",
                         help="The port to publish on. 9010 is the default",
                         default=9010)
-    parser.add_argument("-v", "--verbose", default=False, action="store_true",
-                        help="Toggle verbose logging")
+    add_logging_options_to_parser(parser, legacy=True)
 
     return parser.parse_args(args)

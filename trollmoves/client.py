@@ -45,6 +45,7 @@ from posttroll.subscriber import Subscriber
 from trollsift.parser import compose
 
 from trollmoves import heartbeat_monitor
+from trollmoves.logging import add_logging_options_to_parser
 from trollmoves.move_it_base import MoveItBase
 from trollmoves.utils import get_local_ips
 from trollmoves.utils import gen_dict_extract, translate_dict
@@ -1006,10 +1007,7 @@ def parse_args(args=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("config_file",
                         help="The configuration file to run on.")
-    parser.add_argument("-l", "--log",
-                        help="The file to log to. stdout otherwise.")
-    parser.add_argument("-v", "--verbose", default=False, action="store_true",
-                        help="Toggle verbose logging")
+    add_logging_options_to_parser(parser, legacy=True)
     return parser.parse_args(args)
 
 
