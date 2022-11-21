@@ -225,6 +225,7 @@ class TestMoveItServer:
             client.signal_reload_cfg_file()
             mock_reload_config.assert_called_once()
 
+
 @patch("trollmoves.server.get_context")
 @patch("trollmoves.server.Poller.poll")
 @patch("trollmoves.server.RequestManager._set_station")
@@ -247,6 +248,7 @@ def test_requestmanager_run_valid_pytroll_message(patch_validate_file_pattern, p
     req_man.out_socket = 'POLLIN'
     req_man._run_loop()
     assert caplog.text in ''
+
 
 @patch("trollmoves.server.get_context")
 @patch("trollmoves.server.Poller.poll")
