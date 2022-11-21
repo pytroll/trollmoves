@@ -231,7 +231,13 @@ class TestMoveItServer:
 @patch("trollmoves.server.RequestManager._set_out_socket")
 @patch("trollmoves.server.RequestManager._get_address_and_payload")
 @patch("trollmoves.server.RequestManager._validate_file_pattern")
-def test_requestmanager_run_valid_pytroll_message(patch_validate_file_pattern, patch_get_address_and_payload, patch_set_out_socket, patch_set_station, patch_poller, patch_get_context, caplog):
+def test_requestmanager_run_valid_pytroll_message(patch_validate_file_pattern,
+                                                  patch_get_address_and_payload,
+                                                  patch_set_out_socket,
+                                                  patch_set_station,
+                                                  patch_poller,
+                                                  patch_get_context,
+                                                  caplog):
     """Test request manager run with valid address and payload."""
     from zmq import POLLIN
     from trollmoves.server import RequestManager
@@ -254,7 +260,13 @@ def test_requestmanager_run_valid_pytroll_message(patch_validate_file_pattern, p
 @patch("trollmoves.server.RequestManager._set_out_socket")
 @patch("trollmoves.server.RequestManager._get_address_and_payload")
 @patch("trollmoves.server.RequestManager._validate_file_pattern")
-def test_requestmanager_run_MessageError_exception(patch_validate_file_pattern, patch_get_address_and_payload, patch_set_out_socket, patch_set_station, patch_poller, patch_get_context, caplog):
+def test_requestmanager_run_MessageError_exception(patch_validate_file_pattern,
+                                                   patch_get_address_and_payload,
+                                                   patch_set_out_socket,
+                                                   patch_set_station,
+                                                   patch_poller,
+                                                   patch_get_context,
+                                                   caplog):
     """Test request manager run with invalid payload causing a MessageError exception."""
     from zmq import POLLIN
     from trollmoves.server import RequestManager
