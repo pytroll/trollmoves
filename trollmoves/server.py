@@ -45,7 +45,7 @@ from zmq import NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers.polling import PollingObserver
 from posttroll import get_context
-from posttroll.message import Message
+from posttroll.message import Message, MessageError
 from posttroll.publisher import get_own_ip
 from posttroll.subscriber import Subscribe
 from trollsift import globify, parse
@@ -242,7 +242,12 @@ class RequestManager(Thread):
                 address, payload = self._get_address_and_payload()
                 if payload is None:
                     continue
-                self._process_request(Message(rawstr=payload), address)
+                try:
+                    self._process_request(Message(rawstr=payload), address)
+                except MessageError:
+                    LOGGER.exception("Failed to create message from payload: %s with address %s",
+                                     str(payload), str(address))
+                    pass
             elif socks.get(self.in_socket) == POLLIN:
                 self.out_socket.send_multipart(self.in_socket.recv_multipart(NOBLOCK))
 
