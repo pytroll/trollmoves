@@ -290,7 +290,7 @@ def test_requestmanager_is_delete_set(patch_validate_file_pattern):
     from trollmoves.server import RequestManager
     port = 9876
     req_man = RequestManager(port, attrs={'delete': False})
-    assert req_man._is_delete_set() == False
+    assert req_man._is_delete_set() is False
 
 @patch("trollmoves.server.RequestManager._validate_file_pattern")
 def test_requestmanager_is_delete_set_True(patch_validate_file_pattern):
@@ -298,4 +298,4 @@ def test_requestmanager_is_delete_set_True(patch_validate_file_pattern):
     from trollmoves.server import RequestManager
     port = 9876
     req_man = RequestManager(port, attrs={'delete': True})
-    assert req_man._is_delete_set() == True
+    assert req_man._is_delete_set() is True
