@@ -292,6 +292,7 @@ def test_requestmanager_is_delete_set(patch_validate_file_pattern):
     req_man = RequestManager(port, attrs={'delete': False})
     assert req_man._is_delete_set() == False
 
+
 @patch("trollmoves.server.RequestManager._validate_file_pattern")
 def test_requestmanager_is_delete_set_True(patch_validate_file_pattern):
     """Test delete default config"""
