@@ -282,3 +282,20 @@ def test_requestmanager_run_MessageError_exception(patch_validate_file_pattern,
     with caplog.at_level(logging.DEBUG):
         req_man._run_loop()
     assert "Failed to create message from payload: fake_payload with address address" in caplog.text
+
+
+@patch("trollmoves.server.RequestManager._validate_file_pattern")
+def test_requestmanager_is_delete_set(patch_validate_file_pattern):
+    """Test delete default config"""
+    from trollmoves.server import RequestManager
+    port = 9876
+    req_man = RequestManager(port, attrs={'delete': False})
+    assert req_man._is_delete_set() == False
+
+@patch("trollmoves.server.RequestManager._validate_file_pattern")
+def test_requestmanager_is_delete_set_True(patch_validate_file_pattern):
+    """Test delete default config"""
+    from trollmoves.server import RequestManager
+    port = 9876
+    req_man = RequestManager(port, attrs={'delete': True})
+    assert req_man._is_delete_set() == True

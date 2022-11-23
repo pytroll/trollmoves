@@ -175,7 +175,7 @@ class RequestManager(Thread):
             self._deleter.add(pathname)
 
     def _is_delete_set(self):
-        return self._attrs.get('delete', 'False').lower() in ["1", "yes", "true", "on"]
+        return self._attrs.get('delete', False)
 
     def ack(self, message):
         """Reply with ack to a publication."""
