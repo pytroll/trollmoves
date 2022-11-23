@@ -233,7 +233,7 @@ class RequestManager(Thread):
     def _run(self):
         """Run request manager."""
         while self._loop:
-            self._run_loop
+            self._run_loop()
 
     def _run_loop(self):
         """Run request manager loop."""
