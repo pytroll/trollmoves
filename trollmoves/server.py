@@ -45,7 +45,7 @@ from zmq import NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers.polling import PollingObserver
 from posttroll import get_context
-from posttroll.message import Message
+from posttroll.message import Message, MessageError
 from posttroll.publisher import get_own_ip
 from posttroll.subscriber import Subscribe
 from trollsift import globify, parse
@@ -233,18 +233,26 @@ class RequestManager(Thread):
     def _run(self):
         """Run request manager."""
         while self._loop:
+            self._run_loop()
+
+    def _run_loop(self):
+        """Run request manager loop."""
+        try:
+            socks = dict(self._poller.poll(timeout=2000))
+        except ZMQError:
+            LOGGER.info("Poller interrupted.")
+            return
+        if socks.get(self.out_socket) == POLLIN:
+            address, payload = self._get_address_and_payload()
+            if payload is None:
+                return
             try:
-                socks = dict(self._poller.poll(timeout=2000))
-            except ZMQError:
-                LOGGER.info("Poller interrupted.")
-                continue
-            if socks.get(self.out_socket) == POLLIN:
-                address, payload = self._get_address_and_payload()
-                if payload is None:
-                    continue
                 self._process_request(Message(rawstr=payload), address)
-            elif socks.get(self.in_socket) == POLLIN:
-                self.out_socket.send_multipart(self.in_socket.recv_multipart(NOBLOCK))
+            except MessageError:
+                LOGGER.exception("Failed to create message from payload: %s with address %s",
+                                 str(payload), str(address))
+        elif socks.get(self.in_socket) == POLLIN:
+            self.out_socket.send_multipart(self.in_socket.recv_multipart(NOBLOCK))
 
     def _get_address_and_payload(self):
         address, payload = None, None
