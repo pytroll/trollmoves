@@ -22,14 +22,13 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 """Trollmoves client."""
-
+import argparse
 import logging
 import os
 import socket
-import sys
 import time
 from collections import deque
-from configparser import RawConfigParser
+from configparser import ConfigParser
 from threading import Lock, Thread, Event
 import hashlib
 from urllib.parse import urlparse, urlunparse
@@ -41,11 +40,13 @@ from zmq import LINGER, POLLIN, REQ, Poller
 import bz2
 from posttroll import get_context
 from posttroll.message import Message, MessageError
-from posttroll.publisher import NoisyPublisher
+from posttroll.publisher import create_publisher_from_dict_config
 from posttroll.subscriber import Subscriber
 from trollsift.parser import compose
 
 from trollmoves import heartbeat_monitor
+from trollmoves.logging import add_logging_options_to_parser
+from trollmoves.move_it_base import MoveItBase
 from trollmoves.utils import get_local_ips
 from trollmoves.utils import gen_dict_extract, translate_dict
 from trollmoves.movers import CTimer
@@ -73,15 +74,17 @@ LISTENER_CHECK_INTERVAL = 1
 
 def read_config(filename):
     """Read the config file called *filename*."""
-    cp_ = RawConfigParser()
-    cp_.read(filename)
+    cp_ = ConfigParser(interpolation=None)
+    with open(filename) as config_file:
+        cp_.read_file(config_file)
 
     res = {}
 
     for section in cp_.sections():
         res[section] = dict(cp_.items(section))
         _set_config_defaults(res[section])
-        _parse_boolean_config_items(res[section])
+        _parse_boolean_config_items(res[section], cp_[section])
+        _parse_nameservers(res[section], cp_[section])
         if not _check_provider_config(res, section):
             continue
         if not _check_destination(res, section):
@@ -104,19 +107,24 @@ def _set_config_defaults(conf):
     conf.setdefault("create_target_directory", True)
 
 
-FALSY = ["", "False", "false", "0", "off"]
-TRUTHY = ["True", "true", "on", "1"]
+def _parse_boolean_config_items(conf, raw_conf):
+    for key in ["delete", "heartbeat", "create_target_directory"]:
+        try:
+            val = raw_conf.getboolean(key)
+        except ValueError:
+            continue
+        if val is not None:
+            conf[key] = val
 
 
-def _parse_boolean_config_items(conf):
-    if conf["delete"] in FALSY:
-        conf["delete"] = False
-    if conf["delete"] in TRUTHY:
-        conf["delete"] = True
-    if conf["heartbeat"] in FALSY:
-        conf["heartbeat"] = False
-    if conf["create_target_directory"] in FALSY:
-        conf["create_target_directory"] = False
+def _parse_nameservers(conf, raw_conf):
+    try:
+        val = raw_conf.getboolean("nameservers")
+    except ValueError:
+        val = conf["nameservers"]
+    if isinstance(val, str):
+        val = val.split()
+    conf["nameservers"] = val
 
 
 def _check_provider_config(conf, section):
@@ -497,7 +505,7 @@ def make_uris(msg, destination, login=None):
 
 
 def replace_mda(msg, kwargs):
-    """Replace messate metadata with items in kwargs dict."""
+    """Replace message metadata with items in kwargs dict."""
     for key in msg.data:
         if key in kwargs:
             try:
@@ -637,6 +645,7 @@ def _request_files(huid, destination, login, publisher, **kwargs):
             LOGGER.debug("Server done sending file")
             add_to_file_cache(msg)
             _send_ack_message(msg, publisher)
+
             try:
                 lmsg = unpack_and_create_local_message(response, local_dir, **kwargs)
                 lmsg = _update_local_message(lmsg, _destination, login, response, **kwargs)
@@ -697,11 +706,11 @@ class Chain(Thread):
 
     def __init__(self, name, config):
         """Init a chain object."""
-        super(Chain, self).__init__()
+        super().__init__()
         self._config = config
         self._name = name
-        self._np = None
         self.publisher = None
+        self._pub_starter = None
         self.listeners = {}
         self.listener_died_event = Event()
         self.running = True
@@ -709,18 +718,16 @@ class Chain(Thread):
 
     def setup_publisher(self):
         """Initialize publisher."""
-        if self._np is None:
-            try:
+        if self.publisher is None:
+            with suppress(KeyError, NameError):
                 nameservers = self._config["nameservers"]
-                if nameservers:
-                    nameservers = nameservers.split()
-                self._np = NoisyPublisher(
-                    "move_it_" + self._name,
-                    port=self._config["publish_port"],
-                    nameservers=nameservers)
-                self.publisher = self._np.start()
-            except (KeyError, NameError):
-                pass
+                pub_settings = {
+                    "name": "move_it_" + self._name,
+                    "port": self._config["publish_port"],
+                    "nameservers": nameservers,
+                }
+                self._pub_starter = create_publisher_from_dict_config(pub_settings)
+                self.publisher = self._pub_starter.start()
 
     def setup_listeners(self, keep_providers=None):
         """Set up the listeners."""
@@ -854,9 +861,10 @@ class Chain(Thread):
         self.reset_listeners()
 
     def _stop_publisher(self):
-        if self._np:
-            self._np.stop()
-            self._np = None
+        if self.publisher:
+            self._pub_starter.stop()
+            self._pub_starter = None
+            self.publisher = None
 
     def restart(self):
         """Restart the chain, return a new running instance."""
@@ -901,7 +909,7 @@ def reload_config(filename, chains):
     LOGGER.debug("Reloaded config from %s", filename)
 
 
-class PushRequester(object):
+class PushRequester:
     """Base requester class."""
 
     request_retries = 3
@@ -994,12 +1002,42 @@ class PushRequester(object):
         return rep
 
 
-def terminate(chains):
-    """Terminate client chains."""
-    for chain in chains.values():
-        chain.stop()
-    LOGGER.info("Shutting down.")
-    print("Thank you for using pytroll/move_it_client."
-          " See you soon on pytroll.org!")
-    time.sleep(1)
-    sys.exit(0)
+def parse_args(args=None):
+    """Parse commandline arguments."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config_file",
+                        help="The configuration file to run on.")
+    add_logging_options_to_parser(parser, legacy=True)
+    return parser.parse_args(args)
+
+
+class MoveItClient(MoveItBase):
+    """Trollmoves client class."""
+
+    def __init__(self, cmd_args):
+        """Initialize client."""
+        self.name = "move_it_client"
+        super().__init__(cmd_args)
+
+    def reload_cfg_file(self, filename, *args, **kwargs):
+        """Reload configuration file."""
+        reload_config(filename, self.chains, *args, **kwargs)
+
+    def signal_reload_cfg_file(self, *args):
+        """Handle reload signal."""
+        reload_config(self.cmd_args.config_file, self.chains,
+                      publisher=self.publisher)
+
+    def _run(self):
+        for chain_name in self.chains:
+            if not self.chains[chain_name].is_alive():
+                self.chains[chain_name] = self.chains[chain_name].restart()
+            self.chains[chain_name].publisher.heartbeat(30)
+
+    def terminate(self):
+        """Terminate client chains."""
+        for chain in self.chains.values():
+            chain.stop()
+        LOGGER.info("Shutting down.")
+        print("Thank you for using pytroll/move_it_client."
+              " See you soon on pytroll.org!")

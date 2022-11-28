@@ -86,53 +86,26 @@ For example::
 Logging
 -------
 
-The logging is done on stdout per default. It is however possible to specify a file to log to (instead of stdout) w
-ith the -l or --log option::
+The logging is done on stdout per default. It is however possible to specify a logging config file with the -c
+or --log-config option::
 
-  move_it_server --log /path/to/mylogfile.log myconfig.ini
+  move_it_server --log-config /path/to/mylogconfig.yaml myconfig.ini
 """
-
-import logging
-import logging.handlers
-import argparse
-from trollmoves.server import MoveItServer
-
-LOGGER = logging.getLogger("move_it_server")
-LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
-
-
-def parse_args():
-    """Parse command-line arguments."""
-    parser = argparse.ArgumentParser()
-    parser.add_argument("config_file",
-                        help="The configuration file to run on.")
-    parser.add_argument("-l", "--log",
-                        help="The file to log to. stdout otherwise.")
-    parser.add_argument("-p", "--port",
-                        help="The port to publish on. 9010 is the default",
-                        default=9010)
-    parser.add_argument("-v", "--verbose", default=False, action="store_true",
-                        help="Toggle verbose logging")
-    parser.add_argument("--disable-backlog",
-                        help="Disable glob and handling of backlog of files at start/restart",
-                        action='store_true')
-    parser.add_argument("-w", "--watchdog", default=False, action="store_true",
-                        help="Use Watchdog instead of inotify")
-
-    return parser.parse_args()
+from trollmoves.logging import setup_logging
+from trollmoves.server import MoveItServer, parse_args
 
 
 def main():
     """Start the server."""
     cmd_args = parse_args()
+    logger = setup_logging("move_it_server", cmd_args)
     server = MoveItServer(cmd_args)
 
     try:
-        server.reload_cfg_file(cmd_args.config_file,
-                               disable_backlog=cmd_args.disable_backlog)
+        server.reload_cfg_file(cmd_args.config_file)
         server.run()
     except KeyboardInterrupt:
-        LOGGER.debug("Stopping Trollmoves server")
+        logger.debug("Stopping Trollmoves server")
     finally:
         if server.running:
             server.chains_stop()

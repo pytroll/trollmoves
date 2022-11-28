@@ -68,71 +68,32 @@ For example::
 Logging
 -------
 
-The logging is done on stdout per default. It is however possible to specify a file to log to (instead of stdout)
-with the -l or --log option::
+The logging is done on stdout per default. It is however possible to specify a logging config file with the -c
+or --log-config option::
 
-  move_it_client --log /path/to/mylogfile.log myconfig.ini
+  move_it_client --log-config /path/to/mylogconfig.yaml myconfig.ini
 
 """
 
 # TODO: implement ping and server selection
-import logging
-import logging.handlers
-import argparse
-import signal
-import time
 
-from trollmoves.move_it_base import MoveItBase
-
-LOGGER = logging.getLogger("move_it_client")
-LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
-
-
-class MoveItClient(MoveItBase):
-    """Trollmoves client class."""
-
-    def __init__(self, cmd_args):
-        """Initialize client."""
-        super(MoveItClient, self).__init__(cmd_args, "client")
-
-    def run(self):
-        """Start the transfer chains."""
-        signal.signal(signal.SIGTERM, self.chains_stop)
-        signal.signal(signal.SIGHUP, self.signal_reload_cfg_file)
-        self.notifier.start()
-        self.running = True
-        while self.running:
-            time.sleep(1)
-            for chain_name in self.chains:
-                if not self.chains[chain_name].is_alive():
-                    self.chains[chain_name] = self.chains[chain_name].restart()
-                self.chains[chain_name].publisher.heartbeat(30)
-
-
-def parse_args():
-    """Parse commandline arguments."""
-    parser = argparse.ArgumentParser()
-    parser.add_argument("config_file",
-                        help="The configuration file to run on.")
-    parser.add_argument("-l", "--log",
-                        help="The file to log to. stdout otherwise.")
-    parser.add_argument("-v", "--verbose", default=False, action="store_true",
-                        help="Toggle verbose logging")
-    return parser.parse_args()
+from trollmoves.client import parse_args, MoveItClient
+from trollmoves.logging import setup_logging
 
 
 def main():
     """Run the Trollmoves Client."""
     cmd_args = parse_args()
+    logger = setup_logging("move_it_client", cmd_args)
     client = MoveItClient(cmd_args)
 
     try:
         client.reload_cfg_file(cmd_args.config_file)
         client.run()
     except KeyboardInterrupt:
-        LOGGER.debug("Interrupting")
+        logger.debug("Interrupting")
     except Exception as err:
-        LOGGER.exception(err)
+        logger.exception(err)
     finally:
         if client.running:
             client.chains_stop()

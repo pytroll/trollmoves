@@ -24,13 +24,15 @@
 
 from unittest.mock import MagicMock, patch
 import unittest
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, NamedTemporaryFile
 import os
 from collections import deque
 import time
 import datetime as dt
+import pytest
 
 from trollsift import globify
+from trollmoves.server import MoveItServer, parse_args
 
 
 @patch("trollmoves.server.process_notify")
@@ -166,3 +168,117 @@ class TestDeleter(unittest.TestCase):
         """Test that empty init arguments still work."""
         from trollmoves.server import Deleter
         Deleter(dict()).add('bla')
+
+
+config_file = b"""
+[eumetcast-hrit-0deg]
+origin = /local_disk/tellicast/received/MSGHRIT/H-000-{nominal_time:%Y%m%d%H%M}-{compressed:_<2s}
+request_port = 9094
+publisher_port = 9010
+info = sensor=seviri;variant=0DEG
+topic = /1b/hrit-segment/0deg
+delete = False
+"""
+
+
+class TestMoveItServer:
+    """Test the move it server."""
+
+    def test_reloads_config_crashes_when_config_file_does_not_exist(self):
+        """Test that reloading a non existing config file crashes."""
+        cmd_args = parse_args(["--port", "9999", "somefile99999.cfg"])
+        server = MoveItServer(cmd_args)
+        with pytest.raises(FileNotFoundError):
+            server.reload_cfg_file(cmd_args.config_file)
+
+    @patch("trollmoves.move_it_base.Publisher")
+    def test_reloads_config_on_example_config(self, fake_publisher):
+        """Test that config can be reloaded with basic example."""
+        with NamedTemporaryFile() as temporary_config_file:
+            temporary_config_file.write(config_file)
+            config_filename = temporary_config_file.name
+            cmd_args = parse_args(["--port", "9999", config_filename])
+            server = MoveItServer(cmd_args)
+            server.reload_cfg_file(cmd_args.config_file)
+
+    @patch("trollmoves.move_it_base.Publisher")
+    @patch("trollmoves.server.MoveItServer.reload_config")
+    def test_reloads_config_calls_reload_config(self, mock_reload_config, mock_publisher):
+        """Test that config file can be reloaded."""
+        with NamedTemporaryFile() as temporary_config_file:
+            temporary_config_file.write(config_file)
+            config_filename = temporary_config_file.name
+            cmd_args = parse_args(["--port", "9999", config_filename])
+            server = MoveItServer(cmd_args)
+            server.reload_cfg_file(cmd_args.config_file)
+            mock_reload_config.assert_called_once()
+
+    @patch("trollmoves.move_it_base.Publisher")
+    @patch("trollmoves.server.MoveItServer.reload_config")
+    def test_signal_reloads_config_calls_reload_config(self, mock_reload_config, mock_publisher):
+        """Test that config file can be reloaded through signal."""
+        with NamedTemporaryFile() as temporary_config_file:
+            temporary_config_file.write(config_file)
+            config_filename = temporary_config_file.name
+            cmd_args = parse_args([config_filename])
+            client = MoveItServer(cmd_args)
+            client.signal_reload_cfg_file()
+            mock_reload_config.assert_called_once()
+
+
+@patch("trollmoves.server.get_context")
+@patch("trollmoves.server.Poller.poll")
+@patch("trollmoves.server.RequestManager._set_station")
+@patch("trollmoves.server.RequestManager._set_out_socket")
+@patch("trollmoves.server.RequestManager._get_address_and_payload")
+@patch("trollmoves.server.RequestManager._validate_file_pattern")
+@patch("trollmoves.server.RequestManager._process_request")
+def test_requestmanager_run_valid_pytroll_message(patch_process_request,
+                                                  patch_validate_file_pattern,
+                                                  patch_get_address_and_payload,
+                                                  patch_set_out_socket,
+                                                  patch_set_station,
+                                                  patch_poller,
+                                                  patch_get_context):
+    """Test request manager run with valid address and payload."""
+    from zmq import POLLIN
+    from trollmoves.server import RequestManager
+    from posttroll.message import _MAGICK
+    payload = (_MAGICK +
+               r'/test/1/2/3 info ras@hawaii 2008-04-11T22:13:22.123000 v1.01' +
+               r' text/ascii "what' + r"'" + r's up doc"')
+    address = b'tcp://192.168.10.8:37325'
+    patch_get_address_and_payload.return_value = address, payload
+    port = 9876
+    patch_poller.return_value = {'POLLIN': POLLIN}
+    req_man = RequestManager(port)
+    req_man.out_socket = 'POLLIN'
+    req_man._run_loop()
+    patch_process_request.assert_called_once()
+
+
+@patch("trollmoves.server.get_context")
+@patch("trollmoves.server.Poller.poll")
+@patch("trollmoves.server.RequestManager._set_station")
+@patch("trollmoves.server.RequestManager._set_out_socket")
+@patch("trollmoves.server.RequestManager._get_address_and_payload")
+@patch("trollmoves.server.RequestManager._validate_file_pattern")
+def test_requestmanager_run_MessageError_exception(patch_validate_file_pattern,
+                                                   patch_get_address_and_payload,
+                                                   patch_set_out_socket,
+                                                   patch_set_station,
+                                                   patch_poller,
+                                                   patch_get_context,
+                                                   caplog):
+    """Test request manager run with invalid payload causing a MessageError exception."""
+    from zmq import POLLIN
+    from trollmoves.server import RequestManager
+    import logging
+    patch_get_address_and_payload.return_value = "address", "fake_payload"
+    port = 9876
+    patch_poller.return_value = {'POLLIN': POLLIN}
+    req_man = RequestManager(port)
+    req_man.out_socket = 'POLLIN'
+    with caplog.at_level(logging.DEBUG):
+        req_man._run_loop()
+    assert "Failed to create message from payload: fake_payload with address address" in caplog.text

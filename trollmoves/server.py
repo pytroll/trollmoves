@@ -22,24 +22,22 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 """Classes and functions for Trollmoves server."""
-
+import argparse
 import datetime
 import errno
 import fnmatch
 import glob
-import logging
 import logging.handlers
 import os
 import subprocess
-import sys
 import tempfile
 import time
 from collections import deque
 from threading import Lock, Thread
-from configparser import RawConfigParser
+from configparser import ConfigParser
 from queue import Empty, Queue
 from urllib.parse import urlparse
-import signal
+from contextlib import suppress
 
 import bz2
 import pyinotify
@@ -47,7 +45,7 @@ from zmq import NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers.polling import PollingObserver
 from posttroll import get_context
-from posttroll.message import Message
+from posttroll.message import Message, MessageError
 from posttroll.publisher import get_own_ip
 from posttroll.subscriber import Subscribe
 from trollsift import globify, parse
@@ -57,6 +55,7 @@ from trollmoves.movers import move_it
 from trollmoves.utils import (clean_url, gen_dict_contains, gen_dict_extract,
                               is_file_local)
 from trollmoves.move_it_base import MoveItBase, create_publisher, EventHandler
+from trollmoves.logging import add_logging_options_to_parser
 
 LOGGER = logging.getLogger(__name__)
 
@@ -64,87 +63,6 @@ LOGGER = logging.getLogger(__name__)
 file_cache = deque(maxlen=61000)
 file_cache_lock = Lock()
 START_TIME = datetime.datetime.utcnow()
-
-
-class MoveItServer(MoveItBase):
-    """Wrapper class for Trollmoves Server."""
-
-    def __init__(self, cmd_args):
-        """Initialize server."""
-        publisher = create_publisher(cmd_args.port, "move_it_server")
-        super(MoveItServer, self).__init__(cmd_args, "server", publisher=publisher)
-
-    def run(self):
-        """Start the transfer chains."""
-        signal.signal(signal.SIGTERM, self.chains_stop)
-        signal.signal(signal.SIGHUP, self.signal_reload_cfg_file)
-        self.notifier.start()
-        self.running = True
-        while self.running:
-            time.sleep(1)
-            self.publisher.heartbeat(30)
-
-
-class ConfigError(Exception):
-    """Configuration error."""
-
-    pass
-
-
-class Deleter(Thread):
-    """Class for deleting moved files."""
-
-    def __init__(self, attrs):
-        """Initialize Deleter."""
-        Thread.__init__(self)
-        self.queue = Queue()
-        self.timer = None
-        self.loop = True
-        self._attrs = attrs or dict()
-
-    def add(self, filename):
-        """Schedule file for deletion."""
-        remove_delay = int(self._attrs.get('remove_delay', 30))
-        LOGGER.debug('Scheduling %s for removal in %ds', filename, remove_delay)
-        self.queue.put((filename, time.time() + remove_delay))
-
-    def run(self):
-        """Start the deleter."""
-        while self.loop:
-            try:
-                filename, the_time = self.queue.get(True, 2)
-            except Empty:
-                continue
-            while self.loop:
-                time.sleep(min(2, max(the_time - time.time(), 0)))
-                if the_time <= time.time():
-                    try:
-                        self.delete(filename)
-                    except Exception:
-                        LOGGER.exception(
-                            'Something went wrong when deleting %s', filename)
-                    else:
-                        LOGGER.debug('Removed %s.', filename)
-                    break
-
-    @staticmethod
-    def delete(filename):
-        """Delete the given file.
-
-        If the file is not present, this function does *not* raise an error.
-        """
-        try:
-            os.remove(filename)
-        except OSError as err:
-            if err.errno != errno.ENOENT:
-                raise
-            LOGGER.debug("File already deleted: %s", filename)
-
-    def stop(self):
-        """Stop the deleter."""
-        self.loop = False
-        if self.timer:
-            self.timer.cancel()
 
 
 class RequestManager(Thread):
@@ -315,18 +233,26 @@ class RequestManager(Thread):
     def _run(self):
         """Run request manager."""
         while self._loop:
+            self._run_loop()
+
+    def _run_loop(self):
+        """Run request manager loop."""
+        try:
+            socks = dict(self._poller.poll(timeout=2000))
+        except ZMQError:
+            LOGGER.info("Poller interrupted.")
+            return
+        if socks.get(self.out_socket) == POLLIN:
+            address, payload = self._get_address_and_payload()
+            if payload is None:
+                return
             try:
-                socks = dict(self._poller.poll(timeout=2000))
-            except ZMQError:
-                LOGGER.info("Poller interrupted.")
-                continue
-            if socks.get(self.out_socket) == POLLIN:
-                address, payload = self._get_address_and_payload()
-                if payload is None:
-                    continue
                 self._process_request(Message(rawstr=payload), address)
-            elif socks.get(self.in_socket) == POLLIN:
-                self.out_socket.send_multipart(self.in_socket.recv_multipart(NOBLOCK))
+            except MessageError:
+                LOGGER.exception("Failed to create message from payload: %s with address %s",
+                                 str(payload), str(address))
+        elif socks.get(self.in_socket) == POLLIN:
+            self.out_socket.send_multipart(self.in_socket.recv_multipart(NOBLOCK))
 
     def _get_address_and_payload(self):
         address, payload = None, None
@@ -365,6 +291,129 @@ class RequestManager(Thread):
         self._deleter.stop()
         self.out_socket.close(1)
         self.in_socket.close(1)
+
+
+class AbstractMoveItServer(MoveItBase):
+    """Abstract base class for the move it server."""
+
+    def terminate(self, publisher=None):
+        """Terminate the given *chains* and stop the *publisher*."""
+        for chain in self.chains.values():
+            chain.stop()
+
+        if publisher:
+            publisher.stop()
+
+        LOGGER.info("Shutting down.")
+        print("Thank you for using pytroll/move_it_server."
+              " See you soon on pytroll.org!")
+
+    def reload_config(self, filename,
+                      notifier_builder=None,
+                      disable_backlog=False,
+                      use_watchdog=False):
+        """Rebuild chains if needed (if the configuration changed) from *filename*."""
+        LOGGER.debug("New config file detected: %s", filename)
+
+        new_chain_configs = read_config(filename)
+
+        old_glob = _update_chains(self.chains, new_chain_configs, self.request_manager, use_watchdog, self.publisher,
+                                  notifier_builder)
+        _disable_removed_chains(self.chains, new_chain_configs)
+        LOGGER.debug("Reloaded config from %s", filename)
+        _process_old_files(old_glob, disable_backlog, self.publisher)
+        LOGGER.debug("done reloading config")
+
+    def _run(self):
+        try:
+            self.publisher.heartbeat(30)
+        except ZMQError:
+            if self.running:
+                raise
+
+
+class MoveItServer(AbstractMoveItServer):
+    """Wrapper class for Trollmoves Server."""
+
+    def __init__(self, cmd_args):
+        """Initialize server."""
+        self.name = "move_it_server"
+        publisher = create_publisher(cmd_args.port, self.name)
+        super().__init__(cmd_args, publisher=publisher)
+        self.request_manager = RequestManager
+
+    def reload_cfg_file(self, filename):
+        """Reload configuration file."""
+        self.reload_config(filename,
+                           disable_backlog=self.cmd_args.disable_backlog,
+                           use_watchdog=self.cmd_args.watchdog)
+
+    def signal_reload_cfg_file(self, *args):
+        """Handle reload signal."""
+        del args
+        self.reload_cfg_file(self.cmd_args.config_file)
+
+
+class ConfigError(Exception):
+    """Configuration error."""
+
+    pass
+
+
+class Deleter(Thread):
+    """Class for deleting moved files."""
+
+    def __init__(self, attrs):
+        """Initialize Deleter."""
+        Thread.__init__(self)
+        self.queue = Queue()
+        self.timer = None
+        self.loop = True
+        self._attrs = attrs or dict()
+
+    def add(self, filename):
+        """Schedule file for deletion."""
+        remove_delay = int(self._attrs.get('remove_delay', 30))
+        LOGGER.debug('Scheduling %s for removal in %ds', filename, remove_delay)
+        self.queue.put((filename, time.time() + remove_delay))
+
+    def run(self):
+        """Start the deleter."""
+        while self.loop:
+            try:
+                filename, the_time = self.queue.get(True, 2)
+            except Empty:
+                continue
+            while self.loop:
+                time.sleep(min(2, max(the_time - time.time(), 0)))
+                if the_time <= time.time():
+                    try:
+                        self.delete(filename)
+                    except Exception:
+                        LOGGER.exception(
+                            'Something went wrong when deleting %s', filename)
+                    else:
+                        LOGGER.debug('Removed %s.', filename)
+                    break
+
+    @staticmethod
+    def delete(filename):
+        """Delete the given file.
+
+        If the file is not present, this function does *not* raise an error.
+        """
+        try:
+            os.remove(filename)
+        except OSError as err:
+            if err.errno != errno.ENOENT:
+                raise
+            LOGGER.debug("File already deleted: %s", filename)
+
+    def stop(self):
+        """Stop the deleter."""
+        self.loop = False
+        if self.timer:
+            self.timer.cancel()
 
 
 def _get_push_message_type(message):
@@ -428,7 +477,15 @@ class Listener(Thread):
 
     def run(self):
         """Start listening to messages."""
-        with Subscribe('', topics=self.attrs['listen'], addr_listener=True) as sub:
+        with Subscribe(
+            services=self.attrs.get('services', ''),
+            topics=self.attrs.get('topics', self.attrs['listen']),
+            addr_listener=bool(self.attrs.get('addr_listener', True)),
+            addresses=self.attrs.get('addresses'),
+            timeout=int(self.attrs.get('timeout', 10)),
+            translate=bool(self.attrs.get('translate', False)),
+            nameserver=self.attrs.get('nameserver'),
+        ) as sub:
             self._run(sub)
 
     def _run(self, sub):
@@ -506,14 +563,22 @@ class WatchdogHandler(FileSystemEventHandler):
 
 def read_config(filename):
     """Read the config file called *filename*."""
-    cp_ = RawConfigParser()
-    cp_.read(filename)
+    return _read_ini_config(filename)
+
+
+def _read_ini_config(filename):
+    cp_ = ConfigParser(interpolation=None)
+    with open(filename) as config_file:
+        cp_.read_file(config_file)
 
     res = {}
 
     for section in cp_.sections():
         res[section] = dict(cp_.items(section))
         _set_config_defaults(res[section])
+        _parse_nameserver(res[section], cp_[section])
+        _parse_addresses(res[section])
+        _parse_delete(res[section], cp_[section])
         if not _check_origin_and_listen(res, section):
             continue
         if not _check_topic(res, section):
@@ -528,6 +593,28 @@ def _set_config_defaults(conf):
     conf.setdefault("req_timeout", DEFAULT_REQ_TIMEOUT)
     conf.setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
     conf.setdefault("ssh_key_filename", None)
+    conf.setdefault("delete", False)
+
+
+def _parse_nameserver(conf, raw_conf):
+    try:
+        val = raw_conf.getboolean("nameserver")
+    except ValueError:
+        val = conf["nameserver"]
+    conf["nameserver"] = val
+
+
+def _parse_addresses(conf):
+    val = conf.get("addresses")
+    if isinstance(val, str):
+        val = val.split()
+    conf["addresses"] = val
+
+
+def _parse_delete(conf, raw_conf):
+    val = raw_conf.getboolean("delete")
+    if val is not None:
+        conf["delete"] = val
 
 
 def _check_origin_and_listen(res, section):
@@ -554,42 +641,25 @@ def _verify_publish_port(conf):
         conf["publish_port"] = 0
 
 
-def reload_config(filename,
-                  chains,
-                  notifier_builder=None,
-                  manager=RequestManager,
-                  publisher=None,
-                  disable_backlog=False,
-                  use_watchdog=False):
-    """Rebuild chains if needed (if the configuration changed) from *filename*."""
-    LOGGER.debug("New config file detected: %s", filename)
-
-    new_chains = read_config(filename)
-
-    old_glob = _update_chains(chains, new_chains, manager, use_watchdog, publisher, notifier_builder)
-    _disable_removed_chains(chains, new_chains)
-    LOGGER.debug("Reloaded config from %s", filename)
-    _process_old_files(old_glob, disable_backlog, publisher)
-    LOGGER.debug("done reloading config")
-
-
-def _update_chains(chains, new_chains, manager, use_watchdog, publisher, notifier_builder):
+def _update_chains(chains, new_chain_configs, manager, use_watchdog, publisher, notifier_builder):
     old_glob = []
-    for chain_name, chain in new_chains.items():
+    for chain_name, chain_config in new_chain_configs.items():
         chain_updated = False
         if chain_name in chains:
-            if _chains_are_identical(chains, new_chains, chain_name):
+            if _chains_are_identical(chains, new_chain_configs, chain_name):
                 continue
             chain_updated = True
-            _stop_chain(chains[chain_name])
+            chains[chain_name].stop()
 
-        if not _add_chain(chains, chain_name, chain, manager):
+        try:
+            chain = _add_chain(chains, chain_name, chain_config, manager)
+        except ConfigError:
             continue
 
-        fun = _create_notifier_and_get_function(notifier_builder, chains[chain_name], use_watchdog, chain, publisher)
+        fun = chain.create_notifier_and_get_function(notifier_builder, use_watchdog, publisher)
 
-        if 'origin' in chain:
-            old_glob.append((globify(chain["origin"]), fun, chain))
+        if 'origin' in chain_config:
+            old_glob.append((globify(chain_config["origin"]), fun, chain_config))
 
         if chain_updated:
             LOGGER.debug("Updated %s", chain_name)
@@ -603,53 +673,64 @@ def _chains_are_identical(chains, new_chains, chain_name):
     identical = True
     for config_key, config_value in new_chains[chain_name].items():
         if ((config_key not in ["notifier", "publisher"]) and
-            ((config_key not in chains[chain_name]) or
-                (chains[chain_name][config_key] != config_value))):
+            ((config_key not in chains[chain_name].config) or
+                (chains[chain_name].config[config_key] != config_value))):
             identical = False
             break
     return identical
 
 
-def _stop_chain(chain):
-    chain["notifier"].stop()
-    try:
-        chain["notifier"].join()
-    except AttributeError:
-        pass
-    if "request_manager" in chain:
-        chain["request_manager"].stop()
-        LOGGER.debug('Stopped reqman')
+class Chain:
+    """A chain for managing new incoming files."""
+
+    def __init__(self, name, config):
+        """Set up the chain."""
+        self.name = name
+        self.config = config.copy()
+        self.request_manager = None
+        self.notifier = None
+        self.needs_manager = "request_port" in self.config
+
+    def create_manager(self, manager):
+        """Create a request manager."""
+        if manager is None or not self.needs_manager:
+            return
+        try:
+            self.request_manager = manager(int(self.config["request_port"]), self.config)
+            LOGGER.debug("Created request manager on port %s", self.config["request_port"])
+        except (KeyError, NameError):
+            LOGGER.exception('In reading config')
+        except ConfigError as err:
+            LOGGER.error('Invalid config parameters in %s: %s', self.name, str(err))
+            LOGGER.warning('Remove and skip %s', self.name)
+            raise
+        self.request_manager.start()
+
+    def create_notifier_and_get_function(self, notifier_builder, use_watchdog, publisher):
+        """Create a notifier and get the function."""
+        if notifier_builder is None:
+            notifier_builder = _get_notifier_builder(use_watchdog, self.config)
+        self.notifier, fun = notifier_builder(self.config, publisher)
+        self.notifier.start()
+
+        return fun
+
+    def stop(self):
+        """Stop the chain."""
+        self.notifier.stop()
+        with suppress(AttributeError):
+            self.notifier.join()
+        if self.request_manager is not None:
+            self.request_manager.stop()
+            LOGGER.debug('Stopped the request manager')
 
 
-def _add_chain(chains, chain_name, chain, manager):
-    chains[chain_name] = chain.copy()
-    manager_added = _create_manager(chains, chain_name, chain, manager)
-    if not manager_added:
-        del chains[chain]
-    return manager_added
-
-
-def _create_manager(chains, chain_name, chain, manager):
-    try:
-        chains[chain_name]["request_manager"] = manager(int(chain["request_port"]), chain)
-        LOGGER.debug("Created request manager on port %s", chain["request_port"])
-    except (KeyError, NameError):
-        LOGGER.exception('In reading config')
-    except ConfigError as err:
-        LOGGER.error('Invalid config parameters in %s: %s', chain_name, str(err))
-        LOGGER.warning('Remove and skip %s', chain_name)
-        return False
-    chains[chain_name]["request_manager"].start()
-    return True
-
-
-def _create_notifier_and_get_function(notifier_builder, conf, use_watchdog, chain, publisher):
-    if notifier_builder is None:
-        notifier_builder = _get_notifier_builder(use_watchdog, chain)
-    conf["notifier"], fun = notifier_builder(chain, publisher)
-    conf["notifier"].start()
-
-    return fun
+def _add_chain(chains, chain_name, chain_config, manager):
+    """Add a chain."""
+    current_chain = Chain(chain_name, chain_config)
+    current_chain.create_manager(manager)
+    chains[chain_name] = current_chain
+    return current_chain
 
 
 def _get_notifier_builder(use_watchdog, val):
@@ -692,12 +773,31 @@ def process_notify(orig_pathname, publisher, pattern, attrs):
         LOGGER.debug('We have a match: %s', orig_pathname)
 
     pathname = unpack(orig_pathname, **attrs)
+    if "request_port" in attrs:
+        msg = create_message_with_request_info(pathname, orig_pathname, attrs)
+    else:
+        msg = create_message_with_remote_fs_info(pathname, orig_pathname, attrs)
+    publisher.send(str(msg))
+    LOGGER.debug("Message sent: %s", str(msg))
+
+
+def create_message_with_request_info(pathname, orig_pathname, attrs):
+    """Create a message containing request info."""
     info = _get_notify_message_info(attrs, orig_pathname, pathname)
     msg = Message(attrs["topic"], 'file', info)
-    publisher.send(str(msg))
     with file_cache_lock:
         file_cache.appendleft(attrs["topic"] + '/' + info["uid"])
-    LOGGER.debug("Message sent: %s", str(msg))
+    return msg
+
+
+def create_message_with_remote_fs_info(pathname, orig_pathname, attrs):
+    """Create a message containing remote filesystem info."""
+    from pytroll_collectors.fsspec_to_message import extract_local_files_to_message_for_remote_use
+    msg = extract_local_files_to_message_for_remote_use(pathname, attrs['topic'], attrs.get("unpack"))
+    info = _collect_attribute_info(attrs)
+    info.update(parse(attrs["origin"], orig_pathname))
+    msg.data.update(info)
+    return msg
 
 
 def _get_notify_message_info(attrs, orig_pathname, pathname):
@@ -705,8 +805,9 @@ def _get_notify_message_info(attrs, orig_pathname, pathname):
     info.update(parse(attrs["origin"], orig_pathname))
     info['uri'] = pathname
     info['uid'] = os.path.basename(pathname)
-    info['request_address'] = attrs.get(
-        "request_address", get_own_ip()) + ":" + attrs["request_port"]
+    if "request_port" in attrs:
+        info['request_address'] = attrs.get("request_address",
+                                            get_own_ip()) + ":" + attrs["request_port"]
     return info
 
 
@@ -759,12 +860,7 @@ def create_posttroll_notifier(attrs, publisher):
 
 def _disable_removed_chains(chains, new_chains):
     for key in (set(chains.keys()) - set(new_chains.keys())):
-        chains[key]["notifier"].stop()
-        try:
-            # Join the Watchdog thread
-            chains[key]["notifier"].join()
-        except AttributeError:
-            pass
+        chains[key].stop()
         del chains[key]
         LOGGER.debug("Removed %s", key)
 
@@ -794,29 +890,12 @@ def xrit(pathname, destination=None, cmd="./xRITDecompress"):
     dest_url = urlparse(destination)
     expected = os.path.join((destination or opath), ofile[:-2] + "__")
     if dest_url.scheme in ("", "file"):
-        check_output([cmd, pathname], cwd=(destination or opath))
+        subprocess.check_output([cmd, pathname], cwd=(destination or opath))
     else:
         LOGGER.exception("Can not extract file %s to %s, destination "
                          "has to be local.", pathname, destination)
     LOGGER.info("Successfully extracted %s to %s", pathname, destination)
     return expected
-
-
-def check_output(*popenargs, **kwargs):
-    """Copy from python 2.7, `subprocess.check_output`."""
-    if 'stdout' in kwargs:
-        raise ValueError('stdout argument not allowed, it will be overridden.')
-    LOGGER.debug("Calling %s", str(popenargs))
-    process = subprocess.Popen(stdout=subprocess.PIPE, *popenargs, **kwargs)
-    output, unused_err = process.communicate()
-    del unused_err
-    retcode = process.poll()
-    if retcode:
-        cmd = kwargs.get("args")
-        if cmd is None:
-            cmd = popenargs[0]
-        raise RuntimeError(output)
-    return output
 
 
 BLOCK_SIZE = 1024
@@ -867,23 +946,18 @@ def unpack(pathname,
     return pathname
 
 
-def terminate(chains, publisher=None):
-    """Terminate the given *chains* and stop the *publisher*."""
-    for chain in chains.values():
-        chain["notifier"].stop()
-        try:
-            # Join the Watchdog thread
-            chain["notifier"].join()
-        except AttributeError:
-            pass
-        if "request_manager" in chain:
-            chain["request_manager"].stop()
-
-    if publisher:
-        publisher.stop()
-
-    LOGGER.info("Shutting down.")
-    print("Thank you for using pytroll/move_it_server."
-          " See you soon on pytroll.org!")
-    time.sleep(1)
-    sys.exit(0)
+def parse_args(args=None):
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config_file",
+                        help="The configuration file to run on.")
+    parser.add_argument("-p", "--port",
+                        help="The port to publish on. 9010 is the default",
+                        default=9010)
+    parser.add_argument("--disable-backlog",
+                        help="Disable glob and handling of backlog of files at start/restart",
+                        action='store_true')
+    parser.add_argument("-w", "--watchdog", default=False, action="store_true",
+                        help="Use Watchdog instead of inotify")
+    add_logging_options_to_parser(parser, legacy=True)
+    return parser.parse_args(args)

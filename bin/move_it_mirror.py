@@ -21,44 +21,21 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """Move it Mirror."""
-
-import logging.handlers
-import argparse
-
-from trollmoves.mirror import MoveItMirror
-
-LOGGER = logging.getLogger("move_it_mirror")
-LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
-
-
-def parse_args():
-    """Parse the command line arguments."""
-    parser = argparse.ArgumentParser()
-    parser.add_argument("config_file",
-                        help="The configuration file to run on.")
-    parser.add_argument("-l",
-                        "--log",
-                        help="The file to log to. stdout otherwise.")
-    parser.add_argument("-p",
-                        "--port",
-                        help="The port to publish on. 9010 is the default",
-                        default=9010)
-    parser.add_argument("-v", "--verbose", default=False, action="store_true",
-                        help="Toggle verbose logging")
-
-    return parser.parse_args()
+from trollmoves.logging import setup_logging
+from trollmoves.mirror import MoveItMirror, parse_args
 
 
 def main():
     """Start the mirroring."""
     cmd_args = parse_args()
+    logger = setup_logging("move_it_mirror", cmd_args)
     mirror = MoveItMirror(cmd_args)
 
     try:
         mirror.reload_cfg_file(cmd_args.config_file)
         mirror.run()
     except KeyboardInterrupt:
-        LOGGER.debug("Interrupting")
+        logger.debug("Interrupting")
     finally:
         if mirror.running:
             mirror.chains_stop()

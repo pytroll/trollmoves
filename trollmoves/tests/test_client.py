@@ -32,6 +32,7 @@ from collections import deque
 
 import pytest
 from posttroll.message import Message
+from trollmoves.client import MoveItClient, parse_args
 
 
 MSG_FILE = Message('/topic', 'file', {'uid': 'file1.png',
@@ -133,6 +134,18 @@ publish_port = 0
 processing_delay = 0.02
 """
 
+CLIENT_CONFIG_1_ITEM_NAMESERVERS_IS_FALSE = """
+# Example acting as a hot spare
+[eumetcast_hrit_0deg_scp_hot_spare]
+providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
+destination = scp:///tmp/foo
+login = user
+topic = /1b/hrit-segment/0deg
+publish_port = 0
+processing_delay = 0.02
+nameservers = False
+"""
+
 CLIENT_CONFIG_2_ITEMS = """
 # Example acting as a hot spare
 [eumetcast_hrit_0deg_scp_hot_spare]
@@ -149,6 +162,7 @@ destination = scp:///tmp/foo
 login = user
 topic = /1b/hrit-segment/0deg
 publish_port = 0
+nameservers = ns1 ns2
 """
 
 LOCAL_DIR = "/local"
@@ -159,6 +173,7 @@ CHAIN_BASIC_CONFIG = {"login": "user:pass", "topic": "/foo", "publish_port": 123
 
 @pytest.fixture
 def listener():
+    """Create a fixture for a listener."""
     with patch('trollmoves.client.CTimer'):
         with patch('trollmoves.heartbeat_monitor.Monitor'):
             with patch('trollmoves.client.Subscriber'):
@@ -170,6 +185,7 @@ def listener():
 
 @pytest.fixture
 def delayed_listener():
+    """Create a fixture for a delayed listener."""
     with patch('trollmoves.client.CTimer'):
         with patch('trollmoves.heartbeat_monitor.Monitor'):
             with patch('trollmoves.client.Subscriber'):
@@ -207,57 +223,86 @@ def _write_to_tar(file_to_add, remove_in_file=False, filename=None):
 
 @pytest.fixture
 def client_config_1_item():
+    """Create a fixture for a client config."""
     yield _write_named_temporary_config(CLIENT_CONFIG_1_ITEM)
 
 
 @pytest.fixture
 def client_config_1_item_non_pub_provider_item_modified():
+    """Create a fixture for a client config."""
     yield _write_named_temporary_config(CLIENT_CONFIG_1_ITEM_NON_PUB_PROVIDER_ITEM_MODIFIED)
 
 
 @pytest.fixture
 def client_config_1_item_two_providers():
+    """Create a fixture for a client config."""
     yield _write_named_temporary_config(CLIENT_CONFIG_1_ITEM_TWO_PROVIDERS)
 
 
 @pytest.fixture
 def client_config_1_item_topic_changed():
+    """Create a fixture for a client config."""
     yield _write_named_temporary_config(CLIENT_CONFIG_1_ITEM_TOPIC_CHANGED)
 
 
 @pytest.fixture
 def client_config_1_pub_item_modified():
+    """Create a fixture for a client config."""
     yield _write_named_temporary_config(CLIENT_CONFIG_1_PUB_ITEM_MODIFIED)
 
 
 @pytest.fixture
+def client_config_1_item_nameservers_is_false():
+    """Create a fixture for a client config."""
+    yield _write_named_temporary_config(CLIENT_CONFIG_1_ITEM_NAMESERVERS_IS_FALSE)
+
+
+@pytest.fixture
 def client_config_2_items():
+    """Create a fixture for a client config."""
     yield _write_named_temporary_config(CLIENT_CONFIG_2_ITEMS)
 
 
 @pytest.fixture
 def compression_config():
+    """Create a fixture for compression config."""
     yield _write_named_temporary_config(COMPRESSION_CONFIG)
 
 
 @pytest.fixture
 def test_txt_file_1():
+    """Create a fixture for text file."""
     yield _write_named_temporary_config("test 1\n")
 
 
 @pytest.fixture
 def test_txt_file_2():
+    """Create a fixture for text file."""
     yield _write_named_temporary_config("test 2\n")
 
 
 @pytest.fixture
 def chain_config_with_one_item(client_config_1_item):
+    """Create a fixture for config with one item."""
     from trollmoves.client import read_config
 
     try:
         conf = read_config(client_config_1_item)
     finally:
         os.remove(client_config_1_item)
+
+    yield conf
+
+
+@pytest.fixture
+def chain_config_with_one_item_nameservers_is_false(client_config_1_item_nameservers_is_false):
+    """Create a fixture for config with one item where nameservers is se to False."""
+    from trollmoves.client import read_config
+
+    try:
+        conf = read_config(client_config_1_item_nameservers_is_false)
+    finally:
+        os.remove(client_config_1_item_nameservers_is_false)
 
     yield conf
 
@@ -899,24 +944,6 @@ def test_request_push_duplicate_call(send_ack, send_request, clean_ongoing_trans
     assert len(file_cache) == 1
 
 
-@patch('os.makedirs')
-@patch('trollmoves.client.send_request')
-def test_request_push_disable_directory_creation(send_request, os_makedirs):
-    """Test trollmoves.client.request_push() with target directory creation disabled."""
-    from trollmoves.client import request_push
-
-    send_request.return_value = [MSG_FILE2, 'localhost']
-    publisher = MagicMock()
-    kwargs = {'transfer_req_timeout': 1.0, 'req_timeout': 1.0, 'create_target_directory': False}
-
-    not_local_path = 'scp://host:/path/not/existing/on/this/server'
-    request_push(MSG_FILE2, not_local_path, 'login', publisher=publisher,
-                 **kwargs)
-    os_makedirs.assert_not_called()
-    dest = send_request.mock_calls[0].args[1].data["destination"]
-    assert "scp://login@host/path/not/existing/on/this/server" == dest
-
-
 def test_read_config(client_config_1_item):
     """Test config handling."""
     from trollmoves.client import read_config
@@ -932,16 +959,15 @@ def test_read_config(client_config_1_item):
     section_keys = conf[section_name].keys()
     for key in ["delete", "working_directory", "compression",
                 "heartbeat", "req_timeout", "transfer_req_timeout",
-                "nameservers", "providers", "topic", "publish_port",
-                "create_target_directory"]:
+                "nameservers", "providers", "topic", "publish_port", ]:
         assert key in section_keys
     assert isinstance(conf[section_name]["providers"], list)
 
 
 @patch('trollmoves.client.request_push')
-@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
-def test_reload_config_single_chain(Listener, NoisyPublisher, request_push, client_config_1_item):
+def test_reload_config_single_chain(Listener, create_publisher_from_dict_config, request_push, client_config_1_item):
     """Test trollmoves.client.reload_config() with a single chain."""
     from trollmoves.client import reload_config
 
@@ -951,7 +977,7 @@ def test_reload_config_single_chain(Listener, NoisyPublisher, request_push, clie
         reload_config(client_config_1_item, chains)
         assert len(chains) == 1
         assert "eumetcast_hrit_0deg_scp_hot_spare" in chains
-        assert NoisyPublisher.call_count == 1
+        assert create_publisher_from_dict_config.call_count == 1
         assert Listener.call_count == 4
     finally:
         _stop_chains(chains)
@@ -959,9 +985,10 @@ def test_reload_config_single_chain(Listener, NoisyPublisher, request_push, clie
 
 
 @patch('trollmoves.client.request_push')
-@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
-def test_reload_config_chain_added(Listener, NoisyPublisher, request_push, client_config_1_item, client_config_2_items):
+def test_reload_config_chain_added(Listener, create_publisher_from_dict_config, request_push,
+                                   client_config_1_item, client_config_2_items):
     """Test trollmoves.client.reload_config() when a chain is added."""
     from trollmoves.client import reload_config
 
@@ -973,7 +1000,7 @@ def test_reload_config_chain_added(Listener, NoisyPublisher, request_push, clien
         assert len(chains) == 2
         assert "eumetcast_hrit_0deg_scp_hot_spare" in chains
         assert "foo" in chains
-        assert NoisyPublisher.call_count == 2
+        assert create_publisher_from_dict_config.call_count == 2
         assert Listener.call_count == 5
     finally:
         _stop_chains(chains)
@@ -982,9 +1009,9 @@ def test_reload_config_chain_added(Listener, NoisyPublisher, request_push, clien
 
 
 @patch('trollmoves.client.request_push')
-@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
-def test_reload_config_chain_removed(Listener, NoisyPublisher, request_push,
+def test_reload_config_chain_removed(Listener, create_publisher_from_dict_config, request_push,
                                      client_config_1_item, client_config_2_items):
     """Test trollmoves.client.reload_config() when a chain is added."""
     from trollmoves.client import reload_config
@@ -997,7 +1024,7 @@ def test_reload_config_chain_removed(Listener, NoisyPublisher, request_push,
         assert len(chains) == 1
         assert "eumetcast_hrit_0deg_scp_hot_spare" in chains
         assert "foo" not in chains
-        assert NoisyPublisher.call_count == 2
+        assert create_publisher_from_dict_config.call_count == 2
         assert Listener.call_count == 5
     finally:
         _stop_chains(chains)
@@ -1014,9 +1041,10 @@ def _stop_chains(chains):
 
 
 @patch('trollmoves.client.request_push')
-@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
-def test_reload_config_publisher_items_not_changed(Listener, NoisyPublisher, request_push, client_config_1_item,
+def test_reload_config_publisher_items_not_changed(Listener, create_publisher_from_dict_config, request_push,
+                                                   client_config_1_item,
                                                    client_config_1_item_non_pub_provider_item_modified):
     """Test trollmoves.client.reload_config() when other than publisher related items are changed."""
     from trollmoves.client import reload_config
@@ -1025,9 +1053,9 @@ def test_reload_config_publisher_items_not_changed(Listener, NoisyPublisher, req
 
     try:
         reload_config(client_config_1_item, chains)
-        NoisyPublisher.assert_called_once()
+        create_publisher_from_dict_config.assert_called_once()
         reload_config(client_config_1_item_non_pub_provider_item_modified, chains)
-        NoisyPublisher.assert_called_once()
+        create_publisher_from_dict_config.assert_called_once()
     finally:
         _stop_chains(chains)
         os.remove(client_config_1_item)
@@ -1035,10 +1063,10 @@ def test_reload_config_publisher_items_not_changed(Listener, NoisyPublisher, req
 
 
 @patch('trollmoves.client.request_push')
-@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
-def test_reload_config_publisher_items_changed(Listener, NoisyPublisher, request_push, client_config_1_item,
-                                               client_config_1_pub_item_modified):
+def test_reload_config_publisher_items_changed(Listener, create_publisher_from_dict_config, request_push,
+                                               client_config_1_item, client_config_1_pub_item_modified):
     """Test trollmoves.client.reload_config() when publisher related items are changed."""
     from trollmoves.client import reload_config
 
@@ -1046,9 +1074,9 @@ def test_reload_config_publisher_items_changed(Listener, NoisyPublisher, request
 
     try:
         reload_config(client_config_1_item, chains)
-        NoisyPublisher.assert_called_once()
+        create_publisher_from_dict_config.assert_called_once()
         reload_config(client_config_1_pub_item_modified, chains)
-        assert NoisyPublisher.call_count == 2
+        assert create_publisher_from_dict_config.call_count == 2
     finally:
         _stop_chains(chains)
         os.remove(client_config_1_item)
@@ -1056,10 +1084,10 @@ def test_reload_config_publisher_items_changed(Listener, NoisyPublisher, request
 
 
 @patch('trollmoves.client.request_push')
-@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
-def test_reload_config_providers_not_changed(Listener, NoisyPublisher, request_push, client_config_1_item,
-                                             client_config_1_item_non_pub_provider_item_modified):
+def test_reload_config_providers_not_changed(Listener, create_publisher_from_dict_config, request_push,
+                                             client_config_1_item, client_config_1_item_non_pub_provider_item_modified):
     """Test trollmoves.client.reload_config() when other than provider related options are changed."""
     from trollmoves.client import reload_config
 
@@ -1078,9 +1106,9 @@ def test_reload_config_providers_not_changed(Listener, NoisyPublisher, request_p
 
 
 @patch('trollmoves.client.request_push')
-@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
-def test_reload_config_providers_added(Listener, NoisyPublisher, request_push, client_config_1_item,
+def test_reload_config_providers_added(Listener, create_publisher_from_dict_config, request_push, client_config_1_item,
                                        client_config_1_item_two_providers):
     """Test trollmoves.client.reload_config() when providers are added."""
     from trollmoves.client import reload_config
@@ -1108,10 +1136,10 @@ def _check_providers_listeners_and_listener_calls(chains, Listener, call_count=N
 
 
 @patch('trollmoves.client.request_push')
-@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
-def test_reload_config_providers_removed(Listener, NoisyPublisher, request_push, client_config_1_item,
-                                         client_config_1_item_two_providers):
+def test_reload_config_providers_removed(Listener, create_publisher_from_dict_config, request_push,
+                                         client_config_1_item, client_config_1_item_two_providers):
     """Test trollmoves.client.reload_config() when providers are removed."""
     from trollmoves.client import reload_config
 
@@ -1134,10 +1162,10 @@ def test_reload_config_providers_removed(Listener, NoisyPublisher, request_push,
 
 
 @patch('trollmoves.client.request_push')
-@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
-def test_reload_config_provider_topic_changed(Listener, NoisyPublisher, request_push, client_config_1_item,
-                                              client_config_1_item_topic_changed):
+def test_reload_config_provider_topic_changed(Listener, create_publisher_from_dict_config, request_push,
+                                              client_config_1_item, client_config_1_item_topic_changed):
     """Test trollmoves.client.reload_config() when the message topic is changed."""
     from trollmoves.client import reload_config
 
@@ -1232,24 +1260,24 @@ def _mock_listener_for_chain_tests(Listener, is_alive=True):
     return side_effect
 
 
-@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
-def test_chain_init(Listener, NoisyPublisher, chain_config_with_one_item):
+def test_chain_init(Listener, create_publisher_from_dict_config, chain_config_with_one_item):
     """Test the Chain object."""
     from trollmoves.client import Chain
 
     name = 'eumetcast_hrit_0deg_scp_hot_spare'
     chain = Chain(name, chain_config_with_one_item[name])
 
-    NoisyPublisher.assert_called_once()
+    create_publisher_from_dict_config.assert_called_once()
     assert chain.listeners == {}
     assert not chain.listener_died_event.is_set()
 
 
 @patch('trollmoves.client.request_push')
-@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
-def test_chain_listeners(Listener, NoisyPublisher, request_push, chain_config_with_one_item):
+def test_chain_listeners(Listener, create_publisher_from_dict_config, request_push, chain_config_with_one_item):
     """Test the Chain object."""
     from trollmoves.client import Chain
 
@@ -1263,9 +1291,10 @@ def test_chain_listeners(Listener, NoisyPublisher, request_push, chain_config_wi
 
 
 @patch('trollmoves.client.request_push')
-@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
-def test_chain_restart_dead_listeners(Listener, NoisyPublisher, request_push, caplog, chain_config_with_one_item):
+def test_chain_restart_dead_listeners(Listener, create_publisher_from_dict_config, request_push, caplog,
+                                      chain_config_with_one_item):
     """Test the Chain object."""
     from trollmoves.client import Chain
     import trollmoves.client
@@ -1296,9 +1325,10 @@ def test_chain_restart_dead_listeners(Listener, NoisyPublisher, request_push, ca
 
 
 @patch('trollmoves.client.request_push')
-@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
-def test_chain_listener_crashing_once(Listener, NoisyPublisher, request_push, caplog, chain_config_with_one_item):
+def test_chain_listener_crashing_once(Listener, create_publisher_from_dict_config, request_push, caplog,
+                                      chain_config_with_one_item):
     """Test the Chain object."""
     from trollmoves.client import Chain
     import trollmoves.client
@@ -1326,9 +1356,9 @@ def test_chain_listener_crashing_once(Listener, NoisyPublisher, request_push, ca
 
 
 @patch('trollmoves.client.request_push')
-@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
-def test_chain_listener_crashing_all_the_time(Listener, NoisyPublisher, request_push,
+def test_chain_listener_crashing_all_the_time(Listener, create_publisher_from_dict_config, request_push,
                                               caplog, chain_config_with_one_item):
     """Test the Chain object."""
     from trollmoves.client import Chain
@@ -1354,9 +1384,9 @@ def test_chain_listener_crashing_all_the_time(Listener, NoisyPublisher, request_
             chain.stop()
 
 
-@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
-def test_chain_get_unchanged_providers(Listener, NoisyPublisher):
+def test_chain_get_unchanged_providers(Listener, create_publisher_from_dict_config):
     """Test the get_unchanged_providers() method in Chain object."""
     from trollmoves.client import Chain
 
@@ -1370,9 +1400,9 @@ def test_chain_get_unchanged_providers(Listener, NoisyPublisher):
     assert set(res).difference(config2["providers"]) == set()
 
 
-@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
-def test_chain_get_unchanged_providers_topic_changed(Listener, NoisyPublisher):
+def test_chain_get_unchanged_providers_topic_changed(Listener, create_publisher_from_dict_config):
     """Test the get_unchanged_providers() method in Chain object when topic changes."""
     from trollmoves.client import Chain
 
@@ -1384,9 +1414,9 @@ def test_chain_get_unchanged_providers_topic_changed(Listener, NoisyPublisher):
     assert chain.get_unchanged_providers(config2) == []
 
 
-@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
-def test_chain_publisher_needs_restarting_no_change(Listener, NoisyPublisher):
+def test_chain_publisher_needs_restarting_no_change(Listener, create_publisher_from_dict_config):
     """Test the publisher_needs_restarting() method of Chain object when nothing changes."""
     from trollmoves.client import Chain
 
@@ -1395,9 +1425,9 @@ def test_chain_publisher_needs_restarting_no_change(Listener, NoisyPublisher):
     assert chain.publisher_needs_restarting(config.copy()) is False
 
 
-@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
-def test_chain_publisher_needs_restarting_non_publisher_value_modified(Listener, NoisyPublisher):
+def test_chain_publisher_needs_restarting_non_publisher_value_modified(Listener, create_publisher_from_dict_config):
     """Test the publisher_needs_restarting() method of Chain object when a value not related to Publisher is changed."""
     from trollmoves.client import Chain
 
@@ -1407,9 +1437,9 @@ def test_chain_publisher_needs_restarting_non_publisher_value_modified(Listener,
     assert chain.publisher_needs_restarting(config.copy()) is False
 
 
-@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
-def test_chain_publisher_needs_restarting_non_publisher_value_added(Listener, NoisyPublisher):
+def test_chain_publisher_needs_restarting_non_publisher_value_added(Listener, create_publisher_from_dict_config):
     """Test the publisher_needs_restarting() method of Chain object when a value not related to Publisher is added."""
     from trollmoves.client import Chain
 
@@ -1419,9 +1449,9 @@ def test_chain_publisher_needs_restarting_non_publisher_value_added(Listener, No
     assert chain.publisher_needs_restarting(config.copy()) is False
 
 
-@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
-def test_chain_publisher_needs_restarting_nameservers_modified(Listener, NoisyPublisher):
+def test_chain_publisher_needs_restarting_nameservers_modified(Listener, create_publisher_from_dict_config):
     """Test the publisher_needs_restarting() method of Chain object when nameservers are modified."""
     from trollmoves.client import Chain
 
@@ -1431,9 +1461,9 @@ def test_chain_publisher_needs_restarting_nameservers_modified(Listener, NoisyPu
     assert chain.publisher_needs_restarting(config.copy()) is True
 
 
-@patch('trollmoves.client.NoisyPublisher')
+@patch('trollmoves.client.create_publisher_from_dict_config')
 @patch('trollmoves.client.Listener')
-def test_chain_publisher_needs_restarting_port_modified(Listener, NoisyPublisher):
+def test_chain_publisher_needs_restarting_port_modified(Listener, create_publisher_from_dict_config):
     """Test the publisher_needs_restarting() method of Chain object when publish port is modified."""
     from trollmoves.client import Chain
 
@@ -1443,6 +1473,20 @@ def test_chain_publisher_needs_restarting_port_modified(Listener, NoisyPublisher
     assert chain.publisher_needs_restarting(config.copy()) is True
 
 
+@patch('trollmoves.client.create_publisher_from_dict_config')
+@patch('trollmoves.client.Listener')
+def test_chain_nameservers_is_false(Listener, create_publisher_from_dict_config,
+                                    chain_config_with_one_item_nameservers_is_false):
+    """Test the Chain object."""
+    from trollmoves.client import Chain
+
+    name = 'eumetcast_hrit_0deg_scp_hot_spare'
+    _ = Chain(name, chain_config_with_one_item_nameservers_is_false[name])
+
+    expected = {'name': 'move_it_eumetcast_hrit_0deg_scp_hot_spare', 'port': 0, 'nameservers': False}
+    create_publisher_from_dict_config.assert_called_with(expected)
+
+
 def test_replace_mda_for_mirror():
     """Test that replacing metadata items works properly for Trollmoves Mirror."""
     from trollmoves.client import replace_mda
@@ -1450,6 +1494,63 @@ def test_replace_mda_for_mirror():
     kwargs = {'uri': '/another/path/{filename}.txt'}
     res = replace_mda(MSG_MIRROR, kwargs)
     assert res.data['uri'] == kwargs['uri']
+
+
+config_file = b"""
+[eumetcast_hrit_0deg_ftp]
+providers = satmottag2:9010 satmottag:9010 explorer:9010
+destination = ftp:///san1/geo_in/0deg/
+login = user:pass
+topic = /1b/hrit-segment/0deg
+publish_port = 0
+nameservers = localhost 192.168.0.10 192.168.0.11
+heartbeat_alarm_scale = 10
+"""
+
+
+class TestMoveItClient:
+    """Test the move it client."""
+
+    def test_reloads_config_crashes_when_config_file_does_not_exist(self):
+        """Test that reloading a non existing config file crashes."""
+        cmd_args = parse_args(["somefile99999.cfg"])
+        client = MoveItClient(cmd_args)
+        with pytest.raises(FileNotFoundError):
+            client.reload_cfg_file(cmd_args.config_file)
+
+    @patch("trollmoves.move_it_base.Publisher")
+    def test_reloads_config_on_example_config(self, fake_publisher):
+        """Test that config can be reloaded with basic example."""
+        with NamedTemporaryFile() as temporary_config_file:
+            temporary_config_file.write(config_file)
+            config_filename = temporary_config_file.name
+            cmd_args = parse_args([config_filename])
+            client = MoveItClient(cmd_args)
+            client.reload_cfg_file(cmd_args.config_file)
+
+    @patch("trollmoves.move_it_base.Publisher")
+    @patch("trollmoves.client.reload_config")
+    def test_reloads_config_calls_reload_config(self, mock_reload_config, mock_publisher):
+        """Test that config file can be reloaded."""
+        with NamedTemporaryFile() as temporary_config_file:
+            temporary_config_file.write(config_file)
+            config_filename = temporary_config_file.name
+            cmd_args = parse_args([config_filename])
+            client = MoveItClient(cmd_args)
+            client.reload_cfg_file(cmd_args.config_file)
+            mock_reload_config.assert_called_once()
+
+    @patch("trollmoves.move_it_base.Publisher")
+    @patch("trollmoves.client.reload_config")
+    def test_signal_reloads_config_calls_reload_config(self, mock_reload_config, mock_publisher):
+        """Test that config file can be reloaded through signal."""
+        with NamedTemporaryFile() as temporary_config_file:
+            temporary_config_file.write(config_file)
+            config_filename = temporary_config_file.name
+            cmd_args = parse_args([config_filename])
+            client = MoveItClient(cmd_args)
+            client.signal_reload_cfg_file()
+            mock_reload_config.assert_called_once()
 
 
 def test_create_local_dir():
@@ -1504,3 +1605,25 @@ def test_make_uris_s3_destination():
     expected_uri = destination + "/" + "file1.png"
     msg = make_uris(MSG_FILE, destination)
     assert msg.data['uri'] == expected_uri
+
+
+def test_read_config_nameservers_is_false(client_config_1_item_nameservers_is_false):
+    """Test config reading when nameservers is set to False."""
+    from trollmoves.client import read_config
+
+    try:
+        conf = read_config(client_config_1_item_nameservers_is_false)
+    finally:
+        os.remove(client_config_1_item_nameservers_is_false)
+    assert conf['eumetcast_hrit_0deg_scp_hot_spare']['nameservers'] is False
+
+
+def test_read_config_nameservers_are_a_list_or_tuple(client_config_2_items):
+    """Test that two nameservers are given as a list or a tuple."""
+    from trollmoves.client import read_config
+
+    try:
+        conf = read_config(client_config_2_items)
+    finally:
+        os.remove(client_config_2_items)
+    assert isinstance(conf['foo']['nameservers'], (list, tuple))
