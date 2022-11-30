@@ -27,7 +27,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -U codecov pytest pytest-cov pytest-bdd pytest-reraise pyyaml trollsift posttroll inotify pyinotify paramiko scp watchdog pytroll-collectors>=0.13.0 fsspec
+          pip install -U codecov pytest pytest-cov pytest-bdd pytest-reraise pyyaml trollsift posttroll inotify pyinotify paramiko scp watchdog pytroll-collectors>=0.13.0 fsspec boto3
 
       - name: Install trollmoves
         run: |
