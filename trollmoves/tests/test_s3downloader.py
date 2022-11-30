@@ -257,7 +257,6 @@ def test_setup_logging(s3dl):
 
 @patch('logging.StreamHandler')
 def test_setup_logging_exception(patch_stream_handler, s3dl):
-    import logging
     s3dl.read_config(debug=False)
     patch_stream_handler.side_effect = Exception
     with pytest.raises(Exception):
