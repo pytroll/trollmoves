@@ -73,7 +73,7 @@ class Listener(Thread):
         self.subscribe_nameserver = subscribe_nameserver
 
     def stop(self):
-        """Stops the file listener"""
+        """Stops the file listener."""
         LOGGER.debug("Entering stop in FileListener ...")
         self.loop = False
         self.queue.put(None)
@@ -92,6 +92,7 @@ class Listener(Thread):
         return True
 
     def run(self):
+        """"Run main loop subscribing to new messages adding these to a message queue."""
         LOGGER.debug("Entering run in FileListener ...")
         if type(self.config["subscribe-topic"]) not in (tuple, list, set):
             self.config["subscribe-topic"] = [self.config["subscribe-topic"]]
@@ -119,7 +120,7 @@ class Listener(Thread):
             raise
 
     def check_message(self, msg):
-
+        """Check the message is valid type for this scope."""
         if not msg:
             # LOGGER.debug("message is None")
             return False
@@ -142,7 +143,7 @@ class FilePublisher(Thread):
         self.nameservers = nameservers
 
     def stop(self):
-        """Stops the file publisher"""
+        """Stops the file publisher."""
         self.loop = False
         self.queue.put("STOP")
 
@@ -156,6 +157,7 @@ class FilePublisher(Thread):
         return True
 
     def run(self):
+        """Run the publish loop getting messages from the publish queue."""
         try:
             LOGGER.debug("Using service_name: {} with nameservers {}".format(self.service_name, self.nameservers))
             with Publish(self.service_name, 0, nameservers=self.nameservers) as publisher:
@@ -184,6 +186,7 @@ class s3downloader():
         LOGGER.info("Exiting s3downloader.")
 
     def start(self):
+        """Start the threads for listening and publishing messages and handeling the download."""
         LOGGER.info("Starting up.")
         self.listener = Listener(self.listener_queue, self.config,
                                  subscribe_nameserver=self.cmd_args.subscribe_nameserver)
@@ -220,7 +223,7 @@ class s3downloader():
 
     def setup_logging(self):
         """
-        Init and setup logging
+        Init and setup logging.
         """
         # Set up logging
         try:
@@ -323,7 +326,6 @@ class s3downloader():
         return True
 
     def _read_from_queue(self):
-        # read from queue
         running = True
         while running:
             if not self._get_one_message():
@@ -331,6 +333,7 @@ class s3downloader():
 
 
 def parse_args(args):
+    """Parse the command line arguments."""
     parser = argparse.ArgumentParser()
 
     parser.add_argument("-c", "--config-file",
