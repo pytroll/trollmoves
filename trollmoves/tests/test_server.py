@@ -289,7 +289,7 @@ def test_requestmanager_is_delete_set(patch_validate_file_pattern):
     """Test delete default config."""
     from trollmoves.server import RequestManager
     port = 9876
-    req_man = RequestManager(port, attrs={'delete': False})
+    req_man = RequestManager(port, attrs={})
     assert req_man._is_delete_set() is False
 
 
