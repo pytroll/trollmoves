@@ -286,7 +286,7 @@ def test_requestmanager_run_MessageError_exception(patch_validate_file_pattern,
 
 @patch("trollmoves.server.RequestManager._validate_file_pattern")
 def test_requestmanager_is_delete_set(patch_validate_file_pattern):
-    """Test delete default config"""
+    """Test delete default config."""
     from trollmoves.server import RequestManager
     port = 9876
     req_man = RequestManager(port, attrs={'delete': False})
