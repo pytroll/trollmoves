@@ -111,7 +111,8 @@ class TestSSHMovers(unittest.TestCase):
             self.hostname,
             port=self.port,
             username=self.login,
-            key_filename=None)
+            key_filename=None,
+            timeout=None)
 
     @patch('paramiko.SSHClient', autospec=True)
     def test_scp_open_connection_without_ssh_port(self, mock_sshclient):
@@ -133,7 +134,8 @@ class TestSSHMovers(unittest.TestCase):
             self.hostname,
             port=22,
             username=self.login,
-            key_filename=None)
+            key_filename=None,
+            timeout=None)
 
     @patch('paramiko.SSHClient.connect', autospec=True)
     def test_scp_open_connection_ssh_exception(self, mock_sshclient_connect):
