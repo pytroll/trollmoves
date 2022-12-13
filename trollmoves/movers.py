@@ -32,7 +32,6 @@ import time
 import traceback
 import socket
 from ftplib import FTP, all_errors, error_perm
-from paramiko import SSHClient, SSHException
 from threading import Event, Lock, Thread, current_thread
 from urllib.parse import urlparse
 
@@ -298,10 +297,11 @@ class ScpMover(Mover):
 
     def open_connection(self):
         """Open a connection."""
+        from paramiko import SSHClient, SSHException
 
         retries = 3
         ssh_key_filename = self.attrs.get("ssh_key_filename", None)
-        timeout = self.attrs.get("timeout", None)
+        timeout = self.attrs.get("ssh_connection_timeout", None)
         while retries > 0:
             retries -= 1
             try:
