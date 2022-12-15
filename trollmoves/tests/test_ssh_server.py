@@ -38,11 +38,14 @@ import trollmoves
 
 logger = logging.getLogger()
 
+
 class MockChannel:
     def __init__(self, content=None):
         self.content = [] if not content else [content]
+
     def __str__(self) -> str:
         return str(self.content)
+
     def readlines(self):
         return self.content
 
@@ -280,10 +283,10 @@ class TestSSHMovers(unittest.TestCase):
         scp_mover = ScpMover(self.origin, self.destination_no_port, attrs={'remote_tmp': True})
         scp_mover.copy()
 
-        tmp_bn = os.path.join(urlparse(self.destination_no_port).path, 
+        tmp_bn = os.path.join(urlparse(self.destination_no_port).path,
                               "." + os.path.basename(self.origin))
         mocked_scp_client.put.assert_called_once_with(self.origin, tmp_bn)
-        final_remote = os.path.join(urlparse(self.destination_no_port).path, 
+        final_remote = os.path.join(urlparse(self.destination_no_port).path,
                                     os.path.basename(self.origin))
         _cmd = f"mv {tmp_bn} {final_remote}"
         mock_sshexec.return_value.exec_command.assert_called_once_with(_cmd, timeout=None)
@@ -310,10 +313,10 @@ class TestSSHMovers(unittest.TestCase):
         finally:
             logger.removeHandler(stream_handler)
 
-        tmp_bn = os.path.join(urlparse(self.destination_no_port).path, 
+        tmp_bn = os.path.join(urlparse(self.destination_no_port).path,
                               "." + os.path.basename(self.origin))
         mocked_scp_client.put.assert_called_once_with(self.origin, tmp_bn)
-        final_remote = os.path.join(urlparse(self.destination_no_port).path, 
+        final_remote = os.path.join(urlparse(self.destination_no_port).path,
                                     os.path.basename(self.origin))
         _cmd = f"mv {tmp_bn} {final_remote}"
         mock_sshexec.return_value.exec_command.assert_called_once_with(_cmd, timeout=None)
