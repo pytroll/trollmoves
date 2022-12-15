@@ -369,7 +369,7 @@ class ScpMover(Mover):
 
         try:
             destination = self.destination.path
-            remote_tmp = self.attrs.get("remote_tmp", "True")
+            remote_tmp = self.attrs.get("remote_tmp", None)
             if remote_tmp:
                 destination = os.path.join(destination, '.' + os.path.basename(self.origin))
             scp.put(self.origin, destination)
