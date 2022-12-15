@@ -358,6 +358,7 @@ class ScpMover(Mover):
     def copy(self):
         """Upload the file."""
         from scp import SCPClient
+        from paramiko import SSHException
 
         ssh_connection = self.get_connection(self.destination.hostname,
                                              self.destination.port or 22,
@@ -371,7 +372,24 @@ class ScpMover(Mover):
             raise
 
         try:
-            scp.put(self.origin, self.destination.path)
+            destination = self.destination.path
+            remote_tmp = self.attrs.get("remote_tmp", "True")
+            if remote_tmp:
+                destination = os.path.join(destination, '.' + os.path.basename(self.origin))
+            scp.put(self.origin, destination)
+
+            if remote_tmp:
+                timeout = self.attrs.get("ssh_connection_timeout", None)
+                _remote_orig = os.path.join(self.destination.path, os.path.basename(self.origin))
+                _cmd = f"mv {destination} {_remote_orig}"
+                (_, out_ret, err_ret) = ssh_connection.exec_command(_cmd, timeout=timeout)
+                out_lines = out_ret.readlines()
+                for l in out_lines:
+                    LOGGER.debug("Remote rename stdout: %s ", str(l))
+                err_lines = err_ret.readlines()
+                for l in err_lines:
+                    LOGGER.error("Remote rename stderr: %s ", str(l))
+                print("Remote rename return with %s and %s", str(out_lines), str(err_lines))
         except OSError as osex:
             if osex.errno == 2:
                 LOGGER.error("No such file or directory. File not transfered: "
@@ -380,6 +398,8 @@ class ScpMover(Mover):
             else:
                 LOGGER.error("OSError in scp.put: %s", str(osex))
                 raise
+        except SSHException as sshe:
+            LOGGER.exception("Failed to rename from tmp name: %s", str(sshe))
         except Exception as err:
             LOGGER.error("Something went wrong with scp: %s", str(err))
             LOGGER.error("Exception name %s", type(err).__name__)
