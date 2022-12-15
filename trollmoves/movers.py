@@ -380,12 +380,11 @@ class ScpMover(Mover):
                 _cmd = f"mv {destination} {_remote_orig}"
                 (_, out_ret, err_ret) = ssh_connection.exec_command(_cmd, timeout=timeout)
                 out_lines = out_ret.readlines()
-                for l in out_lines:
-                    LOGGER.debug("Remote rename stdout: %s ", str(l))
+                for line in out_lines:
+                    LOGGER.debug("Remote rename stdout: %s ", str(line))
                 err_lines = err_ret.readlines()
-                for l in err_lines:
-                    LOGGER.error("Remote rename stderr: %s ", str(l))
-                print("Remote rename return with %s and %s", str(out_lines), str(err_lines))
+                for line in err_lines:
+                    LOGGER.error("Remote rename stderr: %s ", str(line))
         except OSError as osex:
             if osex.errno == 2:
                 LOGGER.error("No such file or directory. File not transfered: "
