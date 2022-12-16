@@ -30,6 +30,7 @@ import shutil
 import sys
 import time
 import traceback
+import socket
 from ftplib import FTP, all_errors, error_perm
 from threading import Event, Lock, Thread, current_thread
 from urllib.parse import urlparse
@@ -300,6 +301,7 @@ class ScpMover(Mover):
 
         retries = 3
         ssh_key_filename = self.attrs.get("ssh_key_filename", None)
+        timeout = self.attrs.get("ssh_connection_timeout", None)
         while retries > 0:
             retries -= 1
             try:
@@ -308,16 +310,18 @@ class ScpMover(Mover):
                 ssh_connection.connect(self.destination.hostname,
                                        username=self._dest_username,
                                        port=self.destination.port or 22,
-                                       key_filename=ssh_key_filename)
+                                       key_filename=ssh_key_filename,
+                                       timeout=timeout)
                 LOGGER.debug("Successfully connected to %s:%s as %s",
                              self.destination.hostname,
                              self.destination.port or 22,
                              self._dest_username)
             except SSHException as sshe:
-                LOGGER.error("Failed to init SSHClient: %s", str(sshe))
+                LOGGER.exception("Failed to init SSHClient: %s", str(sshe))
+            except socket.timeout as sto:
+                LOGGER.exception("SSH connection timed out: %s", str(sto))
             except Exception as err:
-                LOGGER.error("Unknown exception at init SSHClient: %s",
-                             str(err))
+                LOGGER.exception("Unknown exception at init SSHClient: %s", str(err))
             else:
                 return ssh_connection
 

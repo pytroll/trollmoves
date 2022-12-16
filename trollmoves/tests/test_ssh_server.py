@@ -33,6 +33,7 @@ from urllib.parse import urlparse
 
 from paramiko import SSHException
 import pytest
+import socket
 
 import trollmoves
 
@@ -127,7 +128,8 @@ class TestSSHMovers(unittest.TestCase):
             self.hostname,
             port=self.port,
             username=self.login,
-            key_filename=None)
+            key_filename=None,
+            timeout=None)
 
     @patch('paramiko.SSHClient', autospec=True)
     def test_scp_open_connection_without_ssh_port(self, mock_sshclient):
@@ -149,7 +151,8 @@ class TestSSHMovers(unittest.TestCase):
             self.hostname,
             port=22,
             username=self.login,
-            key_filename=None)
+            key_filename=None,
+            timeout=None)
 
     @patch('paramiko.SSHClient.connect', autospec=True)
     def test_scp_open_connection_ssh_exception(self, mock_sshclient_connect):
@@ -164,6 +167,26 @@ class TestSSHMovers(unittest.TestCase):
 
         with pytest.raises(IOError, match='Failed to ssh connect after 3 attempts'):
             scp_mover.open_connection()
+
+    @patch('paramiko.SSHClient.connect', autospec=True)
+    def test_scp_open_connection_socket_timeout_exception(self, mock_sshclient_connect):
+        """Check scp get_connection failing with socket timeout."""
+        from trollmoves.movers import ScpMover
+        stream_handler = logging.StreamHandler(sys.stdout)
+        logger.addHandler(stream_handler)
+        logger.setLevel(logging.INFO)
+
+        mocked_client = MagicMock(side_effect=socket.timeout)
+        mock_sshclient_connect.side_effect = mocked_client
+
+        scp_mover = ScpMover(self.origin, self.destination_no_port,
+                             attrs={'ssh_connection_timeout': 1})
+        try:
+            with self.assertLogs(logger, level=logging.INFO) as lc, self.assertRaises(IOError):
+                scp_mover.open_connection()
+            self.assertIn(("SSH connection timed out:"), lc.output[0])
+        finally:
+            logger.removeHandler(stream_handler)
 
     @patch('paramiko.SSHClient.connect', autospec=True)
     def test_scp_open_connection_generic_exception(self, mock_sshclient_connect):
@@ -341,6 +364,7 @@ class TestSSHMovers(unittest.TestCase):
             self.assertIn("Failed to rename from tmp name:", "".join(lc.output))
         finally:
             logger.removeHandler(stream_handler)
+
 
 if __name__ == '__main__':
     unittest.main()
