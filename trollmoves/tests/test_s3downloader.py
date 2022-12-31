@@ -220,8 +220,10 @@ def test_read_from_queue(patch_get_one_message, s3dl):
     # TODO: what does this tests?
 
 
-@patch('boto3.client')
-def test_download_from_s3(patch_boto3_client, s3dl):
+@patch('os.path.exists')
+@patch('s3fs.S3FileSystem')
+@patch('s3fs.S3FileSystem.get_file')
+def test_download_from_s3(patch_get_file, patch_S3FileSystem, patch_exists, s3dl):
     s3dl.read_config(debug=False)
     s3dl.setup_logging()
     bn = 'filename-basename'
@@ -229,18 +231,14 @@ def test_download_from_s3(patch_boto3_client, s3dl):
     assert result is True
 
 
-@patch('boto3.client')
-def test_download_from_s3_exception(patch_boto3_client, s3dl):
-    import botocore
+@patch('os.path.exists')
+@patch('s3fs.S3FileSystem')
+@patch('s3fs.S3FileSystem.get_file')
+def test_download_from_s3_false(patch_get_file, patch_S3FileSystem, patch_exists, s3dl):
     s3dl.read_config(debug=False)
     s3dl.setup_logging()
     bn = 'filename-basename'
-    error_response = {'Error': {'Code': 'TEST',
-                                'Message': 'TEST MESSAGE',
-                                }
-                      }
-    patch_boto3_client.return_value.download_file.side_effect = botocore.exceptions.ClientError(
-        error_response=error_response, operation_name='test')
+    patch_exists.return_value = False
     result = s3dl._download_from_s3(bn)
     assert result is False
 

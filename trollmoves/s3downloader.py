@@ -42,17 +42,22 @@ download_destination: './'
 import os
 import sys
 import yaml
-import boto3
+#import boto3
 import queue
 import argparse
 import logging
-import botocore
+#import botocore
 from logging import handlers
 from threading import Thread
 from urllib.parse import urlparse
 from posttroll.message import Message
 from posttroll.publisher import Publish
 from posttroll.subscriber import Subscribe
+
+try:
+    from s3fs import S3FileSystem
+except ImportError:
+    S3FileSystem = None
 
 LOGGER = logging.getLogger(__name__)
 # ----------------------------
@@ -276,13 +281,27 @@ class s3downloader():
         return bn
 
     def _download_from_s3(self, bn):
-        try:
-            s3 = boto3.client('s3', endpoint_url=self.config['endpoint_url'],
-                              aws_access_key_id=self.config['access_key'],
-                              aws_secret_access_key=self.config['secret_key'])
-            s3.download_file(self.config['bucket'], bn, os.path.join(self.config.get('download_destination', '.'), bn))
-        except botocore.exceptions.ClientError:
-            LOGGER.exception("S3 download failed.")
+        """
+        https://filesystem-spec.readthedocs.io/en/latest/features.html#configuration
+
+        An example configuration could be for example placed in `~/.config/fsspec/s3.json`::
+
+        {
+            "s3": {
+                "client_kwargs": {"endpoint_url": "https://s3.server.foo.com"},
+                "secret": "VERYBIGSECRET",
+                "key": "ACCESSKEY"
+            }
+        }
+        """
+        if S3FileSystem is None:
+            raise ImportError("s3downloader requires 's3fs' to be installed.")
+        s3 = S3FileSystem(anon=False,
+                          key=self.config['access_key'],
+                          secret=self.config['secret_key'])
+        s3.get_file(os.path.join(self.config['bucket'], bn),
+                    os.path.join(self.config.get('download_destination', '.'), bn))
+        if not os.path.exists(os.path.join(self.config.get('download_destination', '.'), bn)):            
             return False
         return True
 
