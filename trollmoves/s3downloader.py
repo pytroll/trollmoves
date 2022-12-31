@@ -299,7 +299,7 @@ class s3downloader():
                           secret=self.config['secret_key'])
         s3.get_file(os.path.join(self.config['bucket'], bn),
                     os.path.join(self.config.get('download_destination', '.'), bn))
-        if not os.path.exists(os.path.join(self.config.get('download_destination', '.'), bn)):            
+        if not os.path.exists(os.path.join(self.config.get('download_destination', '.'), bn)):
             return False
         return True
 
