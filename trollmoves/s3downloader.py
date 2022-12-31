@@ -42,11 +42,9 @@ download_destination: './'
 import os
 import sys
 import yaml
-#import boto3
 import queue
 import argparse
 import logging
-#import botocore
 from logging import handlers
 from threading import Thread
 from urllib.parse import urlparse
