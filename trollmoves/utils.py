@@ -19,10 +19,11 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+"""Utility functions for Trollmoves."""
+
 import socket
 from urllib.parse import urlparse, urlunparse
-
-import netifaces
 
 
 def clean_url(url):
@@ -37,6 +38,8 @@ def clean_url(url):
 
 def get_local_ips():
     """Get the ips of the current machine."""
+    import netifaces
+
     inet_addrs = [netifaces.ifaddresses(iface).get(netifaces.AF_INET)
                   for iface in netifaces.interfaces()]
     ips = []
@@ -48,6 +51,7 @@ def get_local_ips():
 
 
 def gen_dict_extract(var, key):
+    """Exctract a value from dictionary."""
     if hasattr(var, 'items'):
         for k, v in var.items():
             if k == key:
@@ -62,6 +66,7 @@ def gen_dict_extract(var, key):
 
 
 def gen_dict_contains(var, key):
+    """Check dictionary containing an item."""
     if hasattr(var, 'items'):
         for k, v in var.items():
             if k == key:
@@ -76,6 +81,7 @@ def gen_dict_contains(var, key):
 
 
 def translate_dict_value(var, key, callback):
+    """Translate dictionary values."""
     newvar = var.copy()
     if hasattr(var, 'items'):
         for k, v in var.items():
@@ -91,6 +97,7 @@ def translate_dict_value(var, key, callback):
 
 
 def translate_dict_item(var, key, callback):
+    """Translate dictionary items."""
     newvar = var.copy()
     if hasattr(var, 'items'):
         for k, v in var.items():
@@ -106,6 +113,7 @@ def translate_dict_item(var, key, callback):
 
 
 def translate_dict(var, keys, callback, **kwargs):
+    """Translate dictionary."""
     try:
         newvar = var.copy()
     except AttributeError:
@@ -127,7 +135,7 @@ def translate_dict(var, keys, callback, **kwargs):
 
 def is_file_local(urlobj):
     """Check that a url path is for a local file."""
-    if(urlobj.scheme not in ['', 'file'] and not socket.gethostbyname(urlobj.netloc) in get_local_ips()):
+    if urlobj.scheme not in ['', 'file'] and not socket.gethostbyname(urlobj.netloc) in get_local_ips():
         return False
 
     return True
