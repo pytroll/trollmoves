@@ -1577,21 +1577,13 @@ def test_create_local_dir_s3():
     assert res is None
 
 
-def test_make_uris_local_destination():
+@pytest.mark.parametrize("destination",
+                         ["file://localhost/directory",
+                          "/localhost/directory"])
+def test_make_uris_local_destination(destination):
     """Test that the published messages are formulated correctly for local destinations."""
     from trollmoves.client import make_uris
 
-    destination = "file://localhost/directory"
-    expected_uri = os.path.join(destination, "file1.png")
-    msg = make_uris(MSG_FILE, destination)
-    assert msg.data['uri'] == expected_uri
-
-
-def test_make_uris_local_file():
-    """Test that the published messages are formulated correctly for local destinations."""
-    from trollmoves.client import make_uris
-
-    destination = "/localhost/directory"
     expected_uri = os.path.join(destination, "file1.png")
     msg = make_uris(MSG_FILE, destination)
     assert msg.data['uri'] == expected_uri
