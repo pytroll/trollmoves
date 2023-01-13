@@ -72,6 +72,11 @@ BUNZIP_BLOCK_SIZE = 1024
 LISTENER_CHECK_INTERVAL = 1
 
 
+def is_localhost(host):
+    """Check if host is localhost."""
+    return socket.gethostbyname(host) in get_local_ips()
+
+
 def read_config(filename):
     """Read the config file called *filename*."""
     cp_ = ConfigParser(interpolation=None)
@@ -404,7 +409,7 @@ def resend_if_local(msg, publisher):
     """Resend the message provided all uris point to local files."""
     for uri in gen_dict_extract(msg.data, 'uri'):
         urlobj = urlparse(uri)
-        if not publisher or not socket.gethostbyname(urlobj.netloc) in get_local_ips():
+        if not publisher or not is_localhost(urlobj.netloc):
             return
 
     LOGGER.debug('Sending: %s', str(msg))
@@ -485,20 +490,16 @@ def unpack_and_create_local_message(msg, local_dir, **kwargs):
 def make_uris(msg, destination, login=None):
     """Create local URIs for the received files."""
     duri = urlparse(destination)
-    scheme = duri.scheme or 'ssh'
-    dest_hostname = duri.hostname or socket.gethostname()
-    if scheme not in ('s3') and socket.gethostbyname(dest_hostname) in get_local_ips():
-        scheme_, host_ = "ssh", dest_hostname  # local file
-    else:
-        scheme_, host_ = scheme, dest_hostname  # remote file
-        if login:
-            # Add (only) user to uri.
-            host_ = login.split(":")[0] + "@" + host_
+    scheme = duri.scheme
+    netloc = duri.netloc  # local file
+    if login:
+        # Add (only) user to uri.
+        netloc = login.split(":")[0] + "@" + netloc
 
     def uri_callback(var):
         uid = var['uid']
         path = os.path.join(duri.path, uid)
-        var['uri'] = urlunparse((scheme_, host_, path, "", "", ""))
+        var['uri'] = urlunparse((scheme, netloc, path, "", "", ""))
         return var
     msg.data = translate_dict(msg.data, ('uri', 'uid'), uri_callback)
     return msg

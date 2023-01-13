@@ -1582,7 +1582,17 @@ def test_make_uris_local_destination():
     from trollmoves.client import make_uris
 
     destination = "file://localhost/directory"
-    expected_uri = os.path.join(destination, "file1.png").replace("file://", "ssh://")
+    expected_uri = os.path.join(destination, "file1.png")
+    msg = make_uris(MSG_FILE, destination)
+    assert msg.data['uri'] == expected_uri
+
+
+def test_make_uris_local_file():
+    """Test that the published messages are formulated correctly for local destinations."""
+    from trollmoves.client import make_uris
+
+    destination = "/localhost/directory"
+    expected_uri = os.path.join(destination, "file1.png")
     msg = make_uris(MSG_FILE, destination)
     assert msg.data['uri'] == expected_uri
 
@@ -1595,6 +1605,23 @@ def test_make_uris_remote_destination():
     expected_uri = os.path.join(destination, "file1.png")
     msg = make_uris(MSG_FILE, destination)
     assert msg.data['uri'] == expected_uri
+
+
+def test_make_uris_remote_destination_with_login():
+    """Test that the published messages are formulated correctly for remote destinations."""
+    from trollmoves.client import make_uris
+
+    user = "user1"
+    password = "1234bleh"
+    login = f"{user}:{password}"
+    scheme = "ftp://"
+    host = "google.com"
+    directory = "/directory"
+    destination = scheme + host + directory
+    expected_uri = os.path.join(scheme + user + "@" + host + directory, "file1.png")
+    msg = make_uris(MSG_FILE, destination, login=login)
+    assert msg.data['uri'] == expected_uri
+    assert password not in msg.data['uri']
 
 
 def test_make_uris_s3_destination():
