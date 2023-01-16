@@ -58,13 +58,12 @@ def setup_logging(name, cmd_args=None):
             log_dict = yaml.safe_load(fd.read())
             logging.config.dictConfig(log_dict)
             return logging.getLogger(name)
-    with suppress(AttributeError):
+    with suppress(AttributeError, TypeError):
         setup_legacy_logger(cmd_args)
         return logging.getLogger(name)
 
-    if cmd_args is None:
-        setup_default_logger()
-        return logging.getLogger(name)
+    setup_default_logger()
+    return logging.getLogger(name)
 
 
 def setup_legacy_logger(cmd_args):
