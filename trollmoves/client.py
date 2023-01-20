@@ -933,7 +933,6 @@ class PushRequester:
     def connect(self):
         """Connect to the server."""
         self._socket = get_context().socket(REQ)
-        # self._socket.setsockopt(zmq.RCVTIMEO, 500)  # milliseconds
         self._socket.connect(self._reqaddress)
         self._poller.register(self._socket, POLLIN)
 
