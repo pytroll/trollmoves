@@ -357,6 +357,43 @@ class ScpMover(Mover):
 
     def copy(self):
         """Upload the file."""
+        from scp import SCPError
+
+        retries = 3
+        success = False
+        while retries > 0:
+            retries -= 1
+
+            try:
+                scp = self._get_scp_client()
+                scp.put(self.origin, self.destination.path)
+                success = True
+                break
+            except OSError as osex:
+                if osex.errno == 2:
+                    LOGGER.error("No such file or directory. File not transfered: "
+                                 "%s. Original error message: %s",
+                                 self.origin, str(osex))
+                else:
+                    LOGGER.error("OSError in scp.put: %s", str(osex))
+                    raise
+            except SCPError as err:
+                LOGGER.error("SCP failed: %s", str(err))
+            except Exception as err:
+                LOGGER.error("Something went wrong with scp: %s", str(err))
+                LOGGER.error("Exception name %s", type(err).__name__)
+                LOGGER.error("Exception args %s", str(err.args))
+                raise
+            finally:
+                scp.close()
+
+            if success:
+                break
+
+            LOGGER.error("Retrying transfer in 2 seconds")
+            time.sleep(2)
+
+    def _get_scp_client(self):
         from scp import SCPClient
 
         ssh_connection = self.get_connection(self.destination.hostname,
@@ -369,24 +406,7 @@ class ScpMover(Mover):
             LOGGER.error("Failed to initiate SCPClient: %s", str(err))
             ssh_connection.close()
             raise
-
-        try:
-            scp.put(self.origin, self.destination.path)
-        except OSError as osex:
-            if osex.errno == 2:
-                LOGGER.error("No such file or directory. File not transfered: "
-                             "%s. Original error message: %s",
-                             self.origin, str(osex))
-            else:
-                LOGGER.error("OSError in scp.put: %s", str(osex))
-                raise
-        except Exception as err:
-            LOGGER.error("Something went wrong with scp: %s", str(err))
-            LOGGER.error("Exception name %s", type(err).__name__)
-            LOGGER.error("Exception args %s", str(err.args))
-            raise
-        finally:
-            scp.close()
+        return scp
 
 
 class SftpMover(Mover):
