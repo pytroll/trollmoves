@@ -1578,13 +1578,13 @@ def test_create_local_dir_s3():
 
 
 @pytest.mark.parametrize("destination",
-                         ["file://localhost/directory",
-                          "/localhost/directory"])
+                         ["file://localhost/some/directory",
+                          "/some/directory"])
 def test_make_uris_local_destination(destination):
     """Test that the published messages are formulated correctly for local destinations."""
     from trollmoves.client import make_uris
 
-    expected_uri = os.path.join(destination, "file1.png")
+    expected_uri = os.path.join("/some/directory", "file1.png")
     msg = make_uris(MSG_FILE, destination)
     assert msg.data['uri'] == expected_uri
 
@@ -1614,6 +1614,18 @@ def test_make_uris_remote_destination_with_login():
     msg = make_uris(MSG_FILE, destination, login=login)
     assert msg.data['uri'] == expected_uri
     assert password not in msg.data['uri']
+
+
+def test_make_uris_local_destination_with_ftp():
+    """Test that the published messages are formulated correctly for local destinations provided with scheme."""
+    from trollmoves.client import make_uris
+    import socket
+
+    local_directory = "/san1/polar_in/regional/osisaf"
+    destination = "ftp://" + socket.gethostname() + local_directory
+    expected_uri = os.path.join(local_directory, "file1.png")
+    msg = make_uris(MSG_FILE, destination)
+    assert msg.data['uri'] == expected_uri
 
 
 def test_make_uris_s3_destination():
