@@ -1628,6 +1628,23 @@ def test_make_uris_local_destination_with_ftp():
     assert msg.data['uri'] == expected_uri
 
 
+def test_make_uris_local_destination_with_ftp_and_login():
+    """Test published messages for local destinations provided with scheme and login."""
+    from trollmoves.client import make_uris
+    import socket
+
+    user = "user1"
+    password = "1234bleh"
+    login = f"{user}:{password}"
+    scheme = "ftp://"
+    local_directory = "/san1/polar_in/regional/osisaf"
+    destination = scheme + socket.gethostname() + local_directory
+
+    expected_uri = os.path.join(local_directory, "file1.png")
+    msg = make_uris(MSG_FILE, destination, login=login)
+    assert msg.data['uri'] == expected_uri
+
+
 def test_make_uris_s3_destination():
     """Test that the published messages are formulated correctly for S3 destinations."""
     from trollmoves.client import make_uris
