@@ -491,7 +491,7 @@ def make_uris(msg, destination, login=None):
     """Create local URIs for the received files."""
     duri = urlparse(destination)
     scheme = duri.scheme
-    netloc = duri.netloc  # local file
+    netloc = duri.netloc
     if scheme != "s3" and duri.hostname and is_localhost(duri.hostname):
         scheme = ""
         netloc = ""
