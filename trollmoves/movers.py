@@ -297,38 +297,52 @@ class ScpMover(Mover):
 
     def open_connection(self):
         """Open a connection."""
+        retries = 3
+
+        ssh_connection = self._run_with_retries(self._open_connection, num_retries=retries)
+        if ssh_connection is None:
+            raise IOError("Failed to ssh connect after 3 attempts")
+        return ssh_connection
+
+    def _open_connection(self):
         from paramiko import SSHClient, SSHException
 
-        retries = 3
         ssh_key_filename = self.attrs.get("ssh_key_filename", None)
         timeout = self.attrs.get("ssh_connection_timeout", None)
-        while retries > 0:
-            retries -= 1
-            try:
-                ssh_connection = SSHClient()
-                ssh_connection.load_system_host_keys()
-                ssh_connection.connect(self.destination.hostname,
-                                       username=self._dest_username,
-                                       port=self.destination.port or 22,
-                                       key_filename=ssh_key_filename,
-                                       timeout=timeout)
-                LOGGER.debug("Successfully connected to %s:%s as %s",
-                             self.destination.hostname,
-                             self.destination.port or 22,
-                             self._dest_username)
-            except SSHException as sshe:
-                LOGGER.exception("Failed to init SSHClient: %s", str(sshe))
-            except socket.timeout as sto:
-                LOGGER.exception("SSH connection timed out: %s", str(sto))
-            except Exception as err:
-                LOGGER.exception("Unknown exception at init SSHClient: %s", str(err))
-            else:
-                return ssh_connection
+        try:
+            ssh_connection = SSHClient()
+            ssh_connection.load_system_host_keys()
+            ssh_connection.connect(self.destination.hostname,
+                                   username=self._dest_username,
+                                   port=self.destination.port or 22,
+                                   key_filename=ssh_key_filename,
+                                   timeout=timeout)
+            LOGGER.debug("Successfully connected to %s:%s as %s",
+                         self.destination.hostname,
+                         self.destination.port or 22,
+                         self._dest_username)
+        except SSHException as sshe:
+            LOGGER.exception("Failed to init SSHClient: %s", str(sshe))
+        except socket.timeout as sto:
+            LOGGER.exception("SSH connection timed out: %s", str(sto))
+        except Exception as err:
+            LOGGER.exception("Unknown exception at init SSHClient: %s", str(err))
+        else:
+            return ssh_connection
 
-            ssh_connection.close()
-            time.sleep(2)
-            LOGGER.debug("Retrying ssh connect ...")
-        raise IOError("Failed to ssh connect after 3 attempts")
+        ssh_connection.close()
+        return None
+
+    def _run_with_retries(self, func, num_retries=3):
+        res = None
+        for _ in range(num_retries):
+            res = func()
+            if res:
+                break
+        time.sleep(2)
+        LOGGER.debug(f"Retrying {self.__class__.__name__}.{func.__name__}() ...")
+
+        return res
 
     @staticmethod
     def is_connected(connection):
@@ -357,41 +371,36 @@ class ScpMover(Mover):
 
     def copy(self):
         """Upload the file."""
+        retries = 3
+        _ = self._run_with_retries(self._copy, num_retries=retries)
+
+    def _copy(self):
         from scp import SCPError
 
-        retries = 3
         success = False
-        while retries > 0:
-            retries -= 1
-
-            try:
-                scp = self._get_scp_client()
-                scp.put(self.origin, self.destination.path)
-                success = True
-                break
-            except OSError as osex:
-                if osex.errno == 2:
-                    LOGGER.error("No such file or directory. File not transfered: "
-                                 "%s. Original error message: %s",
-                                 self.origin, str(osex))
-                else:
-                    LOGGER.error("OSError in scp.put: %s", str(osex))
-                    raise
-            except SCPError as err:
-                LOGGER.error("SCP failed: %s", str(err))
-            except Exception as err:
-                LOGGER.error("Something went wrong with scp: %s", str(err))
-                LOGGER.error("Exception name %s", type(err).__name__)
-                LOGGER.error("Exception args %s", str(err.args))
+        try:
+            scp = self._get_scp_client()
+            scp.put(self.origin, self.destination.path)
+            success = True
+        except OSError as osex:
+            if osex.errno == 2:
+                LOGGER.error("No such file or directory. File not transfered: "
+                             "%s. Original error message: %s",
+                             self.origin, str(osex))
+            else:
+                LOGGER.error("OSError in scp.put: %s", str(osex))
                 raise
-            finally:
-                scp.close()
+        except SCPError as err:
+            LOGGER.error("SCP failed: %s", str(err))
+        except Exception as err:
+            LOGGER.error("Something went wrong with scp: %s", str(err))
+            LOGGER.error("Exception name %s", type(err).__name__)
+            LOGGER.error("Exception args %s", str(err.args))
+            raise
+        finally:
+            scp.close()
 
-            if success:
-                break
-
-            LOGGER.error("Retrying transfer in 2 seconds")
-            time.sleep(2)
+        return success
 
     def _get_scp_client(self):
         from scp import SCPClient
