@@ -115,8 +115,7 @@ class Mover(object):
     def get_connection(self, hostname, port, username=None):
         """Get the connection."""
         with self.active_connection_lock:
-            LOGGER.debug("Destination username and passwd: %s %s",
-                         self._dest_username, self._dest_password)
+            LOGGER.debug("Destination username: %s", self._dest_username)
             LOGGER.debug('Getting connection to %s@%s:%s',
                          username, hostname, port)
             try:
