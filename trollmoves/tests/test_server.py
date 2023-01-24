@@ -300,3 +300,51 @@ def test_requestmanager_is_delete_set_True(patch_validate_file_pattern):
     port = 9876
     req_man = RequestManager(port, attrs={'delete': True})
     assert req_man._is_delete_set() is True
+
+
+CONFIG_MINIMAL = """
+[test]
+origin = foo
+listen = bar
+"""
+CONFIG_NUM_SSH_RETRIES = CONFIG_MINIMAL + """
+num_ssh_retries = 5
+"""
+
+
+def test_config_defaults():
+    """Test that config defaults are set."""
+    from trollmoves.server import read_config
+
+    with NamedTemporaryFile(mode='w') as tmp_file:
+        tmp_file.write(CONFIG_MINIMAL)
+        tmp_file.file.flush()
+
+        config = read_config(tmp_file.name)
+
+        test_section = config["test"]
+        assert "origin" in test_section
+        assert "listen" in test_section
+        assert test_section["working_directory"] is None
+        assert test_section["compression"] is False
+        assert test_section["req_timeout"] == 1
+        assert test_section["transfer_req_timeout"] == 10
+        assert test_section["ssh_key_filename"] is None
+        assert test_section["delete"] is False
+        assert test_section["num_ssh_retries"] == 3
+        assert test_section["nameserver"] is None
+        assert test_section["addresses"] is None
+
+
+def test_config_num_ssh_retries():
+    """Test that config defaults are set."""
+    from trollmoves.server import read_config
+
+    with NamedTemporaryFile(mode='w') as tmp_file:
+        tmp_file.write(CONFIG_NUM_SSH_RETRIES)
+        tmp_file.file.flush()
+
+        config = read_config(tmp_file.name)
+
+        test_section = config["test"]
+        assert test_section["num_ssh_retries"] == 5
