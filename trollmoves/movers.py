@@ -305,22 +305,10 @@ class ScpMover(Mover):
         return ssh_connection
 
     def _open_connection(self):
-        from paramiko import SSHClient, SSHException
+        from paramiko import SSHException
 
-        ssh_key_filename = self.attrs.get("ssh_key_filename", None)
-        timeout = self.attrs.get("ssh_connection_timeout", None)
         try:
-            ssh_connection = SSHClient()
-            ssh_connection.load_system_host_keys()
-            ssh_connection.connect(self.destination.hostname,
-                                   username=self._dest_username,
-                                   port=self.destination.port or 22,
-                                   key_filename=ssh_key_filename,
-                                   timeout=timeout)
-            LOGGER.debug("Successfully connected to %s:%s as %s",
-                         self.destination.hostname,
-                         self.destination.port or 22,
-                         self._dest_username)
+            ssh_connection = self._create_ssh_connection()
         except SSHException as sshe:
             LOGGER.exception("Failed to init SSHClient: %s", str(sshe))
         except socket.timeout as sto:
@@ -330,8 +318,26 @@ class ScpMover(Mover):
         else:
             return ssh_connection
 
-        ssh_connection.close()
         return None
+
+    def _create_ssh_connection(self):
+        from paramiko import SSHClient
+
+        ssh_key_filename = self.attrs.get("ssh_key_filename", None)
+        timeout = self.attrs.get("ssh_connection_timeout", None)
+
+        ssh_connection = SSHClient()
+        ssh_connection.load_system_host_keys()
+        ssh_connection.connect(self.destination.hostname,
+                               username=self._dest_username,
+                               port=self.destination.port or 22,
+                               key_filename=ssh_key_filename,
+                               timeout=timeout)
+        LOGGER.debug("Successfully connected to %s:%s as %s",
+                     self.destination.hostname,
+                     self.destination.port or 22,
+                     self._dest_username)
+        return ssh_connection
 
     def _run_with_retries(self, func, name, num_retries=3):
         res = None
