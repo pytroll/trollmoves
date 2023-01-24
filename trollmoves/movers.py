@@ -378,7 +378,7 @@ class ScpMover(Mover):
         _ = self._run_with_retries(self._copy, "SCP copy")
 
     def _copy(self):
-        from scp import SCPError
+        from scp import SCPException
 
         success = False
         try:
@@ -393,7 +393,7 @@ class ScpMover(Mover):
             else:
                 LOGGER.error("OSError in scp.put: %s", str(osex))
                 raise
-        except SCPError as err:
+        except SCPException as err:
             LOGGER.error("SCP failed: %s", str(err))
         except Exception as err:
             LOGGER.error("Something went wrong with scp: %s", str(err))
