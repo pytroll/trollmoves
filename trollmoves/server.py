@@ -579,6 +579,7 @@ def _read_ini_config(filename):
         _parse_nameserver(res[section], cp_[section])
         _parse_addresses(res[section])
         _parse_delete(res[section], cp_[section])
+        _parse_ssh_retries(res[section], cp_[section])
         if not _check_origin_and_listen(res, section):
             continue
         if not _check_topic(res, section):
@@ -594,6 +595,7 @@ def _set_config_defaults(conf):
     conf.setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
     conf.setdefault("ssh_key_filename", None)
     conf.setdefault("delete", False)
+    conf.setdefault("num_ssh_retries", 3)
 
 
 def _parse_nameserver(conf, raw_conf):
@@ -615,6 +617,12 @@ def _parse_delete(conf, raw_conf):
     val = raw_conf.getboolean("delete")
     if val is not None:
         conf["delete"] = val
+
+
+def _parse_ssh_retries(conf, raw_conf):
+    val = raw_conf.getint("num_ssh_retries")
+    if val is not None:
+        conf["num_ssh_retries"] = val
 
 
 def _check_origin_and_listen(res, section):

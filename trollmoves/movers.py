@@ -296,9 +296,7 @@ class ScpMover(Mover):
 
     def open_connection(self):
         """Open a connection."""
-        retries = 3
-
-        ssh_connection = self._run_with_retries(self._open_connection, "ssh connect", num_retries=retries)
+        ssh_connection = self._run_with_retries(self._open_connection, "ssh connect")
         if ssh_connection is None:
             raise IOError("Failed to ssh connect after 3 attempts")
         return ssh_connection
@@ -338,7 +336,8 @@ class ScpMover(Mover):
                      self._dest_username)
         return ssh_connection
 
-    def _run_with_retries(self, func, name, num_retries=3):
+    def _run_with_retries(self, func, name):
+        num_retries = self.attrs.get("num_ssh_retries", 3)
         res = None
         for _ in range(num_retries):
             res = func()
@@ -376,8 +375,7 @@ class ScpMover(Mover):
 
     def copy(self):
         """Upload the file."""
-        retries = 3
-        _ = self._run_with_retries(self._copy, "SCP copy", num_retries=retries)
+        _ = self._run_with_retries(self._copy, "SCP copy")
 
     def _copy(self):
         from scp import SCPError
