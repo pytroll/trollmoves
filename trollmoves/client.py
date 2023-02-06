@@ -180,7 +180,7 @@ class Listener(Thread):
 
     def __init__(self, address, topics, *args, die_event=None, **kwargs):
         """Init Listener object."""
-        super(Listener, self).__init__()
+        super().__init__()
 
         self.topics = topics
         self.subscriber = None
@@ -291,7 +291,7 @@ def _handle_push_message(msg):
         # the transfers are not finished on primary
         # client and are not cleared
         LOGGER.debug("Primary client published 'push'")
-        add_to_ongoing(msg)
+        add_to_ongoing_transfers(msg)
         return True
     return False
 
@@ -308,7 +308,7 @@ def _handle_ack_message(msg):
 def _handle_message_from_another_client(msg):
     if msg.type == "file" and "request_address" not in msg.data:
         LOGGER.debug("Ignoring 'file' message from primary client.")
-        add_to_ongoing(msg)
+        add_to_ongoing_transfers(msg)
         _ = add_to_file_cache(msg)
         _ = clean_ongoing_transfer(get_msg_uid(msg))
         return True
@@ -587,23 +587,23 @@ def add_request_push_timer(timeout, msg, *args, **kwargs):
     LOGGER.debug("Added timer for UID %s.", huid)
 
 
-def add_to_ongoing(msg):
+def add_to_ongoing_transfers(msg):
     """Add message to ongoing transfers.
 
-    Return True if similar message was already received, False otherwise.
+    Return None if similar message was already received, otherwise the hashed uid of the message.
     """
-    huid = get_msg_uid(msg)
+    hashed_uid = get_msg_uid(msg)
     with hot_spare_timer_lock:
-        timer = ongoing_hot_spare_timers.pop(huid, None)
+        timer = ongoing_hot_spare_timers.pop(hashed_uid, None)
         if timer is not None:
             timer.cancel()
-            LOGGER.debug("Cleared timer for UID %s.", huid)
+            LOGGER.debug("Cleared timer for UID %s.", hashed_uid)
     with ongoing_transfers_lock:
-        if huid in ongoing_transfers:
-            ongoing_transfers[huid].append(msg)
+        if hashed_uid in ongoing_transfers:
+            ongoing_transfers[hashed_uid].append(msg)
             return None
-        ongoing_transfers[huid] = [msg]
-        return huid
+        ongoing_transfers[hashed_uid] = [msg]
+        return hashed_uid
 
 
 def add_to_file_cache(msg):
@@ -617,31 +617,31 @@ def add_to_file_cache(msg):
 
 def request_push(msg_in, destination, login=None, publisher=None, **kwargs):
     """Request a push for data."""
-    huid = add_to_ongoing(msg_in)
-    if huid is None:
+    hashed_uid = add_to_ongoing_transfers(msg_in)
+    if hashed_uid is None:
         return
 
     if already_received(msg_in):
         timeout = float(kwargs["req_timeout"])
         send_ack(msg_in, timeout)
-        _ = clean_ongoing_transfer(huid)
+        _ = clean_ongoing_transfer(hashed_uid)
         return
 
-    _request_files(huid, destination, login, publisher, **kwargs)
+    _request_files(hashed_uid, destination, login, publisher, **kwargs)
 
 
-def _request_files(huid, destination, login, publisher, **kwargs):
-    for msg in iterate_messages(huid):
+def _request_files(hashed_uid, destination, login, publisher, **kwargs):
+    for msg in iterate_messages(hashed_uid):
         _destination = _compose_destination(destination, msg)
 
-        req, fake_req = create_push_req_message(msg, _destination, login)
-        LOGGER.info("Requesting: %s", str(fake_req))
+        req, no_credentials_req = create_push_req_message(msg, _destination, login)
+        LOGGER.info("Requesting: %s", str(no_credentials_req))
         if kwargs.get('create_target_directory', True):
             local_dir = create_local_dir(_destination, kwargs.get('ftp_root', '/'))
         else:
             local_dir = None
 
-        publisher.send(str(fake_req))
+        publisher.send(str(no_credentials_req))
 
         response, hostname = send_request(msg, req, float(kwargs["transfer_req_timeout"]))
 
@@ -659,7 +659,7 @@ def _request_files(huid, destination, login, publisher, **kwargs):
 
             LOGGER.debug("publishing %s", str(lmsg))
             publisher.send(str(lmsg))
-            terminate_transfers(huid, float(kwargs["req_timeout"]))
+            terminate_transfers(hashed_uid, float(kwargs["req_timeout"]))
             break
         else:
             LOGGER.error("Failed to get valid response from server %s: %s",
@@ -667,7 +667,7 @@ def _request_files(huid, destination, login, publisher, **kwargs):
     else:
         LOGGER.warning('Could not get a working source for requesting %s',
                        str(msg))
-        terminate_transfers(huid, float(kwargs["req_timeout"]))
+        terminate_transfers(hashed_uid, float(kwargs["req_timeout"]))
 
 
 def _compose_destination(destination, msg):

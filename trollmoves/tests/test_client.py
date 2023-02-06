@@ -648,9 +648,9 @@ def test_listener_init(request_push, delayed_listener):
 
 
 @patch('trollmoves.client.request_push')
-@patch('trollmoves.client.add_to_ongoing')
+@patch('trollmoves.client.add_to_ongoing_transfers')
 @patch('trollmoves.client.add_to_file_cache')
-def test_listener_push_message(add_to_file_cache, add_to_ongoing, request_push, delayed_listener):
+def test_listener_push_message(add_to_file_cache, add_to_ongoing_transfers, request_push, delayed_listener):
     """Test listener push message."""
     delayed_listener.create_subscriber()
     delayed_listener.subscriber.return_value = [MSG_PUSH]
@@ -658,7 +658,7 @@ def test_listener_push_message(add_to_file_cache, add_to_ongoing, request_push, 
     _run_listener_in_thread(delayed_listener)
 
     add_to_file_cache.assert_not_called()
-    add_to_ongoing.assert_called_with(MSG_PUSH)
+    add_to_ongoing_transfers.assert_called_with(MSG_PUSH)
 
 
 @patch('trollmoves.client.request_push')
@@ -677,10 +677,10 @@ def test_listener_ack_message(add_to_file_cache, clean_ongoing_transfer, request
 
 @patch('trollmoves.client.request_push')
 @patch('trollmoves.client.add_request_push_timer')
-@patch('trollmoves.client.add_to_ongoing')
+@patch('trollmoves.client.add_to_ongoing_transfers')
 @patch('trollmoves.client.clean_ongoing_transfer')
 @patch('trollmoves.client.add_to_file_cache')
-def test_listener_beat_message(add_to_file_cache, clean_ongoing_transfer, add_to_ongoing,
+def test_listener_beat_message(add_to_file_cache, clean_ongoing_transfer, add_to_ongoing_transfers,
                                add_request_push_timer, request_push, delayed_listener):
     """Test listener with beat message."""
     delayed_listener.create_subscriber()
@@ -689,19 +689,19 @@ def test_listener_beat_message(add_to_file_cache, clean_ongoing_transfer, add_to
     _run_listener_in_thread(delayed_listener)
 
     add_to_file_cache.assert_not_called()
-    add_to_ongoing.assert_not_called()
+    add_to_ongoing_transfers.assert_not_called()
     add_request_push_timer.assert_not_called()
     clean_ongoing_transfer.assert_not_called()
 
 
 @patch('trollmoves.client.request_push')
 @patch('trollmoves.client.add_request_push_timer')
-@patch('trollmoves.client.add_to_ongoing')
+@patch('trollmoves.client.add_to_ongoing_transfers')
 @patch('trollmoves.client.clean_ongoing_transfer')
 @patch('trollmoves.client.add_to_file_cache')
 @patch('trollmoves.client.CTimer')
 def test_listener_sync_file_message(
-        CTimer, add_to_file_cache, clean_ongoing_transfer, add_to_ongoing, add_request_push_timer,
+        CTimer, add_to_file_cache, clean_ongoing_transfer, add_to_ongoing_transfers, add_request_push_timer,
         request_push, delayed_listener):
     """Test listener with a file message from another client."""
     from trollmoves.client import get_msg_uid
@@ -714,7 +714,7 @@ def test_listener_sync_file_message(
     CTimer.assert_not_called()
     add_to_file_cache.assert_called_with(MSG_FILE1)
     clean_ongoing_transfer.assert_called_with(get_msg_uid(MSG_FILE1))
-    add_to_ongoing.assert_called_with(MSG_FILE1)
+    add_to_ongoing_transfers.assert_called_with(MSG_FILE1)
     add_request_push_timer.assert_not_called()
 
 
@@ -765,15 +765,15 @@ def _run_listener_in_thread(listener_instance):
 @patch('trollmoves.client.ongoing_transfers', new_callable=dict)
 @patch('trollmoves.client.ongoing_transfers_lock')
 def test_add_to_ongoing_one_message(lock, ongoing_transfers):
-    """Test add_to_ongoing() with a single message."""
-    from trollmoves.client import add_to_ongoing
+    """Test add_to_ongoing_transfers() with a single message."""
+    from trollmoves.client import add_to_ongoing_transfers
 
     # Mock the lock context manager
     lock_cm = MagicMock()
     lock.__enter__ = lock_cm
 
     # Add a message to ongoing transfers
-    res = add_to_ongoing(MSG_FILE1)
+    res = add_to_ongoing_transfers(MSG_FILE1)
     lock_cm.assert_called_once()
     assert res is not None
     assert len(ongoing_transfers) == 1
@@ -784,15 +784,15 @@ def test_add_to_ongoing_one_message(lock, ongoing_transfers):
 @patch('trollmoves.client.ongoing_transfers', new_callable=dict)
 @patch('trollmoves.client.ongoing_transfers_lock')
 def test_add_to_ongoing_duplicate_message(lock, ongoing_transfers):
-    """Test add_to_ongoing() with duplicate messages."""
-    from trollmoves.client import add_to_ongoing
+    """Test add_to_ongoing_transfers() with duplicate messages."""
+    from trollmoves.client import add_to_ongoing_transfers
 
     # Mock the lock context manager
     lock_cm = MagicMock()
     lock.__enter__ = lock_cm
 
-    _ = add_to_ongoing(MSG_FILE1)
-    res = add_to_ongoing(MSG_FILE1)
+    _ = add_to_ongoing_transfers(MSG_FILE1)
+    res = add_to_ongoing_transfers(MSG_FILE1)
     assert len(lock_cm.mock_calls) == 2
     assert res is None
     assert len(ongoing_transfers) == 1
@@ -802,15 +802,15 @@ def test_add_to_ongoing_duplicate_message(lock, ongoing_transfers):
 @patch('trollmoves.client.ongoing_transfers', new_callable=dict)
 @patch('trollmoves.client.ongoing_transfers_lock')
 def test_add_to_ongoing_two_messages(lock, ongoing_transfers):
-    """Test add_to_ongoing()."""
-    from trollmoves.client import add_to_ongoing
+    """Test add_to_ongoing_transfers()."""
+    from trollmoves.client import add_to_ongoing_transfers
 
     # Mock the lock context manager
     lock_cm = MagicMock()
     lock.__enter__ = lock_cm
 
-    _ = add_to_ongoing(MSG_FILE1)
-    res = add_to_ongoing(MSG_FILE2)
+    _ = add_to_ongoing_transfers(MSG_FILE1)
+    res = add_to_ongoing_transfers(MSG_FILE2)
     assert len(lock_cm.mock_calls) == 2
     assert res is not None
     assert len(ongoing_transfers) == 2
@@ -820,8 +820,8 @@ def test_add_to_ongoing_two_messages(lock, ongoing_transfers):
 @patch('trollmoves.client.ongoing_transfers', new_callable=dict)
 @patch('trollmoves.client.ongoing_transfers_lock')
 def test_add_to_ongoing_hot_spare_timer(lock, ongoing_transfers, ongoing_hot_spare_timers):
-    """Test add_to_ongoing()."""
-    from trollmoves.client import add_to_ongoing
+    """Test add_to_ongoing_transfers()."""
+    from trollmoves.client import add_to_ongoing_transfers
 
     # Mock the lock context manager
     lock_cm = MagicMock()
@@ -830,7 +830,7 @@ def test_add_to_ongoing_hot_spare_timer(lock, ongoing_transfers, ongoing_hot_spa
     # There's a timer running for hot-spare functionality
     timer = MagicMock()
     ongoing_hot_spare_timers[UID_FILE1] = timer
-    _ = add_to_ongoing(MSG_FILE1)
+    _ = add_to_ongoing_transfers(MSG_FILE1)
     timer.cancel.assert_called_once()
     assert len(ongoing_hot_spare_timers) == 0
 
