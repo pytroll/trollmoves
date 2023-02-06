@@ -78,6 +78,8 @@ MSG_FILE2 = Message('/topic', 'file', data={'uid': 'file2',
                                             'request_address': '127.0.0.1:0'})
 UID_FILE2 = '1c1c96fd2cf8330db0bfa936ce82f3b9'
 MSG_BEAT = Message('/topic', 'beat', data={'uid': 'file1'})
+MSG_FILE_FTP = Message("/topic", "file", data={"uid": "file2",
+                                               "request_address": "127.0.0.1:0"})
 
 CLIENT_CONFIG_1_ITEM = """
 # Example acting as a hot spare
@@ -1675,3 +1677,28 @@ def test_read_config_nameservers_are_a_list_or_tuple(client_config_2_items):
     finally:
         os.remove(client_config_2_items)
     assert isinstance(conf['foo']['nameservers'], (list, tuple))
+
+
+@patch('trollmoves.client.ongoing_transfers', new_callable=dict)
+@patch('trollmoves.client.file_cache', new_callable=deque)
+@patch('trollmoves.client.clean_ongoing_transfer')
+@patch('trollmoves.client.send_request')
+@patch('trollmoves.client.send_ack')
+def test_request_push_ftp(send_ack, send_request, clean_ongoing_transfer, file_cache, ongoing_transfers, tmp_path):
+    """Test trollmoves.client.request_push() with a single file."""
+    from trollmoves.client import request_push
+
+    clean_ongoing_transfer.return_value = [MSG_FILE_FTP]
+    send_request.return_value = [MSG_FILE_FTP, 'localhost']
+    publisher = MagicMock()
+    kwargs = {'transfer_req_timeout': 1.0, 'req_timeout': 1.0}
+
+    destination = f"ftp://{os.fspath(tmp_path)}/some/dir"
+
+    request_push(MSG_FILE_FTP, destination, 'someuser:somepass', publisher=publisher,
+                 **kwargs)
+
+    file_msg = Message(rawstr=publisher.send.mock_calls[-1][1][0])
+    assert "someuser" not in file_msg.data["uri"]
+    assert "somepass" not in file_msg.data["uri"]
+    assert "/some/dir" in file_msg.data["uri"]

@@ -495,7 +495,7 @@ def make_uris(msg, destination, login=None):
     if scheme != "s3" and duri.hostname and is_localhost(duri.hostname):
         scheme = ""
         netloc = ""
-    elif login:
+    elif login and netloc:
         # Add (only) user to uri.
         netloc = login.split(":")[0] + "@" + netloc
 
