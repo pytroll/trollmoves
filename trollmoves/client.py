@@ -492,12 +492,13 @@ def make_uris(msg, destination, login=None):
     duri = urlparse(destination)
     scheme = duri.scheme
     netloc = duri.netloc
-    if scheme != "s3" and duri.hostname and is_localhost(duri.hostname):
+    if scheme != "s3" and empty_or_localhost(duri.hostname):
         scheme = ""
         netloc = ""
-    elif login and netloc:
-        # Add (only) user to uri.
-        netloc = login.split(":")[0] + "@" + netloc
+    elif netloc:
+        if login:
+            # Add (only) user to uri.
+            netloc = login.split(":")[0] + "@" + netloc
 
     def uri_callback(var):
         uid = var['uid']
@@ -506,6 +507,11 @@ def make_uris(msg, destination, login=None):
         return var
     msg.data = translate_dict(msg.data, ('uri', 'uid'), uri_callback)
     return msg
+
+
+def empty_or_localhost(hostname):
+    """Check that hostname is either empty or referring to localhost."""
+    return ((not hostname) or (hostname and is_localhost(hostname)))
 
 
 def replace_mda(msg, kwargs):

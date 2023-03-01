@@ -1702,3 +1702,4 @@ def test_request_push_ftp(send_ack, send_request, clean_ongoing_transfer, file_c
     assert "someuser" not in file_msg.data["uri"]
     assert "somepass" not in file_msg.data["uri"]
     assert "/some/dir" in file_msg.data["uri"]
+    assert not file_msg.data["uri"].startswith("ftp://")
