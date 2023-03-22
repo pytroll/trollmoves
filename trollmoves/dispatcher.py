@@ -153,6 +153,7 @@ python: `==`, `!=`, `<`, `>`, `<=`, `>=`.
 import logging
 import os
 import signal
+from datetime import datetime
 from queue import Empty
 from threading import Thread
 from urllib.parse import urlsplit, urlunsplit, urlparse
@@ -322,9 +323,10 @@ class Dispatcher(Thread):
                 continue
             if msg.type != 'file':
                 continue
-            self._dispatch_from_message(msg)
+            self.dispatch_from_message(msg)
 
-    def _dispatch_from_message(self, msg):
+    def dispatch_from_message(self, msg):
+        """Dispatch from message."""
         destinations = self.get_destinations(msg)
         if destinations:
             # Check if the url are on another host:
@@ -448,6 +450,7 @@ def _verify_filepattern(defaults, msg):
 
 def _get_metadata_with_aliases(msg, defaults):
     metadata = msg.data.copy()
+    metadata["file_creation_time"] = get_uri_creation_time(msg)
     for key, aliases in defaults.get('aliases', {}).items():
         if isinstance(aliases, dict):
             aliases = [aliases]
@@ -457,6 +460,11 @@ def _get_metadata_with_aliases(msg, defaults):
             if key in msg.data:
                 metadata[new_key] = alias.get(msg.data[key], msg.data[key])
     return metadata
+
+
+def get_uri_creation_time(msg):
+    """Get the creation time of the file pointed to by the uri."""
+    return datetime.fromtimestamp(os.path.getctime(msg.data.get("uri")))
 
 
 def check_conditions(msg, item):

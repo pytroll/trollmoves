@@ -22,10 +22,10 @@
 """Test the dispatcher."""
 
 import os
-import shutil
 import signal
 import time
 from datetime import datetime
+from glob import glob
 from queue import Queue
 from tempfile import NamedTemporaryFile, gettempdir
 from threading import get_ident
@@ -189,7 +189,7 @@ target1:
 
 
 test_local = """
-target3:
+target1:
   host: ""
   filepattern: '{platform_name}_{start_time:%Y%m%d%H%M}.{format}'
   directory: """ + os.path.join(gettempdir(), 'dptest') + """
@@ -235,6 +235,21 @@ target3:
         - /level2/viirs
 """
 
+test_local_creation_time = """
+target1:
+  host: ""
+  filepattern: '{platform_name}_{product}_{start_time:%Y%m%d%H%M}_{file_creation_time:%Y%m%d%H%M%S}.{format}'
+  directory: """ + os.path.join(gettempdir(), 'dptest') + """
+
+  dispatch_configs:
+    - topics:
+        - /level2/viirs
+      conditions:
+        # key matches metadata items or provides default
+        - product: [green_snow, true_color]
+          sensor: viirs
+    """
+
 
 @pytest.fixture
 def check_conditions_string_config():
@@ -257,24 +272,27 @@ def check_conditions_string_config():
 
 
 @pytest.fixture
-def get_destinations_message():
+def fake_viirs_green_snow_message(tmp_path):
     """Get the destinations message."""
     msg = Mock()
     msg.type = 'file'
     msg.subject = '/level2/viirs'
+    filename = os.fspath(tmp_path / '201909190919_NOAA-20_viirs.tif')
     msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
                 'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif',
-                'uid': '201909190919_NOAA-20_viirs.tif'}
+                'uid': '201909190919_NOAA-20_viirs.tif',
+                'uri': filename
+                }
+    create_empty_file(filename)
     yield msg
 
 
 @pytest.fixture
-def create_dest_url_message(get_destinations_message):
+def create_dest_url_message(tmp_path, fake_viirs_green_snow_message):
     """Create the destination url message."""
-    get_destinations_message.data['uri'] = '/data/viirs/201909190919_NOAA-20_viirs.tif'
-    get_destinations_message.data['uid'] = '67e91f4a778adc59e5f1a4f0475e388b'
+    fake_viirs_green_snow_message.data['uid'] = '67e91f4a778adc59e5f1a4f0475e388b'
 
-    yield get_destinations_message
+    yield fake_viirs_green_snow_message
 
 
 @pytest.fixture
@@ -394,14 +412,14 @@ def _get_dispatcher(config):
     return dispatcher
 
 
-def test_get_destinations_single_destination(get_destinations_message):
+def test_get_destinations_single_destination(fake_viirs_green_snow_message):
     """Check getting destination urls for single destination."""
     dispatcher = _get_dispatcher(test_yaml1)
 
     expected_url = 'ftp://ftp.target1.com/input_data/viirs/NOAA-20_201909190919.tif'
     expected_attrs = {'connection_uptime': 20}
 
-    res = dispatcher.get_destinations(get_destinations_message)
+    res = dispatcher.get_destinations(fake_viirs_green_snow_message)
     assert len(res) == 1
     url, attrs, client = res[0]
     assert url == expected_url
@@ -409,11 +427,11 @@ def test_get_destinations_single_destination(get_destinations_message):
     assert client == "target1"
 
 
-def test_get_destinations_two_destinations(get_destinations_message):
+def test_get_destinations_two_destinations(fake_viirs_green_snow_message):
     """Check getting destination urls for two destinations."""
     dispatcher = _get_dispatcher(test_yaml2)
 
-    res = dispatcher.get_destinations(get_destinations_message)
+    res = dispatcher.get_destinations(fake_viirs_green_snow_message)
 
     assert len(res) == 2
 
@@ -436,7 +454,7 @@ def _assert_get_destinations_res(res, expected_length, expected_url, expected_at
         assert client == expected_client[i]
 
 
-def test_get_destinations_no_default_directory_single_destination(get_destinations_message):
+def test_get_destinations_no_default_directory_single_destination(fake_viirs_green_snow_message):
     """Check getting destination urls when default directory isn't configured."""
     dispatcher = _get_dispatcher(test_yaml_no_default_directory)
 
@@ -445,11 +463,11 @@ def test_get_destinations_no_default_directory_single_destination(get_destinatio
     expected_attrs = {'connection_uptime': 20}
     expected_client = "target1"
 
-    res = dispatcher.get_destinations(get_destinations_message)
+    res = dispatcher.get_destinations(fake_viirs_green_snow_message)
     _assert_get_destinations_res(res, expected_length, expected_url, expected_attrs, expected_client)
 
 
-def test_get_destinations_with_aliases(get_destinations_message):
+def test_get_destinations_with_aliases(fake_viirs_green_snow_message):
     """Check getting destination urls with aliases."""
     dispatcher = _get_dispatcher(test_yaml_aliases_simple)
 
@@ -458,12 +476,12 @@ def test_get_destinations_with_aliases(get_destinations_message):
     expected_attrs = {'connection_uptime': 20}
     expected_client = "target1"
 
-    res = dispatcher.get_destinations(get_destinations_message)
+    res = dispatcher.get_destinations(fake_viirs_green_snow_message)
 
     _assert_get_destinations_res(res, expected_length, expected_url, expected_attrs, expected_client)
 
 
-def test_get_destinations_aliases_multiple(get_destinations_message):
+def test_get_destinations_aliases_multiple(fake_viirs_green_snow_message):
     """Check getting destination urls with multiple aliases."""
     dispatcher = _get_dispatcher(test_yaml_aliases_multiple)
 
@@ -472,12 +490,12 @@ def test_get_destinations_aliases_multiple(get_destinations_message):
     expected_attrs = {'connection_uptime': 20}
     expected_client = "target1"
 
-    res = dispatcher.get_destinations(get_destinations_message)
+    res = dispatcher.get_destinations(fake_viirs_green_snow_message)
 
     _assert_get_destinations_res(res, expected_length, expected_url, expected_attrs, expected_client)
 
 
-def test_get_destionations_two_targets(get_destinations_message):
+def test_get_destionations_two_targets(fake_viirs_green_snow_message):
     """Check getting destinations for two target locations."""
     dispatcher = _get_dispatcher(test_yaml2)
 
@@ -488,36 +506,37 @@ def test_get_destionations_two_targets(get_destinations_message):
                       {'ssh_key_filename': '~/.ssh/rsa_id.pub'}]
     expected_clients = ['target1', 'target2']
 
-    res = dispatcher.get_destinations(get_destinations_message)
+    res = dispatcher.get_destinations(fake_viirs_green_snow_message)
 
     _assert_get_destinations_res(res, expected_length, expected_urls, expected_attrs, expected_clients)
 
 
-def test_dispatcher(get_destinations_message):
+def test_dispatcher(tmp_path, fake_viirs_green_snow_message):
     """Test the dispatcher class."""
     dp = None
     try:
-        dest_dir = os.path.join(gettempdir(), 'dptest')
-        if os.path.exists(dest_dir):
-            shutil.rmtree(dest_dir)
         with patch('trollmoves.dispatcher.ListenerContainer') as lc:
             queue = Queue()
             lc.return_value.output_queue = queue
-            with NamedTemporaryFile('w', delete=False) as config_file:
-                config_file_name = config_file.name
-                config_file.write(test_local)
-                config_file.flush()
-                config_file.close()
-                dp = Dispatcher(config_file_name)
-                dp.start()
-                dest_dir = os.path.join(gettempdir(), 'dptest')
-                assert not os.path.exists(dest_dir)
-                with NamedTemporaryFile('w') as test_file:
-                    get_destinations_message.data['uri'] = test_file.name
-                    expected_file = os.path.join(dest_dir, 'NOAA-20_201909190919.tif')
-                    queue.put(get_destinations_message)
-                    time.sleep(.1)
-                    assert os.path.exists(expected_file)
+
+            dest_dir = tmp_path / 'dptest'
+            config_filepath = tmp_path / "config_file"
+
+            create_config_file(config_filepath, test_local, dest_dir)
+
+            dp = Dispatcher(os.fspath(config_filepath))
+            dp.start()
+            assert not os.path.exists(dest_dir)
+
+            test_file = tmp_path / "test_file"
+            create_empty_file(test_file)
+
+            fake_viirs_green_snow_message.data['uri'] = os.fspath(test_file)
+            expected_file = dest_dir / 'NOAA-20_201909190919.tif'
+            queue.put(fake_viirs_green_snow_message)
+            time.sleep(.1)
+            assert os.path.exists(expected_file)
+
             # Check that the listener config items are passed correctly
             lc.assert_called_once_with(
                 addresses=['tcp://127.0.0.1:40000'],
@@ -527,9 +546,21 @@ def test_dispatcher(get_destinations_message):
     finally:
         if dp is not None:
             dp.close()
-        os.remove(expected_file)
-        os.rmdir(dest_dir)
-        os.remove(config_file_name)
+
+
+def create_empty_file(filename):
+    """Create an empty file."""
+    with open(filename, mode="a"):
+        pass
+
+
+def create_config_file(config_filepath, config, dest_dir):
+    """Create an actual configuration file."""
+    local_config = yaml.safe_load(config)
+    local_config["target1"]["directory"] = os.fspath(dest_dir)
+    local_config = yaml.dump(local_config)
+    with open(config_filepath, mode="w") as fd:
+        fd.write(local_config)
 
 
 def _write_config_file(config):
@@ -783,3 +814,40 @@ def test_dispatch_one_dispatch_fails(move_it, caplog):
 
     assert "Could not dispatch to url2: test" in caplog.text
     assert res == {'target1': True, 'target2': False}
+
+
+def test_dispatch_local_with_file_creation_time(tmp_path, fake_viirs_green_snow_message):
+    """Test the dispatcher class."""
+    dp = None
+    try:
+        with patch('trollmoves.dispatcher.ListenerContainer'):
+
+            dest_dir = tmp_path / 'dptest'
+            config_filepath = tmp_path / "config_file"
+
+            create_config_file(config_filepath, test_local_creation_time, dest_dir)
+
+            dp = Dispatcher(os.fspath(config_filepath))
+            dp.start()
+            assert not os.path.exists(dest_dir)
+
+            test_file = tmp_path / "test_file"
+            with open(test_file, mode="a"):
+                pass
+
+            fake_viirs_green_snow_message.data['uri'] = os.fspath(test_file)
+            dp.dispatch_from_message(fake_viirs_green_snow_message)
+            time.sleep(.1)
+
+            expected_file = dest_dir / 'NOAA-20_green_snow_201909190919_*.tif'
+            found_files = glob(os.fspath(expected_file))
+            assert len(found_files) == 1
+
+            filename, _ = os.path.splitext(found_files[0])
+            _, timestamp = filename.rsplit("_", 1)
+            creation_time = datetime.strptime(timestamp, "%Y%m%d%H%M%S")
+            assert 0 < (datetime.now() - creation_time).total_seconds() < 1
+
+    finally:
+        if dp is not None:
+            dp.close()
