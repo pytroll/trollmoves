@@ -47,21 +47,22 @@ def test_logging_options_are_added(tmp_path):
     config_file = os.fspath(tmp_path / "my_log_config")
     with open(config_file, "w") as fd:
         fd.write(log_config)
-    cmd_args = _create_arg_parser(config_file)
+    cmd_args = _create_arg_parser(["-c", config_file])
     assert os.path.basename(cmd_args.log_config) == "my_log_config"
 
 
-def _create_arg_parser(filename):
+def _create_arg_parser(args, legacy=False):
     parser = argparse.ArgumentParser()
-    add_logging_options_to_parser(parser)
-    args = ["-c", filename]
+    add_logging_options_to_parser(parser, legacy=legacy)
     cmd_args = parser.parse_args(args)
     return cmd_args
 
 
 def test_logging_without_options_creates_a_stream_handler():
     """Test that logging without options creates a stream handler."""
-    logger = setup_logging("my_logger")
+    cmd_args = _create_arg_parser("", legacy=True)
+
+    logger = setup_logging("my_logger", cmd_args)
     assert any(isinstance(handler, logging.StreamHandler)
                for handler in logger.handlers + logger.parent.handlers)
 
@@ -87,7 +88,7 @@ def logger_from_config_file(config_file):
     """Create a logger from a config file."""
     with open(config_file, "w") as fd:
         fd.write(log_config)
-    cmd_args = _create_arg_parser(config_file)
+    cmd_args = _create_arg_parser(["-c", config_file])
     logger = setup_logging("my_logger", cmd_args)
     return logger
 
@@ -95,7 +96,7 @@ def logger_from_config_file(config_file):
 def test_unknown_log_config_crashes(tmp_path):
     """Test that unknown log config crashes."""
     config_file = os.fspath(tmp_path / "unknown_config")
-    cmd_args = _create_arg_parser(config_file)
+    cmd_args = _create_arg_parser(["-c", config_file])
     with pytest.raises(FileNotFoundError):
         setup_logging("my_logger", cmd_args)
 
