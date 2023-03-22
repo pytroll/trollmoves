@@ -22,20 +22,19 @@
 """Test the dispatcher."""
 
 import os
-import signal
 import time
 from datetime import datetime
 from glob import glob
 from queue import Queue
 from tempfile import NamedTemporaryFile, gettempdir
-from threading import get_ident
 from unittest.mock import Mock, patch, call
 
-import yaml
 import pytest
+import yaml
+from posttroll.message import Message
 
 from trollmoves.dispatcher import (
-    Dispatcher, YAMLConfig, check_conditions, dispatch
+    Dispatcher, read_config, check_conditions, dispatch
 )
 
 test_yaml1 = """
@@ -193,12 +192,6 @@ target1:
   host: ""
   filepattern: '{platform_name}_{start_time:%Y%m%d%H%M}.{format}'
   directory: """ + os.path.join(gettempdir(), 'dptest') + """
-  subscribe_addresses:
-    - tcp://127.0.0.1:40000
-  nameserver: 127.0.0.1
-  subscribe_services:
-    - service_name_1
-    - service_name_2
 
   dispatch_configs:
     - topics:
@@ -222,6 +215,14 @@ target1:
           daylight: '<30'
           coverage: '>50'
     """
+
+test_local_with_listener = """
+subscribe_addresses:
+  - tcp://127.0.0.1:40000
+nameserver: 127.0.0.1
+subscribe_services:
+  - service_name_1
+  - service_name_2""" + test_local
 
 
 test_yaml_pub = test_yaml2 + """
@@ -272,27 +273,27 @@ def check_conditions_string_config():
 
 
 @pytest.fixture
-def fake_viirs_green_snow_message(tmp_path):
+def viirs_green_snow_message(tmp_path):
     """Get the destinations message."""
-    msg = Mock()
-    msg.type = 'file'
-    msg.subject = '/level2/viirs'
-    filename = os.fspath(tmp_path / '201909190919_NOAA-20_viirs.tif')
-    msg.data = {'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
-                'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif',
-                'uid': '201909190919_NOAA-20_viirs.tif',
-                'uri': filename
-                }
+    uid = '201909190919_NOAA-20_viirs.tif'
+    filename = os.fspath(tmp_path / uid)
+
+    msg = Message("/level2/viirs", "file",
+                  data={'sensor': 'viirs', 'product': 'green_snow', 'platform_name': 'NOAA-20',
+                        'start_time': datetime(2019, 9, 19, 9, 19), 'format': 'tif',
+                        'uid': uid,
+                        'uri': filename
+                        })
     create_empty_file(filename)
     yield msg
 
 
 @pytest.fixture
-def create_dest_url_message(tmp_path, fake_viirs_green_snow_message):
+def create_dest_url_message(tmp_path, viirs_green_snow_message):
     """Create the destination url message."""
-    fake_viirs_green_snow_message.data['uid'] = '67e91f4a778adc59e5f1a4f0475e388b'
+    viirs_green_snow_message.data['uid'] = '67e91f4a778adc59e5f1a4f0475e388b'
 
-    yield fake_viirs_green_snow_message
+    yield viirs_green_snow_message
 
 
 @pytest.fixture
@@ -307,47 +308,18 @@ def publisher_config_file_name():
 
 
 def test_config_reading():
-    """Test reading the config."""
-    with NamedTemporaryFile('w', delete=False) as config_file:
-        fname = config_file.name
-        try:
-            with patch.object(YAMLConfig, 'read_config') as rc:
-                assert rc.call_count == 0
-                yconf = YAMLConfig(fname)
-                time.sleep(.1)
-                assert rc.call_count == 1
-                config_file.write(test_yaml1)
-                config_file.flush()
-                config_file.close()
-                time.sleep(.1)
-                assert rc.call_count == 2
-                signal.pthread_kill(get_ident(), signal.SIGUSR1)
-                time.sleep(.1)
-                assert rc.call_count == 3
-                os.remove(fname)
-                signal.pthread_kill(get_ident(), signal.SIGUSR1)
-                time.sleep(.1)
-                yconf.close()
-        finally:
-            yconf.close()
-            try:
-                os.remove(fname)
-            except FileNotFoundError:
-                pass
-
+    """Test reading the configuration."""
     expected = yaml.safe_load(test_yaml1)
     with NamedTemporaryFile('w', delete=False) as config_file:
         fname = config_file.name
         try:
-            yconf = YAMLConfig(fname)
-            time.sleep(.1)
             config_file.write(test_yaml1)
             config_file.flush()
             config_file.close()
-            time.sleep(.1)
-            assert yconf.config == expected
+            config = read_config(fname)
+
+            assert config == expected
         finally:
-            yconf.close()
             try:
                 os.remove(fname)
             except FileNotFoundError:
@@ -403,23 +375,26 @@ def test_check_conditions_numbers():
     assert check_conditions(msg, config_item) is False
 
 
-def _get_dispatcher(config):
-    with patch('trollmoves.dispatcher.DispatchConfig'):
-        with NamedTemporaryFile('w') as fid:
-            fname = fid.name
-            dispatcher = Dispatcher(fname)
-            dispatcher.config = yaml.safe_load(config)
-    return dispatcher
+@pytest.fixture
+def dispatcher_creator(tmp_path):
+    """Create a dispatcher factory."""
+    def _create_dispatcher(config):
+        config_file = tmp_path / "my_config"
+        with open(config_file, mode="w") as fd:
+            fd.write(config)
+        return Dispatcher(os.fspath(config_file), messages=["some", "messages"])
+
+    return _create_dispatcher
 
 
-def test_get_destinations_single_destination(fake_viirs_green_snow_message):
+def test_get_destinations_single_destination(viirs_green_snow_message, dispatcher_creator):
     """Check getting destination urls for single destination."""
-    dispatcher = _get_dispatcher(test_yaml1)
+    dispatcher = dispatcher_creator(test_yaml1)
 
     expected_url = 'ftp://ftp.target1.com/input_data/viirs/NOAA-20_201909190919.tif'
     expected_attrs = {'connection_uptime': 20}
 
-    res = dispatcher.get_destinations(fake_viirs_green_snow_message)
+    res = dispatcher.get_destinations(viirs_green_snow_message)
     assert len(res) == 1
     url, attrs, client = res[0]
     assert url == expected_url
@@ -427,11 +402,11 @@ def test_get_destinations_single_destination(fake_viirs_green_snow_message):
     assert client == "target1"
 
 
-def test_get_destinations_two_destinations(fake_viirs_green_snow_message):
+def test_get_destinations_two_destinations(viirs_green_snow_message, dispatcher_creator):
     """Check getting destination urls for two destinations."""
-    dispatcher = _get_dispatcher(test_yaml2)
+    dispatcher = dispatcher_creator(test_yaml2)
 
-    res = dispatcher.get_destinations(fake_viirs_green_snow_message)
+    res = dispatcher.get_destinations(viirs_green_snow_message)
 
     assert len(res) == 2
 
@@ -454,50 +429,50 @@ def _assert_get_destinations_res(res, expected_length, expected_url, expected_at
         assert client == expected_client[i]
 
 
-def test_get_destinations_no_default_directory_single_destination(fake_viirs_green_snow_message):
+def test_get_destinations_no_default_directory_single_destination(viirs_green_snow_message, dispatcher_creator):
     """Check getting destination urls when default directory isn't configured."""
-    dispatcher = _get_dispatcher(test_yaml_no_default_directory)
+    dispatcher = dispatcher_creator(test_yaml_no_default_directory)
 
     expected_length = 1
     expected_url = 'ftp://ftp.target1.com/input_data/viirs/NOAA-20_201909190919.tif'
     expected_attrs = {'connection_uptime': 20}
     expected_client = "target1"
 
-    res = dispatcher.get_destinations(fake_viirs_green_snow_message)
+    res = dispatcher.get_destinations(viirs_green_snow_message)
     _assert_get_destinations_res(res, expected_length, expected_url, expected_attrs, expected_client)
 
 
-def test_get_destinations_with_aliases(fake_viirs_green_snow_message):
+def test_get_destinations_with_aliases(viirs_green_snow_message, dispatcher_creator):
     """Check getting destination urls with aliases."""
-    dispatcher = _get_dispatcher(test_yaml_aliases_simple)
+    dispatcher = dispatcher_creator(test_yaml_aliases_simple)
 
     expected_length = 1
     expected_url = 'ftp://ftp.target1.com/input_data/viirs/NOAA-20_gs_201909190919.tif'
     expected_attrs = {'connection_uptime': 20}
     expected_client = "target1"
 
-    res = dispatcher.get_destinations(fake_viirs_green_snow_message)
+    res = dispatcher.get_destinations(viirs_green_snow_message)
 
     _assert_get_destinations_res(res, expected_length, expected_url, expected_attrs, expected_client)
 
 
-def test_get_destinations_aliases_multiple(fake_viirs_green_snow_message):
+def test_get_destinations_aliases_multiple(viirs_green_snow_message, dispatcher_creator):
     """Check getting destination urls with multiple aliases."""
-    dispatcher = _get_dispatcher(test_yaml_aliases_multiple)
+    dispatcher = dispatcher_creator(test_yaml_aliases_multiple)
 
     expected_length = 1
     expected_url = 'ftp://ftp.target1.com/input_data/alternate_dir_for_green_snow/NOAA-20_gs_201909190919.tif'
     expected_attrs = {'connection_uptime': 20}
     expected_client = "target1"
 
-    res = dispatcher.get_destinations(fake_viirs_green_snow_message)
+    res = dispatcher.get_destinations(viirs_green_snow_message)
 
     _assert_get_destinations_res(res, expected_length, expected_url, expected_attrs, expected_client)
 
 
-def test_get_destionations_two_targets(fake_viirs_green_snow_message):
+def test_get_destionations_two_targets(viirs_green_snow_message, dispatcher_creator):
     """Check getting destinations for two target locations."""
-    dispatcher = _get_dispatcher(test_yaml2)
+    dispatcher = dispatcher_creator(test_yaml2)
 
     expected_length = 2
     expected_urls = ['ftp://ftp.target1.com/input_data/viirs/NOAA-20_201909190919.tif',
@@ -506,46 +481,57 @@ def test_get_destionations_two_targets(fake_viirs_green_snow_message):
                       {'ssh_key_filename': '~/.ssh/rsa_id.pub'}]
     expected_clients = ['target1', 'target2']
 
-    res = dispatcher.get_destinations(fake_viirs_green_snow_message)
+    res = dispatcher.get_destinations(viirs_green_snow_message)
 
     _assert_get_destinations_res(res, expected_length, expected_urls, expected_attrs, expected_clients)
 
 
-def test_dispatcher(tmp_path, fake_viirs_green_snow_message):
+def test_dispatcher(tmp_path, viirs_green_snow_message):
     """Test the dispatcher class."""
     dp = None
     try:
-        with patch('trollmoves.dispatcher.ListenerContainer') as lc:
-            queue = Queue()
-            lc.return_value.output_queue = queue
 
-            dest_dir = tmp_path / 'dptest'
-            config_filepath = tmp_path / "config_file"
+        dest_dir = tmp_path / 'dptest'
+        config_filepath = tmp_path / "config_file"
 
-            create_config_file(config_filepath, test_local, dest_dir)
+        create_config_file(config_filepath, test_local, dest_dir)
 
-            dp = Dispatcher(os.fspath(config_filepath))
-            dp.start()
-            assert not os.path.exists(dest_dir)
+        assert not os.path.exists(dest_dir)
 
-            test_file = tmp_path / "test_file"
-            create_empty_file(test_file)
+        dp = Dispatcher(os.fspath(config_filepath), messages=[viirs_green_snow_message])
+        dp.start()
 
-            fake_viirs_green_snow_message.data['uri'] = os.fspath(test_file)
-            expected_file = dest_dir / 'NOAA-20_201909190919.tif'
-            queue.put(fake_viirs_green_snow_message)
-            time.sleep(.1)
-            assert os.path.exists(expected_file)
+        expected_file = dest_dir / 'NOAA-20_201909190919.tif'
+        time.sleep(.01)
+        assert os.path.exists(expected_file)
 
-            # Check that the listener config items are passed correctly
-            lc.assert_called_once_with(
-                addresses=['tcp://127.0.0.1:40000'],
-                nameserver='127.0.0.1',
-                services=['service_name_1', 'service_name_2'],
-                topics={'/level3/cloudtype', '/level2/viirs', '/level2/avhrr'})
     finally:
         if dp is not None:
             dp.close()
+
+
+def test_dispatcher_uses_listener_container(tmp_path, viirs_green_snow_message):
+    """Test the dispatcher class with listener_container."""
+    with patch('trollmoves.dispatcher.ListenerContainer') as lc:
+        queue = Queue()
+        lc.return_value.output_queue = queue
+
+        dest_dir = tmp_path / 'dptest'
+        config_filepath = tmp_path / "config_file"
+
+        create_config_file(config_filepath, test_local_with_listener, dest_dir)
+
+        dp = Dispatcher(os.fspath(config_filepath))
+        dp.start()
+
+        # Check that the listener config items are passed correctly
+        lc.assert_called_once_with(
+            addresses=['tcp://127.0.0.1:40000'],
+            nameserver='127.0.0.1',
+            services=['service_name_1', 'service_name_2'],
+            topics={'/level3/cloudtype', '/level2/viirs', '/level2/avhrr'})
+
+        dp.close()
 
 
 def create_empty_file(filename):
@@ -638,13 +624,10 @@ def test_create_dest_url_ssh_no_filepattern(create_dest_url_message):
         os.remove(config_file_name)
 
 
-@patch('trollmoves.dispatcher.Message')
-@patch('trollmoves.dispatcher.ListenerContainer')
 @patch('trollmoves.dispatcher.NoisyPublisher')
-def test_publisher_init_no_port(NoisyPublisher, ListenerContainer, Message, publisher_config_file_name):
+def test_publisher_init_no_port(NoisyPublisher, publisher_config_file_name):
     """Test the publisher is initialized when no port is defined."""
-    pub = Mock()
-    NoisyPublisher.return_value = pub
+    NoisyPublisher.return_value = Mock()
     try:
         try:
             dispatcher = Dispatcher(publisher_config_file_name)
@@ -657,13 +640,10 @@ def test_publisher_init_no_port(NoisyPublisher, ListenerContainer, Message, publ
         os.remove(publisher_config_file_name)
 
 
-@patch('trollmoves.dispatcher.Message')
-@patch('trollmoves.dispatcher.ListenerContainer')
 @patch('trollmoves.dispatcher.NoisyPublisher')
-def test_publisher_init_no_port_with_nameserver(NoisyPublisher, ListenerContainer, Message, publisher_config_file_name):
+def test_publisher_init_no_port_with_nameserver(NoisyPublisher, publisher_config_file_name):
     """Test the publisher is initialized without port but with nameservers."""
-    pub = Mock()
-    NoisyPublisher.return_value = pub
+    NoisyPublisher.return_value = Mock()
     try:
         try:
             dispatcher = Dispatcher(publisher_config_file_name, publish_nameservers=["asd"])
@@ -676,14 +656,11 @@ def test_publisher_init_no_port_with_nameserver(NoisyPublisher, ListenerContaine
         os.remove(publisher_config_file_name)
 
 
-@patch('trollmoves.dispatcher.Message')
-@patch('trollmoves.dispatcher.ListenerContainer')
 @patch('trollmoves.dispatcher.NoisyPublisher')
-def test_publisher_init_with_random_publish_port(NoisyPublisher, ListenerContainer, Message,
+def test_publisher_init_with_random_publish_port(NoisyPublisher,
                                                  publisher_config_file_name):
     """Test the publisher is initialized with randomly selected publish port."""
-    pub = Mock()
-    NoisyPublisher.return_value = pub
+    NoisyPublisher.return_value = Mock()
     try:
         try:
             dispatcher = Dispatcher(publisher_config_file_name, publish_port=0)
@@ -697,14 +674,11 @@ def test_publisher_init_with_random_publish_port(NoisyPublisher, ListenerContain
         os.remove(publisher_config_file_name)
 
 
-@patch('trollmoves.dispatcher.Message')
-@patch('trollmoves.dispatcher.ListenerContainer')
 @patch('trollmoves.dispatcher.NoisyPublisher')
-def test_publisher_init_publish_port_no_nameserver(NoisyPublisher, ListenerContainer, Message,
+def test_publisher_init_publish_port_no_nameserver(NoisyPublisher,
                                                    publisher_config_file_name):
     """Test the publisher is initialized with port but no nameservers."""
-    pub = Mock()
-    NoisyPublisher.return_value = pub
+    NoisyPublisher.return_value = Mock()
     try:
         try:
             dispatcher = Dispatcher(publisher_config_file_name, publish_port=40000)
@@ -718,17 +692,14 @@ def test_publisher_init_publish_port_no_nameserver(NoisyPublisher, ListenerConta
         os.remove(publisher_config_file_name)
 
 
-@patch('trollmoves.dispatcher.Message')
-@patch('trollmoves.dispatcher.ListenerContainer')
 @patch('trollmoves.dispatcher.NoisyPublisher')
-def test_publisher_init_port_and_nameservers(NoisyPublisher, ListenerContainer, Message, publisher_config_file_name):
+def test_publisher_init_port_and_nameservers(NoisyPublisher, publisher_config_file_name):
     """Test the publisher is initialized with port and nameservers."""
     pub = Mock()
     NoisyPublisher.return_value = pub
     try:
         try:
-            dispatcher = Dispatcher(publisher_config_file_name, publish_port=40000,
-                                    publish_nameservers=["asd"])
+            dispatcher = Dispatcher(publisher_config_file_name, publish_port=40000, publish_nameservers=["asd"])
 
             assert dispatcher.publisher is pub
             init_call = call("dispatcher", port=40000, nameservers=["asd"])
@@ -741,19 +712,17 @@ def test_publisher_init_port_and_nameservers(NoisyPublisher, ListenerContainer, 
         os.remove(publisher_config_file_name)
 
 
-@patch('trollmoves.dispatcher.Message')
-@patch('trollmoves.dispatcher.ListenerContainer')
+@patch('trollmoves.dispatcher.Message', wraps=Message)
 @patch('trollmoves.dispatcher.NoisyPublisher')
-def test_publisher_call(NoisyPublisher, ListenerContainer, Message, publisher_config_file_name):
+def test_publisher_call(NoisyPublisher, Message, publisher_config_file_name):
     """Test the publisher being called properly."""
-    pub = Mock()
-    NoisyPublisher.return_value = pub
+    NoisyPublisher.return_value = Mock()
     try:
         try:
-            dispatcher = Dispatcher(publisher_config_file_name, publish_port=40000,
-                                    publish_nameservers=["asd"])
-            msg = Mock(data={'uri': 'original_path',
-                             'platform_name': 'platform'})
+            dispatcher = Dispatcher(publisher_config_file_name, publish_port=40000, publish_nameservers=["asd"])
+            msg = Message("/some/data", "file",
+                          data={'uri': 'original_path',
+                                'platform_name': 'platform'})
             destinations = [['url1', 'params1', 'target2'],
                             ['url2', 'params2', 'target3']]
             success = {'target2': False, 'target3': True}
@@ -816,38 +785,23 @@ def test_dispatch_one_dispatch_fails(move_it, caplog):
     assert res == {'target1': True, 'target2': False}
 
 
-def test_dispatch_local_with_file_creation_time(tmp_path, fake_viirs_green_snow_message):
+def test_dispatch_local_with_file_creation_time(tmp_path, viirs_green_snow_message):
     """Test the dispatcher class."""
-    dp = None
-    try:
-        with patch('trollmoves.dispatcher.ListenerContainer'):
+    dest_dir = tmp_path / 'dptest'
+    config_filepath = tmp_path / "config_file"
 
-            dest_dir = tmp_path / 'dptest'
-            config_filepath = tmp_path / "config_file"
+    create_config_file(config_filepath, test_local_creation_time, dest_dir)
 
-            create_config_file(config_filepath, test_local_creation_time, dest_dir)
+    dp = Dispatcher(os.fspath(config_filepath))
+    assert not os.path.exists(dest_dir)
 
-            dp = Dispatcher(os.fspath(config_filepath))
-            dp.start()
-            assert not os.path.exists(dest_dir)
+    dp.dispatch_from_message(viirs_green_snow_message)
 
-            test_file = tmp_path / "test_file"
-            with open(test_file, mode="a"):
-                pass
+    expected_file = dest_dir / 'NOAA-20_green_snow_201909190919_*.tif'
+    found_files = glob(os.fspath(expected_file))
+    assert len(found_files) == 1
 
-            fake_viirs_green_snow_message.data['uri'] = os.fspath(test_file)
-            dp.dispatch_from_message(fake_viirs_green_snow_message)
-            time.sleep(.1)
-
-            expected_file = dest_dir / 'NOAA-20_green_snow_201909190919_*.tif'
-            found_files = glob(os.fspath(expected_file))
-            assert len(found_files) == 1
-
-            filename, _ = os.path.splitext(found_files[0])
-            _, timestamp = filename.rsplit("_", 1)
-            creation_time = datetime.strptime(timestamp, "%Y%m%d%H%M%S")
-            assert 0 < (datetime.now() - creation_time).total_seconds() < 1
-
-    finally:
-        if dp is not None:
-            dp.close()
+    filename, _ = os.path.splitext(found_files[0])
+    _, timestamp = filename.rsplit("_", 1)
+    creation_time = datetime.strptime(timestamp, "%Y%m%d%H%M%S")
+    assert 0 < (datetime.now() - creation_time).total_seconds() < 2

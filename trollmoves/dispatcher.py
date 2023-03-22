@@ -33,21 +33,21 @@ Format of the configuration file
 
 Example config::
 
+    # Optional direct subscriptions
+    # subscribe_addresses:
+    #   - tcp://127.0.0.1:40000
+    # Nameserver to connect to. Optional. Defaults to localhost
+    # nameserver: 127.0.0.1
+    # Subscribe to specific services. Optional. Default: connect to all services
+    # subscribe_services:
+    #   - service_name_1
+    #   - service_name_2
     target1:
       host: ftp://ftp.target1.com
       connection_parameters:
         connection_uptime: 60
       filepattern: '{platform_name}_{start_time}.{format}'
       directory: /input_data/{sensor}
-      # Optional direct subscriptions
-      # subscribe_addresses:
-      #   - tcp://127.0.0.1:40000
-      # Nameserver to connect to. Optional. Defaults to localhost
-      # nameserver: 127.0.0.1
-      # Subscribe to specific services. Optional. Default: connect to all services
-      # subscribe_services:
-      #   - service_name_1
-      #   - service_name_2
       # Message topics for published messages. Required if command-line option
       #   "-p"/"--publish-port" is used.  The topic can be composed using
       #   metadata from incoming message
@@ -78,14 +78,21 @@ Example config::
               coverage: '>50'
 
 
-The configuration file is divided in sections for each host receiving data.
+Some general configuration can be provided at the main level:
+
+    - `nameserver` (optional): Address of a nameserver to connect to.  Default: 'localhost'.
+    - `addresses` (optional): List of TCP connections to listen for messages.
+    - `services` (optional): List of service names to subscribe to.  Default: connect to all services.
+
+The rest of the configuration file is divided in sections for each host receiving data.
 
 Each host section have to contain the following information:
 
-    - `host`: The host to tranfer to. If it's empty (`""`), the files will be
-      dispatched to localhost.
+    - `host`: The host to transfer to. If it's empty (`""`), the files will be
+      dispatched to localhost using regular copy operations.
     - `filepattern`: The file pattern to use. The fields that can be used are
-      the ones that are available in the message metadata.
+      the ones that are available in the message metadata. Moreover, the file creation time can be accessed through
+      the `file_creation_time` item, and is a datetime object.
       See the trollsift documentation for details on the field formats.
     - `directory`: The directory to dispatch the data to on the receiving host.
       Can also make use of the fields from the message metadata.
@@ -94,9 +101,6 @@ Each host section have to contain the following information:
       pass to the moving function. See the `trollmoves.movers` module documentation.
     - `aliases` (optional): A dictionary of metadata items to change for the
       final filename. These are not taken into account for checking the conditions.
-    - `nameserver` (optional): Address of a nameserver to connect to.  Default: 'localhost'.
-    - `addresses` (optional): List of TCP connections to listen for messages.
-    - `services` (optional): List of service names to subscribe to.  Default: connect to all services.
 
 Note that the `host`, `filepattern`, and `directory` items can be overridden in
 the dispatch_configs section.
@@ -153,18 +157,16 @@ python: `==`, `!=`, `<`, `>`, `<=`, `>=`.
 import logging
 import os
 import signal
+import socket
 from datetime import datetime
 from queue import Empty
 from threading import Thread
 from urllib.parse import urlsplit, urlunsplit, urlparse
-import socket
 
 import yaml
-import inotify.adapters
-from inotify.constants import IN_MODIFY, IN_CLOSE_WRITE, IN_CREATE, IN_MOVED_TO
 from posttroll.listener import ListenerContainer
-from posttroll.publisher import NoisyPublisher
 from posttroll.message import Message
+from posttroll.publisher import NoisyPublisher
 from trollsift import compose
 
 from trollmoves.movers import move_it
@@ -172,101 +174,26 @@ from trollmoves.utils import (clean_url, is_file_local)
 
 logger = logging.getLogger(__name__)
 
-INOTIFY_MASK = IN_MODIFY | IN_CLOSE_WRITE | IN_CREATE | IN_MOVED_TO
 
-
-class Notifier(Thread):
-    """Class to handle file notifications."""
-
-    def __init__(self, filename, event_types, callback):
-        """Initialize the notifier."""
-        self.filename = filename
-        self.loop = True
-        self.inotify = inotify.adapters.Inotify()
-        self.inotify.add_watch(filename, mask=INOTIFY_MASK)
-        self.event_types = set(event_types)
-        self.callback = callback
-        super().__init__()
-
-    def run(self):
-        """Run the notifier."""
-        for event in self.inotify.event_gen():
-            if event is None:
-                if not self.loop:
-                    logger.info('Terminating watch on %s', self.filename)
-                    return
-                else:
-                    continue
-            (_, type_names, path, filename) = event
-            if self.event_types.intersection(set(type_names)):
-                self.callback()
-
-    def close(self):
-        """Close the notifier."""
-        self.loop = False
-
-
-class YAMLConfig():
-    """Class to hold and watch for configuration changes."""
-
-    def __init__(self, filename):
-        """Initialize the config handler."""
-        self.err = None
-        self.filename = filename
-        self.config = None
-        self.read_config()
-        self.notifier = Notifier(filename,
-                                 ['IN_CLOSE_WRITE', 'IN_MOVED_TO', 'IN_CREATE'],
-                                 self.read_config)
-        self.notifier.start()
-        signal.signal(signal.SIGUSR1, self.signal_reread)
-
-    def signal_reread(self, *args, **kwargs):
-        """Read the config when a signal is received."""
-        self.read_config()
-
-    def read_config(self):
-        """Trigger a reread of the config file."""
-        logger.info('Reading config from %s', self.filename)
-        with open(self.filename, 'r') as fd:
-            self.config = yaml.safe_load(fd.read())
-
-    def close(self):
-        """Close the config handler."""
-        try:
-            self.notifier.close()
-            self.notifier.join()
-        except AttributeError as err:
-            self.err = err
-
-    def __del__(self, *args, **kwargs):
-        """Delete the config handler."""
-        self.close()
-
-
-class DispatchConfig(YAMLConfig):
-    """Class to handle dispatch configs."""
-
-    def __init__(self, filename, callback):
-        """Initialize dispatch configuration class."""
-        self.callback = callback
-        super().__init__(filename)
-
-    def read_config(self):
-        """Read configuration file."""
-        super().read_config()
-        self.callback(self.config)
+def read_config(filename):
+    """Read the configuration from file."""
+    logger.info('Reading config from %s', filename)
+    with open(filename, 'r') as fd:
+        return yaml.safe_load(fd.read())
 
 
 class Dispatcher(Thread):
     """Class that dispatches files."""
 
-    def __init__(self, config_file, publish_port=None,
-                 publish_nameservers=None):
-        """Initialize dispatcher class."""
+    def __init__(self, config_file, publish_port=None, publish_nameservers=None, messages=None):
+        """Initialize dispatcher class.
+
+        Arguments:
+            messages: an iterable of messages to use in the dispatcher. This short-circuits the posttroll reception.
+                      Useful for testing.
+        """
         super().__init__()
         self.config = None
-        self.topics = None
         self.listener = None
         self._publish_port = publish_port
         self._publish_nameservers = publish_nameservers
@@ -274,7 +201,9 @@ class Dispatcher(Thread):
         self.host = socket.gethostname()
         self._create_publisher()
         self.loop = True
-        self.config_handler = DispatchConfig(config_file, self.update_config)
+        self.config = read_config(config_file)
+
+        self.messages = messages
         signal.signal(signal.SIGTERM, self.signal_shutdown)
 
     def _create_publisher(self):
@@ -287,43 +216,38 @@ class Dispatcher(Thread):
         """Shutdown dispatcher."""
         self.close()
 
-    def update_config(self, new_config):
-        """Update configuration and reload listeners."""
-        old_config = self.config
-        topics = set()
-        try:
-            for _client, client_config in new_config.items():
-                topics |= set(sum([item['topics'] for item in client_config['dispatch_configs']], []))
-            if self.topics != topics:
-                self.config = new_config
-                self._create_listener(client_config, topics)
-        except KeyError as err:
-            logger.warning('Invalid config for %s, keeping the old one running: %s', _client, str(err))
-            self.config = old_config
+    def _create_listener(self, new_config):
+        addresses = new_config.pop('subscribe_addresses', None)
+        nameserver = new_config.pop('nameserver', 'localhost')
+        services = new_config.pop('subscribe_services', '')
 
-    def _create_listener(self, client_config, topics):
-        if self.listener is not None:
-            # FIXME: make sure to get the last messages though
-            self.listener.stop()
-        addresses = client_config.get('subscribe_addresses', None)
-        nameserver = client_config.get('nameserver', 'localhost')
-        services = client_config.get('subscribe_services', '')
+        topics = set()
+        for _client, client_config in new_config.items():
+            topics |= set(sum([item['topics'] for item in client_config['dispatch_configs']], []))
+
         self.listener = ListenerContainer(topics=topics,
                                           addresses=addresses,
                                           nameserver=nameserver,
                                           services=services)
-        self.topics = topics
 
     def run(self):
         """Run dispatcher."""
-        while self.loop:
-            try:
-                msg = self.listener.output_queue.get(timeout=1)
-            except Empty:
-                continue
+        if self.messages is None:
+            self.messages = self._posttroll_message_iterator()
+
+        for msg in self.messages:
             if msg.type != 'file':
                 continue
             self.dispatch_from_message(msg)
+
+    def _posttroll_message_iterator(self):
+        """Iterate over messages from a listener container."""
+        self._create_listener(self.config)
+        while self.loop:
+            try:
+                yield self.listener.output_queue.get(timeout=1)
+            except Empty:
+                continue
 
     def dispatch_from_message(self, msg):
         """Dispatch from message."""
@@ -340,7 +264,6 @@ class Dispatcher(Thread):
         """Publish a message.
 
         The URI is replaced with the URI on the target server.
-
         """
         for url, _, client in destinations:
             if not success[client]:
@@ -412,7 +335,8 @@ class Dispatcher(Thread):
         logger.info('Terminating dispatcher.')
         self.loop = False
         try:
-            self.listener.stop()
+            if self.listener:
+                self.listener.stop()
         except Exception:
             logger.exception("Couldn't stop listener.")
         if self.publisher:
@@ -420,10 +344,6 @@ class Dispatcher(Thread):
                 self.publisher.stop()
             except Exception:
                 logger.exception("Couldn't stop publisher.")
-        try:
-            self.config_handler.close()
-        except Exception:
-            logger.exception("Couldn't stop config handler.")
 
 
 def _check_file_locality(url, host):
