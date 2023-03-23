@@ -22,11 +22,11 @@
 """Test the dispatcher."""
 
 import os
-import time
 from datetime import datetime
 from glob import glob
 from queue import Queue
 from tempfile import NamedTemporaryFile, gettempdir
+from threading import Thread
 from unittest.mock import Mock, patch, call
 
 import pytest
@@ -217,12 +217,13 @@ target1:
     """
 
 test_local_with_listener = """
-subscribe_addresses:
-  - tcp://127.0.0.1:40000
-nameserver: 127.0.0.1
-subscribe_services:
-  - service_name_1
-  - service_name_2""" + test_local
+posttroll_subscriber:
+    subscribe_addresses:
+      - tcp://127.0.0.1:40000
+    nameserver: 127.0.0.1
+    subscribe_services:
+      - service_name_1
+      - service_name_2""" + test_local
 
 
 test_yaml_pub = test_yaml2 + """
@@ -499,18 +500,17 @@ def test_dispatcher(tmp_path, viirs_green_snow_message):
         assert not os.path.exists(dest_dir)
 
         dp = Dispatcher(os.fspath(config_filepath), messages=[viirs_green_snow_message])
-        dp.start()
-
+        dp.run()
         expected_file = dest_dir / 'NOAA-20_201909190919.tif'
-        time.sleep(.01)
         assert os.path.exists(expected_file)
 
     finally:
-        if dp is not None:
-            dp.close()
+        pass
+        # if dp is not None:
+        #     dp.close()
 
 
-def test_dispatcher_uses_listener_container(tmp_path, viirs_green_snow_message):
+def test_dispatcher_uses_listener_container_config(tmp_path, viirs_green_snow_message):
     """Test the dispatcher class with listener_container."""
     with patch('trollmoves.dispatcher.ListenerContainer') as lc:
         queue = Queue()
@@ -522,8 +522,11 @@ def test_dispatcher_uses_listener_container(tmp_path, viirs_green_snow_message):
         create_config_file(config_filepath, test_local_with_listener, dest_dir)
 
         dp = Dispatcher(os.fspath(config_filepath))
-        dp.start()
 
+        thread = Thread(target=dp.run)
+        thread.start()
+        dp.close()
+        thread.join()
         # Check that the listener config items are passed correctly
         lc.assert_called_once_with(
             addresses=['tcp://127.0.0.1:40000'],
@@ -531,7 +534,28 @@ def test_dispatcher_uses_listener_container(tmp_path, viirs_green_snow_message):
             services=['service_name_1', 'service_name_2'],
             topics={'/level3/cloudtype', '/level2/viirs', '/level2/avhrr'})
 
+
+def test_dispatcher_uses_listener_to_act_on_messages(tmp_path, viirs_green_snow_message):
+    """Test the dispatcher class with listener_container."""
+    with patch('trollmoves.dispatcher.ListenerContainer') as lc:
+        queue = Queue()
+        lc.return_value.output_queue = queue
+
+        dest_dir = tmp_path / 'dptest'
+        config_filepath = tmp_path / "config_file"
+
+        create_config_file(config_filepath, test_local_with_listener, dest_dir)
+
+        assert not os.path.exists(dest_dir)
+
+        dp = Dispatcher(os.fspath(config_filepath))
+        thread = Thread(target=dp.run)
+        thread.start()
+        queue.put(viirs_green_snow_message)
         dp.close()
+        thread.join()
+        expected_file = dest_dir / 'NOAA-20_201909190919.tif'
+        assert os.path.exists(expected_file)
 
 
 def create_empty_file(filename):
@@ -628,32 +652,24 @@ def test_create_dest_url_ssh_no_filepattern(create_dest_url_message):
 def test_publisher_init_no_port(NoisyPublisher, publisher_config_file_name):
     """Test the publisher is initialized when no port is defined."""
     NoisyPublisher.return_value = Mock()
-    try:
-        try:
-            dispatcher = Dispatcher(publisher_config_file_name)
-            assert dispatcher.publisher is None
-            NoisyPublisher.assert_not_called()
-        finally:
-            if dispatcher is not None:
-                dispatcher.close()
-    finally:
-        os.remove(publisher_config_file_name)
+
+    dispatcher = Dispatcher(publisher_config_file_name)
+    assert dispatcher.publisher is None
+    NoisyPublisher.assert_not_called()
+
+    dispatcher.close()
 
 
 @patch('trollmoves.dispatcher.NoisyPublisher')
 def test_publisher_init_no_port_with_nameserver(NoisyPublisher, publisher_config_file_name):
     """Test the publisher is initialized without port but with nameservers."""
     NoisyPublisher.return_value = Mock()
-    try:
-        try:
-            dispatcher = Dispatcher(publisher_config_file_name, publish_nameservers=["asd"])
-            assert dispatcher.publisher is None
-            NoisyPublisher.assert_not_called()
-        finally:
-            if dispatcher is not None:
-                dispatcher.close()
-    finally:
-        os.remove(publisher_config_file_name)
+
+    dispatcher = Dispatcher(publisher_config_file_name, publish_nameservers=["asd"])
+    assert dispatcher.publisher is None
+    NoisyPublisher.assert_not_called()
+
+    dispatcher.close()
 
 
 @patch('trollmoves.dispatcher.NoisyPublisher')
@@ -661,17 +677,13 @@ def test_publisher_init_with_random_publish_port(NoisyPublisher,
                                                  publisher_config_file_name):
     """Test the publisher is initialized with randomly selected publish port."""
     NoisyPublisher.return_value = Mock()
-    try:
-        try:
-            dispatcher = Dispatcher(publisher_config_file_name, publish_port=0)
-            init_call = call("dispatcher", port=0, nameservers=None)
-            assert init_call in NoisyPublisher.mock_calls
-        finally:
-            if dispatcher is not None:
-                dispatcher.close()
-            dispatcher.publisher.stop.assert_called_once()
-    finally:
-        os.remove(publisher_config_file_name)
+
+    dispatcher = Dispatcher(publisher_config_file_name, publish_port=0)
+    init_call = call("dispatcher", port=0, nameservers=None)
+    assert init_call in NoisyPublisher.mock_calls
+
+    dispatcher.close()
+    dispatcher.publisher.stop.assert_called_once()
 
 
 @patch('trollmoves.dispatcher.NoisyPublisher')
@@ -679,17 +691,13 @@ def test_publisher_init_publish_port_no_nameserver(NoisyPublisher,
                                                    publisher_config_file_name):
     """Test the publisher is initialized with port but no nameservers."""
     NoisyPublisher.return_value = Mock()
-    try:
-        try:
-            dispatcher = Dispatcher(publisher_config_file_name, publish_port=40000)
-            init_call = call("dispatcher", port=40000, nameservers=None)
-            assert init_call in NoisyPublisher.mock_calls
-        finally:
-            if dispatcher is not None:
-                dispatcher.close()
-            dispatcher.publisher.stop.assert_called_once()
-    finally:
-        os.remove(publisher_config_file_name)
+
+    dispatcher = Dispatcher(publisher_config_file_name, publish_port=40000)
+    init_call = call("dispatcher", port=40000, nameservers=None)
+    assert init_call in NoisyPublisher.mock_calls
+
+    dispatcher.close()
+    dispatcher.publisher.stop.assert_called_once()
 
 
 @patch('trollmoves.dispatcher.NoisyPublisher')
@@ -697,19 +705,15 @@ def test_publisher_init_port_and_nameservers(NoisyPublisher, publisher_config_fi
     """Test the publisher is initialized with port and nameservers."""
     pub = Mock()
     NoisyPublisher.return_value = pub
-    try:
-        try:
-            dispatcher = Dispatcher(publisher_config_file_name, publish_port=40000, publish_nameservers=["asd"])
 
-            assert dispatcher.publisher is pub
-            init_call = call("dispatcher", port=40000, nameservers=["asd"])
-            assert init_call in NoisyPublisher.mock_calls
-        finally:
-            if dispatcher is not None:
-                dispatcher.close()
-                dispatcher.publisher.stop.assert_called_once()
-    finally:
-        os.remove(publisher_config_file_name)
+    dispatcher = Dispatcher(publisher_config_file_name, publish_port=40000, publish_nameservers=["asd"])
+
+    assert dispatcher.publisher is pub
+    init_call = call("dispatcher", port=40000, nameservers=["asd"])
+    assert init_call in NoisyPublisher.mock_calls
+
+    dispatcher.close()
+    dispatcher.publisher.stop.assert_called_once()
 
 
 @patch('trollmoves.dispatcher.Message', wraps=Message)
@@ -717,27 +721,45 @@ def test_publisher_init_port_and_nameservers(NoisyPublisher, publisher_config_fi
 def test_publisher_call(NoisyPublisher, Message, publisher_config_file_name):
     """Test the publisher being called properly."""
     NoisyPublisher.return_value = Mock()
-    try:
-        try:
-            dispatcher = Dispatcher(publisher_config_file_name, publish_port=40000, publish_nameservers=["asd"])
-            msg = Message("/some/data", "file",
-                          data={'uri': 'original_path',
-                                'platform_name': 'platform'})
-            destinations = [['url1', 'params1', 'target2'],
-                            ['url2', 'params2', 'target3']]
-            success = {'target2': False, 'target3': True}
-            dispatcher._publish(msg, destinations, success)
-            dispatcher.publisher.send.assert_called_once()
-            # The message topic has been composed and uri has been replaced
-            msg_call = call('/topic/platform', 'file',
-                            {'uri': 'url2', 'platform_name': 'platform'})
-            assert msg_call in Message.mock_calls
-        finally:
-            if dispatcher is not None:
-                dispatcher.close()
-                dispatcher.publisher.stop.assert_called()
-    finally:
-        os.remove(publisher_config_file_name)
+
+    dispatcher = Dispatcher(publisher_config_file_name, publish_port=40000, publish_nameservers=["asd"])
+    msg = Message("/some/data", "file",
+                  data={'uri': 'original_path',
+                        'platform_name': 'platform'})
+    destinations = [['url1', 'params1', 'target2'],
+                    ['url2', 'params2', 'target3']]
+    success = {'target2': False, 'target3': True}
+    dispatcher._publish(msg, destinations, success)
+    dispatcher.publisher.send.assert_called_once()
+    # The message topic has been composed and uri has been replaced
+    msg_call = call('/topic/platform', 'file',
+                    {'uri': 'url2', 'platform_name': 'platform'})
+    assert msg_call in Message.mock_calls
+
+    dispatcher.close()
+    dispatcher.publisher.stop.assert_called()
+
+
+@patch('trollmoves.dispatcher.Message', wraps=Message)
+@patch('trollmoves.dispatcher.NoisyPublisher')
+def test_publisher_not_called_when_topic_missing(NoisyPublisher, Message, tmp_path, caplog):
+    """Test the publisher being called properly."""
+    NoisyPublisher.return_value = Mock()
+
+    dest_dir = tmp_path / 'dptest'
+    config_filepath = tmp_path / "config_file"
+
+    create_config_file(config_filepath, test_local, dest_dir)
+
+    dispatcher = Dispatcher(config_filepath, publish_port=40000, publish_nameservers=["asd"])
+    msg = Message("/some/data", "file",
+                  data={'uri': 'original_path',
+                        'platform_name': 'platform'})
+    destinations = [['url1', 'params1', 'target2'],
+                    ['url2', 'params2', 'target3']]
+    success = {'target2': False, 'target3': True}
+    dispatcher._publish(msg, destinations, success)
+    assert "Publish topic not configured for 'target3'" in caplog.text
 
 
 def _run_dispatch(destinations):

@@ -64,8 +64,7 @@ def main():
         logger.error('Dispatcher crashed: %s', str(err))
         sys.exit(1)
     try:
-        dispatcher.start()
-        dispatcher.join()
+        dispatcher.run()
     except KeyboardInterrupt:
         logger.debug("Interrupting")
     finally:

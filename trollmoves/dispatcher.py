@@ -153,14 +153,13 @@ metadata::
 The comparison operators that can be used are the ones that can be used in
 python: `==`, `!=`, `<`, `>`, `<=`, `>=`.
 """
-
+import contextlib
 import logging
 import os
 import signal
 import socket
 from datetime import datetime
 from queue import Empty
-from threading import Thread
 from urllib.parse import urlsplit, urlunsplit, urlparse
 
 import yaml
@@ -182,7 +181,15 @@ def read_config(filename):
         return yaml.safe_load(fd.read())
 
 
-class Dispatcher(Thread):
+def _create_publisher(publish_port, publish_nameservers):
+    if publish_port is not None:
+        publisher = NoisyPublisher("dispatcher", port=publish_port,
+                                   nameservers=publish_nameservers)
+        publisher.start()
+        return publisher
+
+
+class Dispatcher:
     """Class that dispatches files."""
 
     def __init__(self, config_file, publish_port=None, publish_nameservers=None, messages=None):
@@ -192,62 +199,36 @@ class Dispatcher(Thread):
             messages: an iterable of messages to use in the dispatcher. This short-circuits the posttroll reception.
                       Useful for testing.
         """
-        super().__init__()
-        self.config = None
-        self.listener = None
-        self._publish_port = publish_port
-        self._publish_nameservers = publish_nameservers
-        self.publisher = None
-        self.host = socket.gethostname()
-        self._create_publisher()
-        self.loop = True
         self.config = read_config(config_file)
 
         self.messages = messages
-        signal.signal(signal.SIGTERM, self.signal_shutdown)
 
-    def _create_publisher(self):
-        if self._publish_port is not None:
-            self.publisher = NoisyPublisher("dispatcher", port=self._publish_port,
-                                            nameservers=self._publish_nameservers)
-            self.publisher.start()
+        self.publisher = _create_publisher(publish_port, publish_nameservers)
 
-    def signal_shutdown(self, *args, **kwargs):
-        """Shutdown dispatcher."""
-        self.close()
+        self.host = socket.gethostname()
 
-    def _create_listener(self, new_config):
-        addresses = new_config.pop('subscribe_addresses', None)
-        nameserver = new_config.pop('nameserver', 'localhost')
-        services = new_config.pop('subscribe_services', '')
+        signal.signal(signal.SIGTERM, self.close)
 
-        topics = set()
-        for _client, client_config in new_config.items():
-            topics |= set(sum([item['topics'] for item in client_config['dispatch_configs']], []))
-
-        self.listener = ListenerContainer(topics=topics,
-                                          addresses=addresses,
-                                          nameserver=nameserver,
-                                          services=services)
+    def close(self, *args, **kwargs):
+        """Shut down the dispatcher."""
+        logger.info('Terminating dispatcher.')
+        with contextlib.suppress(AttributeError):
+            self.messages.stop()
+        if self.publisher:
+            try:
+                self.publisher.stop()
+            except Exception:
+                logger.exception("Couldn't stop publisher.")
 
     def run(self):
         """Run dispatcher."""
         if self.messages is None:
-            self.messages = self._posttroll_message_iterator()
+            self.messages = PosttrollMessageIterator(self.config)
 
         for msg in self.messages:
             if msg.type != 'file':
                 continue
             self.dispatch_from_message(msg)
-
-    def _posttroll_message_iterator(self):
-        """Iterate over messages from a listener container."""
-        self._create_listener(self.config)
-        while self.loop:
-            try:
-                yield self.listener.output_queue.get(timeout=1)
-            except Empty:
-                continue
 
     def dispatch_from_message(self, msg):
         """Dispatch from message."""
@@ -259,39 +240,6 @@ class Dispatcher(Thread):
             success = dispatch(url.path, destinations)
             if self.publisher:
                 self._publish(msg, destinations, success)
-
-    def _publish(self, msg, destinations, success):
-        """Publish a message.
-
-        The URI is replaced with the URI on the target server.
-        """
-        for url, _, client in destinations:
-            if not success[client]:
-                continue
-            msg = self._get_new_message(msg, url, client)
-            if msg is None:
-                continue
-            logger.debug('Publishing %s', str(msg))
-            self.publisher.send(str(msg))
-
-    def _get_new_message(self, msg, url, client):
-        info = self._get_message_info(msg, url)
-        topic = self._get_topic(client, info)
-        if topic is None:
-            return None
-        return Message(topic, 'file', info)
-
-    def _get_message_info(self, msg, url):
-        info = msg.data.copy()
-        info["uri"] = urlsplit(url).path
-        return info
-
-    def _get_topic(self, client, info):
-        topic = self.config[client].get("publish_topic")
-        if topic is None:
-            logger.error("Publish topic not configured for '%s'", client)
-            return None
-        return compose(topic, info)
 
     def get_destinations(self, msg):
         """Get the destinations for this message."""
@@ -330,20 +278,82 @@ class Dispatcher(Thread):
         host_path = urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment))
         return host_path, connection_parameters, client
 
-    def close(self):
-        """Shutdown the dispatcher."""
-        logger.info('Terminating dispatcher.')
-        self.loop = False
-        try:
-            if self.listener:
-                self.listener.stop()
-        except Exception:
-            logger.exception("Couldn't stop listener.")
-        if self.publisher:
+    def _publish(self, msg, destinations, success):
+        """Publish a message.
+
+        The URI is replaced with the URI on the target server.
+        """
+        for url, _, client in destinations:
+            if not success[client]:
+                continue
             try:
-                self.publisher.stop()
-            except Exception:
-                logger.exception("Couldn't stop publisher.")
+                msg = self._get_new_message(msg, url, client)
+            except ValueError as err:
+                logger.error(str(err))
+                continue
+            logger.debug('Publishing %s', str(msg))
+            self.publisher.send(str(msg))
+
+    def _get_new_message(self, msg, url, client):
+        info = self._get_message_info(msg, url)
+        topic = self._get_topic(client, info)
+        if topic is None:
+            return None
+        return Message(topic, 'file', info)
+
+    def _get_message_info(self, msg, url):
+        info = msg.data.copy()
+        info["uri"] = urlsplit(url).path
+        return info
+
+    def _get_topic(self, client, info):
+        try:
+            topic = self.config[client]["publish_topic"]
+        except KeyError:
+            raise ValueError(f"Publish topic not configured for '{client}'")
+        return compose(topic, info)
+
+
+class PosttrollMessageIterator:
+    """Posttroll message iterator."""
+
+    def __init__(self, config):
+        """Set up the iterator."""
+        self.config = config
+        self.running = True
+
+    def __iter__(self):
+        """Iterate over messages from a listener container."""
+        with posttroll_listener(self.config) as listener:
+            while self.running:
+                try:
+                    yield listener.output_queue.get(timeout=0.05)
+                except Empty:
+                    continue
+
+    def stop(self):
+        """Stop the iterator."""
+        self.running = False
+
+
+@contextlib.contextmanager
+def posttroll_listener(new_config):
+    """Create a posttroll listener."""
+    subscriber_config = new_config.pop("posttroll_subscriber", {})
+    addresses = subscriber_config.pop('subscribe_addresses', None)
+    nameserver = subscriber_config.pop('nameserver', 'localhost')
+    services = subscriber_config.pop('subscribe_services', '')
+
+    topics = set()
+    for _client, client_config in new_config.items():
+        topics |= set(sum([item['topics'] for item in client_config['dispatch_configs']], []))
+
+    listener = ListenerContainer(topics=topics,
+                                 addresses=addresses,
+                                 nameserver=nameserver,
+                                 services=services)
+    yield listener
+    listener.stop()
 
 
 def _check_file_locality(url, host):
@@ -408,7 +418,6 @@ def check_conditions(msg, item):
     'green_snow' from NOAA-15. 'true_color' from MODIS will not be dispatched.
 
     """
-    # Fixme: except !
     if 'conditions' not in item:
         return True
     for condition_set in item['conditions']:
