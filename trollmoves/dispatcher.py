@@ -165,7 +165,7 @@ from urllib.parse import urlsplit, urlunsplit, urlparse
 import yaml
 from posttroll.listener import ListenerContainer
 from posttroll.message import Message
-from posttroll.publisher import NoisyPublisher
+from posttroll.publisher import NoisyPublisher, create_publisher_from_dict_config
 from trollsift import compose
 
 from trollmoves.movers import move_it
@@ -190,7 +190,10 @@ def _create_publisher(publish_port, publish_nameservers):
 
 
 class Dispatcher:
-    """Class that dispatches files."""
+    """Class that dispatches files.
+
+    Idea for future refactoring: the publish arguments should really be provided in the configuration file.
+    """
 
     def __init__(self, config_file, publish_port=None, publish_nameservers=None, messages=None):
         """Initialize dispatcher class.
@@ -203,7 +206,11 @@ class Dispatcher:
 
         self.messages = messages
 
-        self.publisher = _create_publisher(publish_port, publish_nameservers)
+        if publish_port is not None:
+            self.publisher = PublisherReporter(self.config, publish_port, publish_nameservers)
+
+        else:
+            self.publisher = None
 
         self.host = socket.gethostname()
 
@@ -239,7 +246,7 @@ class Dispatcher:
             _check_file_locality(url, self.host)
             success = dispatch(url.path, destinations)
             if self.publisher:
-                self._publish(msg, destinations, success)
+                self.publisher.publish(msg, destinations, success)
 
     def get_destinations(self, msg):
         """Get the destinations for this message."""
@@ -278,7 +285,35 @@ class Dispatcher:
         host_path = urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment))
         return host_path, connection_parameters, client
 
-    def _publish(self, msg, destinations, success):
+
+class PublisherReporter:
+    """This class uses a posttroll publisher to report the results of the dispatching.
+
+    This is the first of possibly many reporting classes, eg for monitoring or generating reports daily.
+
+    Idea for future refactoring: This could be made flexible enough to be used in other parts of trollmoves, eg in
+    move_it_client to report moved files. The main problem is the to pass the right configuration/topic for the messages
+    to be correct.
+    """
+
+    def __init__(self, config, publish_port, publish_nameservers):
+        """Set up the reporter."""
+        self.config = config
+
+        pub_settings = {
+            "name": "dispatcher",
+            "port": publish_port,
+            "nameservers": publish_nameservers
+        }
+
+        self._pub_starter = create_publisher_from_dict_config(pub_settings)
+        self.publisher = self._pub_starter.start()
+
+        # self.publisher = NoisyPublisher("dispatcher", port=publish_port,
+        #                                 nameservers=publish_nameservers)
+        # self.publisher.start()
+
+    def publish(self, msg, destinations, success):
         """Publish a message.
 
         The URI is replaced with the URI on the target server.
@@ -312,6 +347,10 @@ class Dispatcher:
         except KeyError:
             raise ValueError(f"Publish topic not configured for '{client}'")
         return compose(topic, info)
+
+    def stop(self):
+        """Stop the reporter."""
+        self._pub_starter.stop()
 
 
 class PosttrollMessageIterator:
