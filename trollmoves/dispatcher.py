@@ -309,10 +309,6 @@ class PublisherReporter:
         self._pub_starter = create_publisher_from_dict_config(pub_settings)
         self.publisher = self._pub_starter.start()
 
-        # self.publisher = NoisyPublisher("dispatcher", port=publish_port,
-        #                                 nameservers=publish_nameservers)
-        # self.publisher.start()
-
     def publish(self, msg, destinations, success):
         """Publish a message.
 
