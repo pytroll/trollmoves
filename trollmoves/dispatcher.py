@@ -190,10 +190,10 @@ def _create_publisher(publish_port, publish_nameservers):
 
 
 class Dispatcher:
-    """Class that dispatches files.
+    """Class that dispatches files."""
 
-    Idea for future refactoring: the publish arguments should really be provided in the configuration file.
-    """
+    # Idea for future refactoring: the publish arguments should really be provided in the configuration file, see
+    # https://github.com/pytroll/trollmoves/issues/159
 
     def __init__(self, config_file, publish_port=None, publish_nameservers=None, messages=None):
         """Initialize dispatcher class.
@@ -290,11 +290,11 @@ class PublisherReporter:
     """This class uses a posttroll publisher to report the results of the dispatching.
 
     This is the first of possibly many reporting classes, eg for monitoring or generating reports daily.
-
-    Idea for future refactoring: This could be made flexible enough to be used in other parts of trollmoves, eg in
-    move_it_client to report moved files. The main problem is the to pass the right configuration/topic for the messages
-    to be correct.
     """
+
+    # Idea for future refactoring: This could be made flexible enough to be used in other parts of trollmoves, eg in
+    # move_it_client to report moved files. The main problem is the to pass the right configuration/topic for the
+    # messages to be correct. See https://github.com/pytroll/trollmoves/issues/160
 
     def __init__(self, config, publish_port, publish_nameservers):
         """Set up the reporter."""
