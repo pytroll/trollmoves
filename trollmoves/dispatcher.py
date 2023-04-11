@@ -233,9 +233,15 @@ class Dispatcher:
             self.messages = PosttrollMessageIterator(self.config)
 
         for msg in self.messages:
-            if msg.type != 'file':
+            if msg.type == 'file':
+                self.dispatch_from_message(msg)
+            elif msg.type == 'dataset':
+                # Loop through files in the dataset and publish a message for each one of them
+                file_messages = self._get_file_messages_from_dataset_message(msg)
+                for fmsg in file_messages:
+                    self.dispatch_from_message(fmsg)
+            else:
                 continue
-            self.dispatch_from_message(msg)
 
     def dispatch_from_message(self, msg):
         """Dispatch from message."""
@@ -284,6 +290,20 @@ class Dispatcher:
         parts = urlsplit(host)
         host_path = urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment))
         return host_path, connection_parameters, client
+
+    def _get_file_messages_from_dataset_message(self, msg):
+        """From a dataset type message create individual messages for each file in the dataset."""
+        basic_msg_data = msg.data.copy()
+        dataset_part = basic_msg_data.pop('dataset')
+        file_msgs = []
+        for item in dataset_part:
+            content = {}
+            content.update(basic_msg_data)
+            content['uid'] = item['uid']
+            content['uri'] = item['uri']
+            file_msgs.append(Message(msg.subject, "file", data=content))
+
+        return file_msgs
 
 
 class PublisherReporter:
