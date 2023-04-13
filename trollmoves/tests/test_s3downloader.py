@@ -64,7 +64,7 @@ def test_read_config(config_yaml):
     from trollmoves.s3downloader import S3Downloader
     parse = parse_args(['--config-file=' + config_yaml])
     s3dl = S3Downloader(parse)
-    config = s3dl.read_config(debug=False)
+    config = s3dl.read_config()
     expected_config = {'logging': {'log_rotation_days': 1, 'log_rotation_backup': 30, 'logging_mode': 'DEBUG'},
                        'subscribe-topic': ['/yuhu'], 'publish-topic': '/idnt', 'endpoint_url': 'https://your.url.space',
                        'access_key': 'your_access_key',
@@ -72,17 +72,6 @@ def test_read_config(config_yaml):
                        'bucket': 'atms-sdr',
                        'download_destination': '/destination-directory'}
     assert config == expected_config
-
-
-def test_read_config_debug(capsys, config_yaml):
-    """Test read yaml config."""
-    from trollmoves.s3downloader import parse_args
-    from trollmoves.s3downloader import S3Downloader
-    parse = parse_args(['--config-file=' + config_yaml])
-    s3dl = S3Downloader(parse)
-    s3dl.read_config()
-    captured = capsys.readouterr()
-    assert '/destination-directory' in captured.out
 
 
 @patch('yaml.safe_load')
@@ -94,7 +83,7 @@ def test_read_config_exception(patch_yaml, config_yaml):
     s3dl = S3Downloader(parse)
     patch_yaml.side_effect = FileNotFoundError
     with pytest.raises(FileNotFoundError):
-        s3dl.read_config(debug=False)
+        s3dl.read_config()
 
 
 @patch('yaml.safe_load')
@@ -107,7 +96,7 @@ def test_read_config_exception2(patch_yaml, config_yaml):
     import yaml
     patch_yaml.side_effect = yaml.YAMLError
     with pytest.raises(yaml.YAMLError):
-        s3dl.read_config(debug=False)
+        s3dl.read_config()
 
 
 @pytest.fixture
@@ -123,7 +112,7 @@ def test_read_config_exception3(patch_os_path_exists, s3dl):
     """Test read yaml config."""
     patch_os_path_exists.return_value = False
     with pytest.raises(FileNotFoundError):
-        s3dl.read_config(debug=False)
+        s3dl.read_config()
 
 
 def test_get_basename(s3dl):
@@ -134,7 +123,7 @@ def test_get_basename(s3dl):
 
 @patch('os.path.exists')
 def test_generate_message_if_file_exists_after_download(patch_os_path_exists, s3dl):
-    s3dl.read_config(debug=False)
+    s3dl.read_config()
     bn = 'filename-basename'
     to_send = {'some_key': 'with_a_value'}
     msg = Message('/publish-topic', "file", to_send)
@@ -145,7 +134,7 @@ def test_generate_message_if_file_exists_after_download(patch_os_path_exists, s3
 
 @patch('os.path.exists')
 def test_generate_message_if_file_does_not_exists_after_download(patch_os_path_exists, s3dl):
-    s3dl.read_config(debug=False)
+    s3dl.read_config()
     bn = 'filename-basename'
     to_send = {'some_key': 'with_a_value'}
     msg = Message('/publish-topic', "file", to_send)
@@ -154,11 +143,11 @@ def test_generate_message_if_file_does_not_exists_after_download(patch_os_path_e
     assert pubmsg is None
 
 
-@patch('trollmoves.s3downloader.s3downloader._download_from_s3')
-@patch('trollmoves.s3downloader.s3downloader._get_basename')
+@patch('trollmoves.s3downloader.S3Downloader._download_from_s3')
+@patch('trollmoves.s3downloader.S3Downloader._get_basename')
 @patch('queue.Queue')
 def test_get_one_message(patch_subscribe, patch_get_basename, patch_download_from_s3, s3dl):
-    s3dl.read_config(debug=False)
+    s3dl.read_config()
     s3dl.setup_logging()
     to_send = {'some_key': 'with_a_value', 'uri': 'now-this-is-a-uri'}
     msg = Message('/publish-topic', "file", to_send)
@@ -171,11 +160,11 @@ def test_get_one_message(patch_subscribe, patch_get_basename, patch_download_fro
     assert result is True
 
 
-@patch('trollmoves.s3downloader.s3downloader._download_from_s3')
-@patch('trollmoves.s3downloader.s3downloader._get_basename')
+@patch('trollmoves.s3downloader.S3Downloader._download_from_s3')
+@patch('trollmoves.s3downloader.S3Downloader._get_basename')
 @patch('queue.Queue')
 def test_get_one_message_none(patch_sub_q, patch_get_basename, patch_download_from_s3, s3dl):
-    s3dl.read_config(debug=False)
+    s3dl.read_config()
     s3dl.setup_logging()
     s3dl.listener_queue = patch_sub_q
     s3dl.listener_queue.get.return_value = None
@@ -185,12 +174,12 @@ def test_get_one_message_none(patch_sub_q, patch_get_basename, patch_download_fr
     assert result is True
 
 
-@patch('trollmoves.s3downloader.s3downloader._download_from_s3')
-@patch('trollmoves.s3downloader.s3downloader._get_basename')
+@patch('trollmoves.s3downloader.S3Downloader._download_from_s3')
+@patch('trollmoves.s3downloader.S3Downloader._get_basename')
 @patch('queue.Queue')
 def test_get_one_message_download_false(patch_sub_q, patch_get_bn, patch_dl_s3, caplog, s3dl):
     import logging
-    s3dl.read_config(debug=False)
+    s3dl.read_config()
     s3dl.setup_logging()
     patch_get_bn.return_value = 'filename-basename'
     patch_dl_s3.return_value = False
@@ -203,7 +192,7 @@ def test_get_one_message_download_false(patch_sub_q, patch_get_bn, patch_dl_s3, 
 
 @patch('queue.Queue')
 def test_get_one_message_keyboardinterrupt(patch_subscribe, s3dl):
-    s3dl.read_config(debug=False)
+    s3dl.read_config()
     s3dl.setup_logging()
     s3dl.listener_queue = patch_subscribe
     s3dl.listener_queue.get.side_effect = KeyboardInterrupt
@@ -211,9 +200,9 @@ def test_get_one_message_keyboardinterrupt(patch_subscribe, s3dl):
     assert result is False
 
 
-@patch('trollmoves.s3downloader.s3downloader._get_one_message')
+@patch('trollmoves.s3downloader.S3Downloader._get_one_message')
 def test_read_from_queue(patch_get_one_message, s3dl):
-    s3dl.read_config(debug=False)
+    s3dl.read_config()
     s3dl.setup_logging()
     patch_get_one_message.return_value = False
     s3dl._read_from_queue()
@@ -224,7 +213,7 @@ def test_read_from_queue(patch_get_one_message, s3dl):
 @patch('s3fs.S3FileSystem')
 @patch('s3fs.S3FileSystem.get_file')
 def test_download_from_s3(patch_get_file, patch_S3FileSystem, patch_exists, s3dl):
-    s3dl.read_config(debug=False)
+    s3dl.read_config()
     s3dl.setup_logging()
     bn = 'filename-basename'
     result = s3dl._download_from_s3(bn)
@@ -235,7 +224,7 @@ def test_download_from_s3(patch_get_file, patch_S3FileSystem, patch_exists, s3dl
 @patch('s3fs.S3FileSystem')
 @patch('s3fs.S3FileSystem.get_file')
 def test_download_from_s3_false(patch_get_file, patch_S3FileSystem, patch_exists, s3dl):
-    s3dl.read_config(debug=False)
+    s3dl.read_config()
     s3dl.setup_logging()
     bn = 'filename-basename'
     patch_exists.return_value = False
@@ -245,7 +234,7 @@ def test_download_from_s3_false(patch_get_file, patch_S3FileSystem, patch_exists
 
 def test_setup_logging(s3dl):
     import logging
-    s3dl.read_config(debug=False)
+    s3dl.read_config()
 
     LOGGER, handler = s3dl.setup_logging()
     assert isinstance(LOGGER, logging.Logger) is True
@@ -255,7 +244,7 @@ def test_setup_logging(s3dl):
 
 @patch('logging.StreamHandler')
 def test_setup_logging_exception(patch_stream_handler, s3dl):
-    s3dl.read_config(debug=False)
+    s3dl.read_config()
     patch_stream_handler.side_effect = Exception
     with pytest.raises(Exception):
         s3dl.setup_logging()
@@ -269,7 +258,7 @@ def test_setup_logging_file(config_yaml):
         config_fname = fid.name
     parse = parse_args(['--config-file=' + config_yaml, '-l=' + config_fname])
     s3dl = S3Downloader(parse)
-    s3dl.read_config(debug=False)
+    s3dl.read_config()
 
     LOGGER, handler = s3dl.setup_logging()
     assert isinstance(LOGGER, logging.Logger) is True
@@ -386,7 +375,7 @@ def test_listener_message(patch_get_pub_address, patch_subscriber, caplog):
     listener = Listener(lqueue, posttroll_config, subscribe_nameserver)
     listener.run()
 
-    assert 'Put the message on the queue...' in caplog.text
+    assert 'Starting FileListener.' in caplog.text
     assert lqueue.qsize() == 1
 
     message = lqueue.get()
@@ -505,11 +494,11 @@ def test_listener_message_exception_2(patch_get_pub_address, patch_subscriber):
         listener.run()
 
 
-@patch('trollmoves.s3downloader.s3downloader._get_one_message')
+@patch('trollmoves.s3downloader.S3Downloader._get_one_message')
 @patch('trollmoves.s3downloader.FilePublisher')
 @patch('trollmoves.s3downloader.Listener')
 def test_start_stop(patch_listener, patch_publisher, patch_get_one_message, s3dl):
-    s3dl.read_config(debug=False)
+    s3dl.read_config()
     s3dl.setup_logging()
     patch_get_one_message.return_value = False
     s3dl.start()
@@ -524,7 +513,7 @@ def test_start_stop(patch_listener, patch_publisher, patch_get_one_message, s3dl
 @patch('trollmoves.s3downloader.FilePublisher')
 @patch('trollmoves.s3downloader.Listener')
 def test_stop(patch_listener, patch_publisher, s3dl):
-    s3dl.read_config(debug=False)
+    s3dl.read_config()
     s3dl.setup_logging()
     s3dl.listener = patch_listener
     s3dl.publisher = patch_publisher
