@@ -1,3 +1,35 @@
+## Version 0.11.0 (2023/03/27)
+
+### Issues Closed
+
+* [Issue 146](https://github.com/pytroll/trollmoves/issues/146) - Add timeout to ssh connect ([PR 147](https://github.com/pytroll/trollmoves/pull/147) by [@TAlonglong](https://github.com/TAlonglong))
+* [Issue 141](https://github.com/pytroll/trollmoves/issues/141) - delete default set to bool False, but is handled as a string ([PR 142](https://github.com/pytroll/trollmoves/pull/142) by [@TAlonglong](https://github.com/TAlonglong))
+* [Issue 111](https://github.com/pytroll/trollmoves/issues/111) - Decompression by Server fails the transfer
+
+In this release 3 issues were closed.
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 152](https://github.com/pytroll/trollmoves/pull/152) - Do not transform local paths to ssh-uris
+* [PR 142](https://github.com/pytroll/trollmoves/pull/142) - Fix bug handling boolean as string ([141](https://github.com/pytroll/trollmoves/issues/141))
+* [PR 140](https://github.com/pytroll/trollmoves/pull/140) - Add try/except around Message creation
+* [PR 128](https://github.com/pytroll/trollmoves/pull/128) - Add pyinotify a hard requirement
+
+#### Features added
+
+* [PR 157](https://github.com/pytroll/trollmoves/pull/157) - Add file creation time as metadata
+* [PR 147](https://github.com/pytroll/trollmoves/pull/147) - Add timeout to ssh client connect ([146](https://github.com/pytroll/trollmoves/issues/146))
+* [PR 134](https://github.com/pytroll/trollmoves/pull/134) - Import `netifaces` only if used
+* [PR 133](https://github.com/pytroll/trollmoves/pull/133) - Refactor the logging
+* [PR 132](https://github.com/pytroll/trollmoves/pull/132) - Modernize sftp mover
+* [PR 130](https://github.com/pytroll/trollmoves/pull/130) - Add a skeleton documentation for Trollmoves
+* [PR 127](https://github.com/pytroll/trollmoves/pull/127) - Use dictionary config interfaces for publisher and subscriber creation
+
+In this release 11 pull requests were closed.
+
+
 ###############################################################################
 ## Version 0.10.0 (2022/08/11)
 

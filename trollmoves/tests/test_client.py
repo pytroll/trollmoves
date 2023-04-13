@@ -78,6 +78,8 @@ MSG_FILE2 = Message('/topic', 'file', data={'uid': 'file2',
                                             'request_address': '127.0.0.1:0'})
 UID_FILE2 = '1c1c96fd2cf8330db0bfa936ce82f3b9'
 MSG_BEAT = Message('/topic', 'beat', data={'uid': 'file1'})
+MSG_FILE_FTP = Message("/topic", "file", data={"uid": "file2",
+                                               "request_address": "127.0.0.1:0"})
 
 CLIENT_CONFIG_1_ITEM = """
 # Example acting as a hot spare
@@ -648,9 +650,9 @@ def test_listener_init(request_push, delayed_listener):
 
 
 @patch('trollmoves.client.request_push')
-@patch('trollmoves.client.add_to_ongoing')
+@patch('trollmoves.client.add_to_ongoing_transfers')
 @patch('trollmoves.client.add_to_file_cache')
-def test_listener_push_message(add_to_file_cache, add_to_ongoing, request_push, delayed_listener):
+def test_listener_push_message(add_to_file_cache, add_to_ongoing_transfers, request_push, delayed_listener):
     """Test listener push message."""
     delayed_listener.create_subscriber()
     delayed_listener.subscriber.return_value = [MSG_PUSH]
@@ -658,7 +660,7 @@ def test_listener_push_message(add_to_file_cache, add_to_ongoing, request_push, 
     _run_listener_in_thread(delayed_listener)
 
     add_to_file_cache.assert_not_called()
-    add_to_ongoing.assert_called_with(MSG_PUSH)
+    add_to_ongoing_transfers.assert_called_with(MSG_PUSH)
 
 
 @patch('trollmoves.client.request_push')
@@ -677,10 +679,10 @@ def test_listener_ack_message(add_to_file_cache, clean_ongoing_transfer, request
 
 @patch('trollmoves.client.request_push')
 @patch('trollmoves.client.add_request_push_timer')
-@patch('trollmoves.client.add_to_ongoing')
+@patch('trollmoves.client.add_to_ongoing_transfers')
 @patch('trollmoves.client.clean_ongoing_transfer')
 @patch('trollmoves.client.add_to_file_cache')
-def test_listener_beat_message(add_to_file_cache, clean_ongoing_transfer, add_to_ongoing,
+def test_listener_beat_message(add_to_file_cache, clean_ongoing_transfer, add_to_ongoing_transfers,
                                add_request_push_timer, request_push, delayed_listener):
     """Test listener with beat message."""
     delayed_listener.create_subscriber()
@@ -689,19 +691,19 @@ def test_listener_beat_message(add_to_file_cache, clean_ongoing_transfer, add_to
     _run_listener_in_thread(delayed_listener)
 
     add_to_file_cache.assert_not_called()
-    add_to_ongoing.assert_not_called()
+    add_to_ongoing_transfers.assert_not_called()
     add_request_push_timer.assert_not_called()
     clean_ongoing_transfer.assert_not_called()
 
 
 @patch('trollmoves.client.request_push')
 @patch('trollmoves.client.add_request_push_timer')
-@patch('trollmoves.client.add_to_ongoing')
+@patch('trollmoves.client.add_to_ongoing_transfers')
 @patch('trollmoves.client.clean_ongoing_transfer')
 @patch('trollmoves.client.add_to_file_cache')
 @patch('trollmoves.client.CTimer')
 def test_listener_sync_file_message(
-        CTimer, add_to_file_cache, clean_ongoing_transfer, add_to_ongoing, add_request_push_timer,
+        CTimer, add_to_file_cache, clean_ongoing_transfer, add_to_ongoing_transfers, add_request_push_timer,
         request_push, delayed_listener):
     """Test listener with a file message from another client."""
     from trollmoves.client import get_msg_uid
@@ -714,7 +716,7 @@ def test_listener_sync_file_message(
     CTimer.assert_not_called()
     add_to_file_cache.assert_called_with(MSG_FILE1)
     clean_ongoing_transfer.assert_called_with(get_msg_uid(MSG_FILE1))
-    add_to_ongoing.assert_called_with(MSG_FILE1)
+    add_to_ongoing_transfers.assert_called_with(MSG_FILE1)
     add_request_push_timer.assert_not_called()
 
 
@@ -765,15 +767,15 @@ def _run_listener_in_thread(listener_instance):
 @patch('trollmoves.client.ongoing_transfers', new_callable=dict)
 @patch('trollmoves.client.ongoing_transfers_lock')
 def test_add_to_ongoing_one_message(lock, ongoing_transfers):
-    """Test add_to_ongoing() with a single message."""
-    from trollmoves.client import add_to_ongoing
+    """Test add_to_ongoing_transfers() with a single message."""
+    from trollmoves.client import add_to_ongoing_transfers
 
     # Mock the lock context manager
     lock_cm = MagicMock()
     lock.__enter__ = lock_cm
 
     # Add a message to ongoing transfers
-    res = add_to_ongoing(MSG_FILE1)
+    res = add_to_ongoing_transfers(MSG_FILE1)
     lock_cm.assert_called_once()
     assert res is not None
     assert len(ongoing_transfers) == 1
@@ -784,15 +786,15 @@ def test_add_to_ongoing_one_message(lock, ongoing_transfers):
 @patch('trollmoves.client.ongoing_transfers', new_callable=dict)
 @patch('trollmoves.client.ongoing_transfers_lock')
 def test_add_to_ongoing_duplicate_message(lock, ongoing_transfers):
-    """Test add_to_ongoing() with duplicate messages."""
-    from trollmoves.client import add_to_ongoing
+    """Test add_to_ongoing_transfers() with duplicate messages."""
+    from trollmoves.client import add_to_ongoing_transfers
 
     # Mock the lock context manager
     lock_cm = MagicMock()
     lock.__enter__ = lock_cm
 
-    _ = add_to_ongoing(MSG_FILE1)
-    res = add_to_ongoing(MSG_FILE1)
+    _ = add_to_ongoing_transfers(MSG_FILE1)
+    res = add_to_ongoing_transfers(MSG_FILE1)
     assert len(lock_cm.mock_calls) == 2
     assert res is None
     assert len(ongoing_transfers) == 1
@@ -802,15 +804,15 @@ def test_add_to_ongoing_duplicate_message(lock, ongoing_transfers):
 @patch('trollmoves.client.ongoing_transfers', new_callable=dict)
 @patch('trollmoves.client.ongoing_transfers_lock')
 def test_add_to_ongoing_two_messages(lock, ongoing_transfers):
-    """Test add_to_ongoing()."""
-    from trollmoves.client import add_to_ongoing
+    """Test add_to_ongoing_transfers()."""
+    from trollmoves.client import add_to_ongoing_transfers
 
     # Mock the lock context manager
     lock_cm = MagicMock()
     lock.__enter__ = lock_cm
 
-    _ = add_to_ongoing(MSG_FILE1)
-    res = add_to_ongoing(MSG_FILE2)
+    _ = add_to_ongoing_transfers(MSG_FILE1)
+    res = add_to_ongoing_transfers(MSG_FILE2)
     assert len(lock_cm.mock_calls) == 2
     assert res is not None
     assert len(ongoing_transfers) == 2
@@ -820,8 +822,8 @@ def test_add_to_ongoing_two_messages(lock, ongoing_transfers):
 @patch('trollmoves.client.ongoing_transfers', new_callable=dict)
 @patch('trollmoves.client.ongoing_transfers_lock')
 def test_add_to_ongoing_hot_spare_timer(lock, ongoing_transfers, ongoing_hot_spare_timers):
-    """Test add_to_ongoing()."""
-    from trollmoves.client import add_to_ongoing
+    """Test add_to_ongoing_transfers()."""
+    from trollmoves.client import add_to_ongoing_transfers
 
     # Mock the lock context manager
     lock_cm = MagicMock()
@@ -830,7 +832,7 @@ def test_add_to_ongoing_hot_spare_timer(lock, ongoing_transfers, ongoing_hot_spa
     # There's a timer running for hot-spare functionality
     timer = MagicMock()
     ongoing_hot_spare_timers[UID_FILE1] = timer
-    _ = add_to_ongoing(MSG_FILE1)
+    _ = add_to_ongoing_transfers(MSG_FILE1)
     timer.cancel.assert_called_once()
     assert len(ongoing_hot_spare_timers) == 0
 
@@ -1577,12 +1579,14 @@ def test_create_local_dir_s3():
     assert res is None
 
 
-def test_make_uris_local_destination():
+@pytest.mark.parametrize("destination",
+                         ["file://localhost/some/directory",
+                          "/some/directory"])
+def test_make_uris_local_destination(destination):
     """Test that the published messages are formulated correctly for local destinations."""
     from trollmoves.client import make_uris
 
-    destination = "file://localhost/directory"
-    expected_uri = os.path.join(destination, "file1.png").replace("file://", "ssh://")
+    expected_uri = os.path.join("/some/directory", "file1.png")
     msg = make_uris(MSG_FILE, destination)
     assert msg.data['uri'] == expected_uri
 
@@ -1594,6 +1598,52 @@ def test_make_uris_remote_destination():
     destination = "ftp://google.com/directory"
     expected_uri = os.path.join(destination, "file1.png")
     msg = make_uris(MSG_FILE, destination)
+    assert msg.data['uri'] == expected_uri
+
+
+def test_make_uris_remote_destination_with_login():
+    """Test that the published messages are formulated correctly for remote destinations."""
+    from trollmoves.client import make_uris
+
+    user = "user1"
+    password = "1234bleh"
+    login = f"{user}:{password}"
+    scheme = "ftp://"
+    host = "google.com"
+    directory = "/directory"
+    destination = scheme + host + directory
+    expected_uri = os.path.join(scheme + user + "@" + host + directory, "file1.png")
+    msg = make_uris(MSG_FILE, destination, login=login)
+    assert msg.data['uri'] == expected_uri
+    assert password not in msg.data['uri']
+
+
+def test_make_uris_local_destination_with_ftp():
+    """Test that the published messages are formulated correctly for local destinations provided with scheme."""
+    from trollmoves.client import make_uris
+    import socket
+
+    local_directory = "/san1/polar_in/regional/osisaf"
+    destination = "ftp://" + socket.gethostname() + local_directory
+    expected_uri = os.path.join(local_directory, "file1.png")
+    msg = make_uris(MSG_FILE, destination)
+    assert msg.data['uri'] == expected_uri
+
+
+def test_make_uris_local_destination_with_ftp_and_login():
+    """Test published messages for local destinations provided with scheme and login."""
+    from trollmoves.client import make_uris
+    import socket
+
+    user = "user1"
+    password = "1234bleh"
+    login = f"{user}:{password}"
+    scheme = "ftp://"
+    local_directory = "/san1/polar_in/regional/osisaf"
+    destination = scheme + socket.gethostname() + local_directory
+
+    expected_uri = os.path.join(local_directory, "file1.png")
+    msg = make_uris(MSG_FILE, destination, login=login)
     assert msg.data['uri'] == expected_uri
 
 
@@ -1627,3 +1677,29 @@ def test_read_config_nameservers_are_a_list_or_tuple(client_config_2_items):
     finally:
         os.remove(client_config_2_items)
     assert isinstance(conf['foo']['nameservers'], (list, tuple))
+
+
+@patch('trollmoves.client.ongoing_transfers', new_callable=dict)
+@patch('trollmoves.client.file_cache', new_callable=deque)
+@patch('trollmoves.client.clean_ongoing_transfer')
+@patch('trollmoves.client.send_request')
+@patch('trollmoves.client.send_ack')
+def test_request_push_ftp(send_ack, send_request, clean_ongoing_transfer, file_cache, ongoing_transfers, tmp_path):
+    """Test trollmoves.client.request_push() with a single file."""
+    from trollmoves.client import request_push
+
+    clean_ongoing_transfer.return_value = [MSG_FILE_FTP]
+    send_request.return_value = [MSG_FILE_FTP, 'localhost']
+    publisher = MagicMock()
+    kwargs = {'transfer_req_timeout': 1.0, 'req_timeout': 1.0}
+
+    destination = f"ftp://{os.fspath(tmp_path)}/some/dir"
+
+    request_push(MSG_FILE_FTP, destination, 'someuser:somepass', publisher=publisher,
+                 **kwargs)
+
+    file_msg = Message(rawstr=publisher.send.mock_calls[-1][1][0])
+    assert "someuser" not in file_msg.data["uri"]
+    assert "somepass" not in file_msg.data["uri"]
+    assert "/some/dir" in file_msg.data["uri"]
+    assert not file_msg.data["uri"].startswith("ftp://")
