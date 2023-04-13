@@ -335,7 +335,7 @@ class S3Downloader():
         bn = self._get_basename(msg.data['uri'])
         if self._download_from_s3(bn):
             pubmsg = self._generate_message_if_file_exists_after_download(bn, msg)
-            LOGGER.info("Sending: " + str(pubmsg))
+            LOGGER.info("Sending: %s", str(pubmsg))
             self.publisher_queue.put(pubmsg)
         else:
             LOGGER.error("Could not download file %s for some reason. SKipping this.", bn)
