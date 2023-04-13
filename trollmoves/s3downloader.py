@@ -127,7 +127,7 @@ class Listener(Thread):
         if not msg:
             return False
         if msg.type not in ('file', 'collection', 'dataset'):
-            LOGGER.debug("message type is not valid %s", str(msg.type))
+            LOGGER.debug("Received invalid message type: %s", str(msg.type))
             return False
         return True
 
