@@ -56,7 +56,7 @@ def main():
     cmd_args = parse_args(sys.argv[1:])
 
     s3dl = s3downloader(cmd_args)
-    s3dl.read_config(debug=False)
+    s3dl.read_config()
     s3dl.setup_logging()
     s3dl.start()
 

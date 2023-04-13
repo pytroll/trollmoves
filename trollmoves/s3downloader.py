@@ -83,15 +83,12 @@ class Listener(Thread):
 
     def _check_and_put_message_to_queue(self, msg):
         if not self.loop:
-            LOGGER.warning("Self.loop false in FileListener %s", self.loop)
+            LOGGER.warning("Exiting FileListener.")
             return False
 
         # Check if it is a relevant message:
         if self.check_message(msg):
-            LOGGER.info("Put the message on the queue...")
-            LOGGER.debug("Message = " + str(msg))
             self.queue.put(msg)
-            LOGGER.debug("After queue put.")
         return True
 
     def run(self):
@@ -116,7 +113,7 @@ class Listener(Thread):
                         break
 
         except KeyError as ke:
-            LOGGER.info("Some key error. probably in config: %s", str(ke))
+            LOGGER.error("KeyError: %s", str(ke))
             raise
         except KeyboardInterrupt:
             LOGGER.info("Received keyboard interrupt. Shutting down.")
@@ -149,13 +146,13 @@ class FilePublisher(Thread):
         self.loop = False
         self.queue.put("STOP")
 
-    def _publish_message(self, retv, publisher):
+    def _publish_message(self, message, publisher):
         if not self.loop:
             return False
-        if retv is not None:
+        if message is not None:
             LOGGER.info("Publishing new downloaded file(s).")
-            LOGGER.debug(str(msg))
-            publisher.send(retv)
+            LOGGER.debug(str(message))
+            publisher.send(message)
         return True
 
     def run(self):
@@ -163,8 +160,8 @@ class FilePublisher(Thread):
         try:
             LOGGER.debug("Using service_name: {} with nameservers {}".format(self.service_name, self.nameservers))
             with Publish(self.service_name, 0, nameservers=self.nameservers) as publisher:
-                for retv in self.queue.get():
-                    if not self._publish_message(retv, publisher):
+                for message in self.queue.get():
+                    if not self._publish_message(message, publisher):
                         break
 
         except KeyboardInterrupt:
@@ -201,17 +198,13 @@ class S3Downloader():
 
         self._stop()
 
-    def read_config(self, debug=True):
+    def read_config(self):
         """Read the config file from cmd args.
         """
         if self.cmd_args.config_file and os.path.exists(self.cmd_args.config_file):
             with open(self.cmd_args.config_file, 'r') as stream:
                 try:
                     self.config = yaml.safe_load(stream)
-                    if debug:
-                        import pprint
-                        pp = pprint.PrettyPrinter(indent=4)
-                        pp.pprint(self.config)
                 except FileNotFoundError:
                     print("Could not find you config file:", self.cmd_args.config_file)
                     raise
