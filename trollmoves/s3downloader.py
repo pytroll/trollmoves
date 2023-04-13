@@ -330,7 +330,6 @@ class S3Downloader():
         if msg is None:
             LOGGER.debug("msg is none ... ")
             return True
-        LOGGER.debug("Read from queue ... ")
         LOGGER.debug("Read from queue: {}".format(msg))
         bn = self._get_basename(msg.data['uri'])
         if self._download_from_s3(bn):
