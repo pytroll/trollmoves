@@ -439,7 +439,7 @@ class S3Mover(Mover):
         """Copy the file to a bucket."""
         if S3FileSystem is None:
             raise ImportError("S3Mover requires 's3fs' to be installed.")
-        s3 = S3FileSystem()
+        s3 = S3FileSystem(**self.attrs)
         destination_file_path = self._get_destination()
         _create_s3_destination_path(s3, destination_file_path)
         s3.put(self.origin, destination_file_path)
