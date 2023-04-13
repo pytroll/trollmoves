@@ -77,7 +77,7 @@ class Listener(Thread):
 
     def stop(self):
         """Stops the file listener."""
-        LOGGER.debug("Entering stop in FileListener ...")
+        LOGGER.debug("Stopping FileListener.")
         self.loop = False
         self.queue.put(None)
 
