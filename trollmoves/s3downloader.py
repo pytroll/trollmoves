@@ -144,11 +144,14 @@ class FilePublisher(Thread):
     def stop(self):
         """Stops the file publisher."""
         self.loop = False
-        self.queue.put("STOP")
 
-    def _publish_message(self, message, publisher):
+    def _publish_message(self, publisher):
         if not self.loop:
             return False
+        try:
+            message = self.queue.get(timeout=1)
+        except queue.Empty:
+            message = None
         if message is not None:
             LOGGER.info("Publishing new downloaded file(s).")
             LOGGER.debug(str(message))
@@ -160,10 +163,9 @@ class FilePublisher(Thread):
         try:
             LOGGER.debug("Using service_name: {} with nameservers {}".format(self.service_name, self.nameservers))
             with Publish(self.service_name, 0, nameservers=self.nameservers) as publisher:
-                for message in self.queue.get():
-                    if not self._publish_message(message, publisher):
+                while self.loop:
+                    if not self._publish_message(publisher):
                         break
-
         except KeyboardInterrupt:
             LOGGER.info("Received keyboard interrupt. Shutting down")
             raise

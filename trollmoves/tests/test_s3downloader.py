@@ -288,17 +288,6 @@ MSG_1 = Message('/topic', 'file', data={'uid': 'file1'})
 
 @patch('trollmoves.s3downloader.Publish')
 @patch('queue.Queue')
-def test_file_publisher_run(patch_publish_queue, patch_publish):
-    from trollmoves.s3downloader import FilePublisher
-    nameservers = None
-    patch_publish_queue.get = PropertyMock(side_effect=[[MSG_1.encode(), None], ])
-    fp = FilePublisher(patch_publish_queue, nameservers)
-    fp.run()
-    patch_publish().__enter__().send.assert_called_once()
-
-
-@patch('trollmoves.s3downloader.Publish')
-@patch('queue.Queue')
 def test_file_publisher_break(patch_publish_queue, patch_publish):
     from trollmoves.s3downloader import FilePublisher
     nameservers = None
@@ -314,12 +303,21 @@ def test_file_publisher_break(patch_publish_queue, patch_publish):
 def test_file_publisher_publish_message(patch_publish_queue, patch_publish):
     from trollmoves.s3downloader import FilePublisher
     nameservers = None
+    patch_publish_queue.get = PropertyMock(side_effect=[[MSG_1.encode()]])
     fp = FilePublisher(patch_publish_queue, nameservers)
-    assert fp._publish_message(MSG_1, patch_publish) is True
-    assert fp._publish_message(None, patch_publish) is True
+    fp._publish_message(patch_publish)
+    patch_publish.send.assert_called_once()
 
-    fp.loop = False
-    assert fp._publish_message('any message', patch_publish) is False
+
+@patch('trollmoves.s3downloader.Publish')
+@patch('queue.Queue')
+def test_file_publisher_message_is_none(patch_publish_queue, patch_publish):
+    from trollmoves.s3downloader import FilePublisher
+    nameservers = None
+    patch_publish_queue.get = PropertyMock(side_effect=[None, ])
+    fp = FilePublisher(patch_publish_queue, nameservers)
+    fp._publish_message(patch_publish)
+    patch_publish.send.assert_not_called()
 
 
 @patch('trollmoves.s3downloader.Publish')
@@ -331,8 +329,18 @@ def test_file_publisher_stop_loop(patch_publish):
     fp = FilePublisher(pqueue, nameservers)
     fp.stop()
     assert fp.loop is False
-    message = pqueue.get()
-    assert message == "STOP"
+
+
+@patch('trollmoves.s3downloader.Publish')
+@patch('queue.Queue')
+def test_file_publisher_queue_timeout(patch_publish_queue, patch_publish):
+    import queue
+    from trollmoves.s3downloader import FilePublisher
+    nameservers = None
+    patch_publish_queue.get.side_effect = queue.Empty
+    fp = FilePublisher(patch_publish_queue, nameservers)
+    fp._publish_message(patch_publish)
+    patch_publish.send.assert_not_called()
 
 
 @patch('trollmoves.s3downloader.Publish')
