@@ -170,7 +170,8 @@ class FilePublisher(Thread):
 
 
 class S3Downloader():
-
+    """Listen for posttroll messages and download files as described in the message from the configured
+    object store (s3) bucket. Publish the successfuly downloaded file in as a posttroll message."""
     def __init__(self, cmd_args):
         self.config = None
         self.cmd_args = cmd_args
