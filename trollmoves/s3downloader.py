@@ -125,7 +125,6 @@ class Listener(Thread):
     def check_message(self, msg):
         """Check the message is valid type for this scope."""
         if not msg:
-            # LOGGER.debug("message is None")
             return False
         if msg.type not in ('file', 'collection', 'dataset'):
             LOGGER.debug("message type is not valid %s", str(msg.type))
