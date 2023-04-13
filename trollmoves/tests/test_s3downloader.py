@@ -61,9 +61,9 @@ def config_yaml():
 def test_read_config(config_yaml):
     """Test read yaml config."""
     from trollmoves.s3downloader import parse_args
-    from trollmoves.s3downloader import s3downloader
+    from trollmoves.s3downloader import S3Downloader
     parse = parse_args(['--config-file=' + config_yaml])
-    s3dl = s3downloader(parse)
+    s3dl = S3Downloader(parse)
     config = s3dl.read_config(debug=False)
     expected_config = {'logging': {'log_rotation_days': 1, 'log_rotation_backup': 30, 'logging_mode': 'DEBUG'},
                        'subscribe-topic': ['/yuhu'], 'publish-topic': '/idnt', 'endpoint_url': 'https://your.url.space',
@@ -77,9 +77,9 @@ def test_read_config(config_yaml):
 def test_read_config_debug(capsys, config_yaml):
     """Test read yaml config."""
     from trollmoves.s3downloader import parse_args
-    from trollmoves.s3downloader import s3downloader
+    from trollmoves.s3downloader import S3Downloader
     parse = parse_args(['--config-file=' + config_yaml])
-    s3dl = s3downloader(parse)
+    s3dl = S3Downloader(parse)
     s3dl.read_config()
     captured = capsys.readouterr()
     assert '/destination-directory' in captured.out
@@ -89,9 +89,9 @@ def test_read_config_debug(capsys, config_yaml):
 def test_read_config_exception(patch_yaml, config_yaml):
     """Test read yaml config."""
     from trollmoves.s3downloader import parse_args
-    from trollmoves.s3downloader import s3downloader
+    from trollmoves.s3downloader import S3Downloader
     parse = parse_args(['--config-file=' + config_yaml])
-    s3dl = s3downloader(parse)
+    s3dl = S3Downloader(parse)
     patch_yaml.side_effect = FileNotFoundError
     with pytest.raises(FileNotFoundError):
         s3dl.read_config(debug=False)
@@ -101,9 +101,9 @@ def test_read_config_exception(patch_yaml, config_yaml):
 def test_read_config_exception2(patch_yaml, config_yaml):
     """Test read yaml config."""
     from trollmoves.s3downloader import parse_args
-    from trollmoves.s3downloader import s3downloader
+    from trollmoves.s3downloader import S3Downloader
     parse = parse_args(['--config-file=' + config_yaml])
-    s3dl = s3downloader(parse)
+    s3dl = S3Downloader(parse)
     import yaml
     patch_yaml.side_effect = yaml.YAMLError
     with pytest.raises(yaml.YAMLError):
@@ -113,9 +113,9 @@ def test_read_config_exception2(patch_yaml, config_yaml):
 @pytest.fixture
 def s3dl(config_yaml):
     from trollmoves.s3downloader import parse_args
-    from trollmoves.s3downloader import s3downloader
+    from trollmoves.s3downloader import S3Downloader
     parse = parse_args(['--config-file=' + config_yaml])
-    return s3downloader(parse)
+    return S3Downloader(parse)
 
 
 @patch('os.path.exists')
@@ -264,11 +264,11 @@ def test_setup_logging_exception(patch_stream_handler, s3dl):
 def test_setup_logging_file(config_yaml):
     import logging
     from trollmoves.s3downloader import parse_args
-    from trollmoves.s3downloader import s3downloader
+    from trollmoves.s3downloader import S3Downloader
     with NamedTemporaryFile('w', delete=False) as fid:
         config_fname = fid.name
     parse = parse_args(['--config-file=' + config_yaml, '-l=' + config_fname])
-    s3dl = s3downloader(parse)
+    s3dl = S3Downloader(parse)
     s3dl.read_config(debug=False)
 
     LOGGER, handler = s3dl.setup_logging()
