@@ -172,7 +172,7 @@ class FilePublisher(Thread):
             raise
 
 
-class s3downloader():
+class S3Downloader():
 
     def __init__(self, cmd_args):
         self.config = None
