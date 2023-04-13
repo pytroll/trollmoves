@@ -90,6 +90,7 @@ class Mover(object):
 
     def __init__(self, origin, destination, attrs=None):
         """Initialize the Mover."""
+        LOGGER.debug("destination = %s", str(destination))
         try:
             self.destination = urlparse(destination)
         except AttributeError:
@@ -441,12 +442,16 @@ class S3Mover(Mover):
             raise ImportError("S3Mover requires 's3fs' to be installed.")
         s3 = S3FileSystem()
         destination_file_path = self._get_destination()
+        LOGGER.debug('destination_file_path = %s', destination_file_path)
         _create_s3_destination_path(s3, destination_file_path)
+        LOGGER.debug('Before call to put: destination_file_path = %s', destination_file_path)
+        LOGGER.debug('self.origin = %s', self.origin)
         s3.put(self.origin, destination_file_path)
 
     def _get_destination(self):
         bucket_parts = []
         bucket_parts.append(self.destination.netloc)
+
         if self.destination.path != '/':
             bucket_parts.append(self.destination.path.strip('/'))
         bucket_parts.append(os.path.basename(self.origin))
