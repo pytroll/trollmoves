@@ -153,8 +153,8 @@ class FilePublisher(Thread):
         if not self.loop:
             return False
         if retv is not None:
-            LOGGER.info("Publish as service: %s", self.service_name)
-            LOGGER.info("Publish the files...")
+            LOGGER.info("Publishing new downloaded file(s).")
+            LOGGER.debug(str(msg))
             publisher.send(retv)
         return True
 
