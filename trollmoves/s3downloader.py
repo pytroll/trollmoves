@@ -96,7 +96,7 @@ class Listener(Thread):
 
     def run(self):
         """"Run main loop subscribing to new messages adding these to a message queue."""
-        LOGGER.debug("Entering run in FileListener ...")
+        LOGGER.debug("Starting FileListener.")
         if type(self.config["subscribe-topic"]) not in (tuple, list, set):
             self.config["subscribe-topic"] = [self.config["subscribe-topic"]]
         try:
