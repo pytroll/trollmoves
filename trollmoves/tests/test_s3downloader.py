@@ -1,11 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2022
-#
-# Author(s):
-#
-#   Trygve Aspenes <trygveas@met.no>
+# Copyright (c) 2022-2023 Pytroll Developers
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -151,7 +147,6 @@ def test_get_one_message(patch_subscribe, patch_get_basename, patch_download_fro
     s3dl.setup_logging()
     to_send = {'some_key': 'with_a_value', 'uri': 'now-this-is-a-uri'}
     msg = Message('/publish-topic', "file", to_send)
-    print("LQ", s3dl.listener_queue)
     s3dl.listener_queue = patch_subscribe
     s3dl.listener_queue.get.return_value = msg
     patch_get_basename.return_value = 'filename-basename'

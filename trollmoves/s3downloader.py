@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2020 Pytroll developers
+# Copyright (c) 2020-2023 Pytroll developers
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -31,12 +31,13 @@ logging:
 subscribe-topic:
   - /yuhu
 publish-topic: /idnt
-endpoint_url: '<your object store endpoint url'
-access_key: ''
-secret_key: ''
 bucket: <name of the bucket>  # Not needed, else used from the message uri
 download_destination: './'
-
+s3_kwargs:
+  anon: False
+  profile: <profile name> # Optional
+  client_kwargs:
+    endpoint_url: <url to the object store>
 """
 
 import os
