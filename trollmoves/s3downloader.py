@@ -276,23 +276,32 @@ class S3Downloader():
 
     def _download_from_s3(self, bn):
         """
-        https://filesystem-spec.readthedocs.io/en/latest/features.html#configuration
+        https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html#aws-config-file
+        An example configuration could be for example placed in `~/.aws/config`
 
-        An example configuration could be for example placed in `~/.config/fsspec/s3.json`::
+        ```
+        [default]
+        aws_access_key_id=foo
+        aws_secret_access_key=bar
 
-        {
-            "s3": {
-                "client_kwargs": {"endpoint_url": "https://s3.server.foo.com"},
-                "secret": "VERYBIGSECRET",
-                "key": "ACCESSKEY"
-            }
-        }
+        [profile metno]
+        aws_access_key_id=foo2
+        aws_secret_access_key=bar2
+        ```
+
+        and then in you s3downloader config file:
+        ```
+        s3_kwargs:
+            anon: False
+            profile: metno # Optional
+            client_kwargs:
+                endpoint_url: <url to our objext store>
+        ```
         """
         if S3FileSystem is None:
             raise ImportError("s3downloader requires 's3fs' to be installed.")
-        s3 = S3FileSystem(anon=False,
-                          key=self.config['access_key'],
-                          secret=self.config['secret_key'])
+        s3_kwargs = self.config.get('s3_kwargs', {})
+        s3 = S3FileSystem(**s3_kwargs)
         s3.get_file(os.path.join(self.config['bucket'], bn),
                     os.path.join(self.config.get('download_destination', '.'), bn))
         if not os.path.exists(os.path.join(self.config.get('download_destination', '.'), bn)):
