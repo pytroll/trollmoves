@@ -47,7 +47,7 @@ import sys
 import logging
 
 from trollmoves.s3downloader import parse_args
-from trollmoves.s3downloader import s3downloader
+from trollmoves.s3downloader import S3Downloader
 
 LOGGER = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ LOGGER = logging.getLogger(__name__)
 def main():
     cmd_args = parse_args(sys.argv[1:])
 
-    s3dl = s3downloader(cmd_args)
+    s3dl = S3Downloader(cmd_args)
     s3dl.read_config()
     s3dl.setup_logging()
     s3dl.start()
