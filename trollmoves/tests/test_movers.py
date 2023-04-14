@@ -90,27 +90,30 @@ def test_s3_copy_file_to_base(S3FileSystem):
 
 
 @patch('trollmoves.movers.S3FileSystem')
-def test_s3_get_destination_from_string(S3FileSystem):
+def test_s3_copy_file_to_prefix_with_trailing_slash(S3FileSystem):
     """Test get the correct S3-bucket destination filename."""
-    s3_mover = _get_s3_mover(ORIGIN, "s3://data-bucket/")
-    result = s3_mover._get_destination()
-    assert result == 'data-bucket/filename.ext'
-
     s3_mover = _get_s3_mover(ORIGIN, "s3://data-bucket/upload/")
-    result = s3_mover._get_destination()
-    assert result == 'data-bucket/upload/filename.ext'
+    s3_mover.copy()
 
-    s3_mover = _get_s3_mover(ORIGIN, "s3://data-bucket/upload")
-    result = s3_mover._get_destination()
-    assert result == 'data-bucket/upload'
+    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/upload/filename.ext")
 
 
 @patch('trollmoves.movers.S3FileSystem')
-def test_s3_get_destination_from_parseresult(S3FileSystem):
+def test_s3_copy_file_to_prefix_no_trailing_slash(S3FileSystem):
+    """Test get the correct S3-bucket destination filename."""
+    s3_mover = _get_s3_mover(ORIGIN, "s3://data-bucket/upload")
+    s3_mover.copy()
+
+    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/upload")
+
+
+@patch('trollmoves.movers.S3FileSystem')
+def test_s3_copy_file_to_prefix_urlparse_file_with_extention(S3FileSystem):
     """Test get the correct S3-bucket destination filename."""
     s3_mover = _get_s3_mover(ORIGIN, urlparse("s3://data-bucket/upload/my_satellite_data.h5"))
-    result = s3_mover._get_destination()
-    assert result == 'data-bucket/upload//my_satellite_data.h5'
+    s3_mover.copy()
+
+    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/upload/my_satellite_data.h5")
 
 
 @patch('trollmoves.movers.S3FileSystem')

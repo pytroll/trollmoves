@@ -454,7 +454,8 @@ class S3Mover(Mover):
 
         if self.destination.path != '/':
             bucket_parts.append(self.destination.path.strip('/'))
-        bucket_parts.append(os.path.basename(self.origin))
+        if self.destination.path.endswith('/'):
+            bucket_parts.append(os.path.basename(self.origin))
 
         return '/'.join(bucket_parts)
 
