@@ -108,8 +108,8 @@ def test_s3_copy_file_to_prefix_no_trailing_slash(S3FileSystem):
 
 
 @patch('trollmoves.movers.S3FileSystem')
-def test_s3_copy_file_to_prefix_urlparse_file_with_extention(S3FileSystem):
-    """Test get the correct S3-bucket destination filename."""
+def test_s3_copy_file_to_prefix_urlparse(S3FileSystem):
+    """Test that giving urlparse() result as destination works."""
     s3_mover = _get_s3_mover(ORIGIN, urlparse("s3://data-bucket/upload/my_satellite_data.h5"))
     s3_mover.copy()
 
