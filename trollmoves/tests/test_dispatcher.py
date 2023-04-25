@@ -37,6 +37,7 @@ from trollmoves.dispatcher import (
     Dispatcher, read_config, check_conditions, dispatch, PublisherReporter
 )
 
+
 test_yaml1 = """
 target1:
   host: ftp://ftp.target1.com
@@ -436,6 +437,7 @@ def dispatcher_creator(tmp_path):
         config_file = tmp_path / "my_config"
         with open(config_file, mode="w") as fd:
             fd.write(config)
+
         return Dispatcher(os.fspath(config_file), messages=["some", "messages"])
 
     return _create_dispatcher
