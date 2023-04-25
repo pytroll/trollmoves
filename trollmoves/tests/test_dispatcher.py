@@ -252,6 +252,25 @@ target1:
           sensor: viirs
     """
 
+test_dataset_samefilenames = """
+target1:
+  host: ""
+  directory: """ + os.path.join(gettempdir(), 'dptest') + """
+  aliases:
+    platform_name:
+      Suomi-NPP: npp
+      NOAA-20: j01
+      NOAA-21: j02
+
+  dispatch_configs:
+    - topics:
+        - /atms/sdr/1
+      conditions:
+        - sensor: [atms, [atms]]
+          format: SDR
+          variant: DR
+    """
+
 
 @pytest.fixture
 def check_conditions_string_config():
@@ -286,6 +305,40 @@ def viirs_green_snow_message(tmp_path):
                         'uri': filename
                         })
     create_empty_file(filename)
+    yield msg
+
+
+@pytest.fixture
+def atms_sdr_dataset_message(tmp_path):
+    """Get the message with ATMS SDR files in a dataset."""
+    SDR_UIDS = ['SATMS_npp_d20230405_t0839333_e0847009_b59261_c20230405084834951682_cspp_dev.h5',
+                'GATMO_npp_d20230405_t0839333_e0847009_b59261_c20230405084835126023_cspp_dev.h5',
+                'TATMS_npp_d20230405_t0839333_e0847009_b59261_c20230405084835042744_cspp_dev.h5']
+    uris = []
+    uids = []
+    for uid in SDR_UIDS:
+        filename = os.fspath(tmp_path / uid)
+        uids.append(uid)
+        uris.append(filename)
+        create_empty_file(filename)
+
+    msg = Message("/atms/sdr/1", "dataset",
+                  data={"start_time": datetime(2023, 4, 5, 8, 39, 0, 700000),
+                        "end_time": datetime(2023, 4, 5, 8, 48, 4, 600000),
+                        "orbit_number": 59261,
+                        "platform_name": "Suomi-NPP",
+                        "sensor": "atms",
+                        "data_processing_level": "1B",
+                        "variant": "DR",
+                        "collection_area_id": "euron1",
+                        "type": "HDF5", "format": "SDR",
+                        "dataset": [{'uri': uris[0],
+                                     'uid': uids[0]},
+                                    {'uri': uris[1],
+                                     'uid': uids[1]},
+                                    {'uri': uris[2],
+                                     'uid': uids[2]}]
+                        })
     yield msg
 
 
@@ -501,6 +554,7 @@ def test_dispatcher(tmp_path, viirs_green_snow_message):
 
         dp = Dispatcher(os.fspath(config_filepath), messages=[viirs_green_snow_message])
         dp.run()
+
         expected_file = dest_dir / 'NOAA-20_201909190919.tif'
         assert os.path.exists(expected_file)
 
@@ -508,6 +562,31 @@ def test_dispatcher(tmp_path, viirs_green_snow_message):
         pass
         # if dp is not None:
         #     dp.close()
+
+
+def test_dispatch_dataset(tmp_path, atms_sdr_dataset_message):
+    """Test the dispatcher class dispatching a dataset."""
+    dp = None
+    try:
+
+        dest_dir = tmp_path / 'dptest'
+        config_filepath = tmp_path / "config_file"
+
+        create_config_file(config_filepath, test_dataset_samefilenames, dest_dir)
+
+        assert not os.path.exists(dest_dir)
+
+        dp = Dispatcher(os.fspath(config_filepath), messages=[atms_sdr_dataset_message])
+        dp.run()
+        expected_file = dest_dir / 'SATMS_npp_d20230405_t0839333_e0847009_b59261_c20230405084834951682_cspp_dev.h5'
+        assert os.path.exists(expected_file)
+        expected_file = dest_dir / 'GATMO_npp_d20230405_t0839333_e0847009_b59261_c20230405084835126023_cspp_dev.h5'
+        assert os.path.exists(expected_file)
+        expected_file = dest_dir / 'TATMS_npp_d20230405_t0839333_e0847009_b59261_c20230405084835042744_cspp_dev.h5'
+        assert os.path.exists(expected_file)
+
+    finally:
+        pass
 
 
 def test_dispatcher_uses_listener_container_config(tmp_path, viirs_green_snow_message):
