@@ -137,3 +137,15 @@ Additional required packages:
 
 Additional required packages:
 - ``s3fs``
+
+## s3downloader
+
+This module is able to download files from a s3 endpoint.
+
+The s3downloader module need to get posttroll messages from eg. s3stalker from the pytroll-collectors module which announces new available files in a configured s3 bucket. The s3downloader then downloads these files.
+
+Example config for the module is given in `examples/s3downloader-config.yaml`. If you use a `nameserver` with muliticast (nameserver default) you don't need to include the nameserver option nor the service name in the config. Opposite if you use nameserver without multicast.
+
+Additional required packages:
+- ``boto3``
+- ``botocore``

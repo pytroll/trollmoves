@@ -1,0 +1,18 @@
+---
+logging:
+  log_rotation_days: 1
+  log_rotation_backup: 30
+  logging_mode: DEBUG
+
+subscribe-topic:
+  - /yuhu
+publish-topic: /idnt
+services:
+  - s3stalker
+bucket: '<name of the bucket>'
+download_destination: '<destination path for the downloaded file>'
+s3_kwargs:
+  anon: False
+  profile: metno # Optional
+  client_kwargs:
+    endpoint_url: <url to the object store>
