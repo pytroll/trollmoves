@@ -26,6 +26,7 @@ import os
 from unittest.mock import patch
 from urllib.parse import urlunparse
 from urllib.parse import urlparse
+import yaml
 
 import pytest
 
@@ -33,6 +34,34 @@ ORIGIN = '/path/to/mydata/filename.ext'
 USERNAME = 'username'
 PASSWORD = 'passwd'
 ACCOUNT = None
+
+test_yaml_s3_connection_params = """
+target-s3-example1:
+  host: s3://my-fancy-bucket/
+  connection_parameters:
+    client_kwargs:
+      endpoint_url: 'https://minio-server.mydomain.se:9000'
+      verify: false
+    secret: "my-super-secret-key"
+    key: "my-access-key"
+    use_ssl: true
+  aliases:
+    platform_name:
+      Suomi-NPP: npp
+      NOAA-20: j01
+      NOAA-21: j02
+    variant:
+      DR: directreadout
+
+  dispatch_configs:
+    - topics:
+        - /atms/sdr/1
+      conditions:
+        - sensor: [atms, [atms]]
+          format: SDR
+          variant: DR
+      directory: /upload/sdr
+"""
 
 
 def _get_ftp(destination):
@@ -74,10 +103,10 @@ def test_open_ftp_connection_credentials_in_url():
     ftp.return_value.login.assert_called_once_with('auser', 'apasswd')
 
 
-def _get_s3_mover(origin, destination):
+def _get_s3_mover(origin, destination, **attrs):
     from trollmoves.movers import S3Mover
 
-    return S3Mover(origin, destination)
+    return S3Mover(origin, destination, attrs=attrs)
 
 
 @patch('trollmoves.movers.S3FileSystem')
@@ -114,6 +143,24 @@ def test_s3_copy_file_to_prefix_urlparse(S3FileSystem):
     s3_mover.copy()
 
     S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/upload/my_satellite_data.h5")
+
+
+def test_s3_copy_file_to_base_using_connection_parameters(S3FileSystem):
+    """Test copying to base of S3 bucket."""
+    # Get the connection parameters:
+    config = yaml.safe_load(test_yaml_s3_connection_params)
+    attrs = config['target-s3-example1']['connection_parameters']
+
+    s3_mover = _get_s3_mover(ORIGIN, "s3://data-bucket/", **attrs)
+    assert s3_mover.attrs['client_kwargs'] == {'endpoint_url': 'https://minio-server.mydomain.se:9000',
+                                               'verify': False}
+    assert s3_mover.attrs['secret'] == 'my-super-secret-key'
+    assert s3_mover.attrs['key'] == 'my-access-key'
+    assert s3_mover.attrs['use_ssl'] is True
+
+    s3_mover.copy()
+
+    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/filename.ext")
 
 
 @patch('trollmoves.movers.S3FileSystem')

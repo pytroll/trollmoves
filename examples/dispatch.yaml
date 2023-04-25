@@ -50,3 +50,67 @@ target1:
         - area: omerc_bb
           daylight: '<30'
           coverage: '>50'
+
+target-s3-example1:
+  host: s3://my-fancy-bucket/
+  connection_parameters:
+    client_kwargs:
+      endpoint_url: 'https://minio-server.mydomain.se:9000'
+      verify: false
+    secret: "my-super-secret-key"
+    key: "my-access-key"
+    use_ssl: true
+  aliases:
+    platform_name:
+      Suomi-NPP: npp
+      NOAA-20: j01
+      NOAA-21: j02
+    variant:
+      DR: directreadout
+
+  dispatch_configs:
+    - topics:
+        - /atms/sdr/1
+      conditions:
+        - sensor: [atms, [atms]]
+          format: SDR
+          variant: DR
+      directory: /upload/sdr
+
+target-s3-example2:
+  # In this example we do not expose the secret-key neither the access-key, but
+  # using a user specific config file with path relative to the users home like this:
+  # .aws/config
+  # The content of this file may then look like this:
+  # [default]
+  #
+  # [profile "my-aws-profile"]
+  # aws_access_key_id = <the-actual-access-key-for-the-s3-bucket>
+  # aws_secret_access_key = <the-actual-secret-key-for-the-s3-bucket>
+  #
+  # --- end of file ---
+  # See https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html#using-a-configuration-file
+  #
+  host: s3://my-fancy-bucket/
+  connection_parameters:
+    profile: my-aws-profile
+    client_kwargs:
+      endpoint_url: 'https://minio-server.mydomain.se:9000'
+      verify: false
+    use_ssl: true
+  aliases:
+    platform_name:
+      Suomi-NPP: npp
+      NOAA-20: j01
+      NOAA-21: j02
+    variant:
+      DR: directreadout
+
+  dispatch_configs:
+    - topics:
+        - /atms/sdr/1
+      conditions:
+        - sensor: [atms, [atms]]
+          format: SDR
+          variant: DR
+      directory: /upload/sdr
