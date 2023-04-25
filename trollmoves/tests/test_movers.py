@@ -91,7 +91,7 @@ def test_s3_copy_file_to_base(S3FileSystem):
 
 @patch('trollmoves.movers.S3FileSystem')
 def test_s3_copy_file_to_prefix_with_trailing_slash(S3FileSystem):
-    """Test get the correct S3-bucket destination filename."""
+    """Test that when destination ends in a slash, the original file basename is added to it."""
     s3_mover = _get_s3_mover(ORIGIN, "s3://data-bucket/upload/")
     s3_mover.copy()
 
