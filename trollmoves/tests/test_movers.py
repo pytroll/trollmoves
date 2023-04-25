@@ -145,6 +145,7 @@ def test_s3_copy_file_to_prefix_urlparse(S3FileSystem):
     S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/upload/my_satellite_data.h5")
 
 
+@patch('trollmoves.movers.S3FileSystem')
 def test_s3_copy_file_to_base_using_connection_parameters(S3FileSystem):
     """Test copying to base of S3 bucket."""
     # Get the connection parameters:
