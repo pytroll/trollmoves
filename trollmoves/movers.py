@@ -90,6 +90,7 @@ class Mover(object):
 
     def __init__(self, origin, destination, attrs=None):
         """Initialize the Mover."""
+        LOGGER.debug("destination = %s", str(destination))
         try:
             self.destination = urlparse(destination)
         except AttributeError:
@@ -419,7 +420,7 @@ class S3Mover(Mover):
 
     The transfer is initiated by Trollmoves Client by having destination that starts with "s3://".
 
-    All the connection configurations and such are done using the `fsspec` configuration system:
+    All the connection configurations and such may be done using the `fsspec` configuration system:
 
     https://filesystem-spec.readthedocs.io/en/latest/features.html#configuration
 
@@ -433,6 +434,27 @@ class S3Mover(Mover):
             }
         }
 
+    However, using the this procedure may not be useful if having several
+    endpoints/buckets with their own access/secret keys. Instead one can use
+    aws profiles (placed in `.aws/config`) to for instance set the
+    access/secret keys for various endpoints and then keep the actual url of
+    the endpoints in the yaml configuration (see examples/dispatch.yaml).
+
+    See documentation on profiles here:
+    https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html#using-a-configuration-file
+
+
+    NB! Special behaviour on destination filepath:
+
+    If the destination prefix (~filepath) has a trailing slash ('/') the
+    original filename will be appended (analogous to moving a file from one
+    directory to another keeping the same filename).
+
+    If the destination prefix does not have a trailing slash the operation will
+    be analogous to moving a file from one directory to a new destination
+    changing the filename. The new destination filename will be the last part
+    of the provided destination following the last slash ('/').
+
     """
 
     def copy(self):
@@ -441,15 +463,20 @@ class S3Mover(Mover):
             raise ImportError("S3Mover requires 's3fs' to be installed.")
         s3 = S3FileSystem(**self.attrs)
         destination_file_path = self._get_destination()
+        LOGGER.debug('destination_file_path = %s', destination_file_path)
         _create_s3_destination_path(s3, destination_file_path)
+        LOGGER.debug('Before call to put: destination_file_path = %s', destination_file_path)
+        LOGGER.debug('self.origin = %s', self.origin)
         s3.put(self.origin, destination_file_path)
 
     def _get_destination(self):
         bucket_parts = []
         bucket_parts.append(self.destination.netloc)
+
         if self.destination.path != '/':
             bucket_parts.append(self.destination.path.strip('/'))
-        bucket_parts.append(os.path.basename(self.origin))
+        if self.destination.path.endswith('/'):
+            bucket_parts.append(os.path.basename(self.origin))
 
         return '/'.join(bucket_parts)
 

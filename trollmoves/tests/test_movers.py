@@ -25,6 +25,7 @@
 import os
 from unittest.mock import patch
 from urllib.parse import urlunparse
+from urllib.parse import urlparse
 import yaml
 
 import pytest
@@ -115,6 +116,33 @@ def test_s3_copy_file_to_base(S3FileSystem):
     s3_mover.copy()
 
     S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/filename.ext")
+
+
+@patch('trollmoves.movers.S3FileSystem')
+def test_s3_copy_file_to_prefix_with_trailing_slash(S3FileSystem):
+    """Test that when destination ends in a slash, the original file basename is added to it."""
+    s3_mover = _get_s3_mover(ORIGIN, "s3://data-bucket/upload/")
+    s3_mover.copy()
+
+    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/upload/filename.ext")
+
+
+@patch('trollmoves.movers.S3FileSystem')
+def test_s3_copy_file_to_prefix_no_trailing_slash(S3FileSystem):
+    """Test giving destination without trailing slash to see it is used as object name."""
+    s3_mover = _get_s3_mover(ORIGIN, "s3://data-bucket/upload")
+    s3_mover.copy()
+
+    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/upload")
+
+
+@patch('trollmoves.movers.S3FileSystem')
+def test_s3_copy_file_to_prefix_urlparse(S3FileSystem):
+    """Test that giving urlparse() result as destination works."""
+    s3_mover = _get_s3_mover(ORIGIN, urlparse("s3://data-bucket/upload/my_satellite_data.h5"))
+    s3_mover.copy()
+
+    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/upload/my_satellite_data.h5")
 
 
 @patch('trollmoves.movers.S3FileSystem')
