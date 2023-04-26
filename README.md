@@ -145,7 +145,7 @@ filename will be appended (analogous to moving a file from one directory to
 another keeping the same filename).
 
 If the destination prefix does not have a trailing slash the operation will be
-analougus to moving a file from one directory to a new destination changing the
+analogous to moving a file from one directory to a new destination changing the
 filename. The new destination filename will be the last part of the provided
 destination following the last slash ('/').
 
