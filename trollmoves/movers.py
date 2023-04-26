@@ -420,7 +420,7 @@ class S3Mover(Mover):
 
     The transfer is initiated by Trollmoves Client by having destination that starts with "s3://".
 
-    All the connection configurations and such are done using the `fsspec` configuration system:
+    All the connection configurations and such may be done using the `fsspec` configuration system:
 
     https://filesystem-spec.readthedocs.io/en/latest/features.html#configuration
 
@@ -433,6 +433,27 @@ class S3Mover(Mover):
                 "key": "ACCESSKEY"
             }
         }
+
+    However, using the this procedure may not be useful if having several
+    endpoints/buckets with their own access/secret keys. Instead one can use
+    aws profiles (placed in `.aws/config`) to for instance set the
+    access/secret keys for various endpoints and then keep the actual url of
+    the endpoints in the yaml configuration (see examples/dispatch.yaml).
+
+    See documentation on profiles here:
+    https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html#using-a-configuration-file
+
+
+    NB! Special behaviour on destination filepath:
+
+    If the destination prefix (~filepath) has a trailing slash ('/') the
+    original filename will be appended (analogous to moving a file from one
+    directory to another keeping the same filename).
+
+    If the destination prefix does not have a trailing slash the operation will
+    be analougus to moving a file from one directory to a new destination
+    changing the filename. The new destination filename will be the last part
+    of the provided destination follwing the last slash ('/').
 
     """
 

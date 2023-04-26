@@ -138,6 +138,18 @@ Additional required packages:
 Additional required packages:
 - ``s3fs``
 
+Special behaviour on destination filepath when using the S3Mover class:
+
+If the destination prefix (~filepath) has a trailing slash ('/') the original
+filename will be appended (analogous to moving a file from one directory to
+another keeping the same filename).
+
+If the destination prefix does not have a trailing slash the operation will be
+analougus to moving a file from one directory to a new destination changing the
+filename. The new destination filename will be the last part of the provided
+destination follwing the last slash ('/')
+
+
 ## s3downloader
 
 This module is able to download files from a s3 endpoint.
