@@ -1,5 +1,5 @@
 #!/usr/bin/python
-# Copyright (c) 2015, 2020.
+# Copyright (c) 2015-2023 Pytroll Developers
 #
 
 # Author(s):
@@ -63,6 +63,7 @@ setup(name="trollmoves",
                'bin/move_it_mirror.py',
                'bin/remove_it.py',
                'bin/dispatcher.py',
+               'bin/s3downloader.py',
                ],
       data_files=[],
       packages=['trollmoves'],
