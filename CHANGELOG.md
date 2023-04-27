@@ -1,3 +1,29 @@
+###############################################################################
+## Version 0.12.0 (2023/04/27)
+
+### Issues Closed
+
+* [Issue 123](https://github.com/pytroll/trollmoves/issues/123) - s3downloader: download data from an s3 (object store) to localhost ([PR 124](https://github.com/pytroll/trollmoves/pull/124) by [@TAlonglong](https://github.com/TAlonglong))
+
+In this release 1 issue was closed.
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 167](https://github.com/pytroll/trollmoves/pull/167) - Fix installation of the S3 downloader script
+* [PR 166](https://github.com/pytroll/trollmoves/pull/166) - Error in destination path when dispatching to S3
+
+#### Features added
+
+* [PR 166](https://github.com/pytroll/trollmoves/pull/166) - Error in destination path when dispatching to S3
+* [PR 165](https://github.com/pytroll/trollmoves/pull/165) - Make it possible to pass connection-parameters to the S3 mover
+* [PR 164](https://github.com/pytroll/trollmoves/pull/164) - Remove unnecessary codecov python package install in CI
+* [PR 163](https://github.com/pytroll/trollmoves/pull/163) - Handle the distapcthing of a dataset (keeping the same filenames)
+* [PR 124](https://github.com/pytroll/trollmoves/pull/124) - Add S3 downloader ([123](https://github.com/pytroll/trollmoves/issues/123))
+
+In this release 7 pull requests were closed.
+
 ## Version 0.11.0 (2023/03/27)
 
 ### Issues Closed
