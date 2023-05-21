@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2012-2020
+# Copyright (c) 2012-2023
 #
 # Author(s):
 #
@@ -296,25 +296,25 @@ class ScpMover(Mover):
     active_connections = dict()
     active_connection_lock = Lock()
 
-    def open_connection(self):
-        """Open a connection."""
+    def _ssh_connect(self, destination=None):
         from paramiko import SSHClient, SSHException
-
         retries = 3
         ssh_key_filename = self.attrs.get("ssh_key_filename", None)
         timeout = self.attrs.get("ssh_connection_timeout", None)
+        if not destination:
+            destination = self.destination.hostname
         while retries > 0:
             retries -= 1
             try:
                 ssh_connection = SSHClient()
                 ssh_connection.load_system_host_keys()
-                ssh_connection.connect(self.destination.hostname,
+                ssh_connection.connect(destination,
                                        username=self._dest_username,
                                        port=self.destination.port or 22,
                                        key_filename=ssh_key_filename,
                                        timeout=timeout)
                 LOGGER.debug("Successfully connected to %s:%s as %s",
-                             self.destination.hostname,
+                             destination,
                              self.destination.port or 22,
                              self._dest_username)
             except SSHException as sshe:
@@ -329,7 +329,22 @@ class ScpMover(Mover):
             ssh_connection.close()
             time.sleep(2)
             LOGGER.debug("Retrying ssh connect ...")
-        raise IOError("Failed to ssh connect after 3 attempts")
+
+    def open_connection(self):
+        """Open a connection."""
+        messg = ""
+        ssh_connection = self._ssh_connect()
+        if ssh_connection:
+            return ssh_connection
+        else:
+            #Failed to connect for some reason.
+            # Check if backup targets
+            for destination in self.attrs.get("backup_targets", []):
+                messg = " and backup targets"
+                ssh_connection = self._ssh_connect(destination)
+                if ssh_connection:
+                    return ssh_connection
+        raise IOError(f"Failed to ssh connect after 3 attempts{messg}.")
 
     @staticmethod
     def is_connected(connection):
