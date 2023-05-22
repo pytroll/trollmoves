@@ -194,6 +194,8 @@ class TestSSHMovers(unittest.TestCase):
             with self.assertLogs(logger, level=logging.INFO) as lc, self.assertRaises(IOError):
                 scp_mover.open_connection()
             self.assertIn(("SSH connection timed out:"), lc.output[0])
+            self.assertIn(("Changing destination to backup target: backup_host1"), lc.output[3])
+            self.assertIn(("Changing destination to backup target: backup_host2"), lc.output[7])
         finally:
             logger.removeHandler(stream_handler)
 
