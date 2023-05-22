@@ -309,7 +309,7 @@ class ScpMover(Mover):
             try:
                 ssh_connection = SSHClient()
                 ssh_connection.load_system_host_keys()
-                ssh_connection.connect(self.destination.hostname,
+                ssh_connection.connect(destination,
                                        username=self._dest_username,
                                        port=self.destination.port or 22,
                                        key_filename=ssh_key_filename,
