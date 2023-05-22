@@ -296,19 +296,20 @@ class ScpMover(Mover):
     active_connections = dict()
     active_connection_lock = Lock()
 
-    def _ssh_connect(self, destination=None):
+    def open_connection(self):
+        """Open a connection."""
         from paramiko import SSHClient, SSHException
         retries = 3
         ssh_key_filename = self.attrs.get("ssh_key_filename", None)
         timeout = self.attrs.get("ssh_connection_timeout", None)
-        if not destination:
-            destination = self.destination.hostname
+        destination = self.destination.hostname
+        backup_targets = self.attrs.get("backup_targets", [])
         while retries > 0:
             retries -= 1
             try:
                 ssh_connection = SSHClient()
                 ssh_connection.load_system_host_keys()
-                ssh_connection.connect(destination,
+                ssh_connection.connect(self.destination.hostname,
                                        username=self._dest_username,
                                        port=self.destination.port or 22,
                                        key_filename=ssh_key_filename,
@@ -329,22 +330,11 @@ class ScpMover(Mover):
             ssh_connection.close()
             time.sleep(2)
             LOGGER.debug("Retrying ssh connect ...")
-
-    def open_connection(self):
-        """Open a connection."""
-        messg = ""
-        ssh_connection = self._ssh_connect()
-        if ssh_connection:
-            return ssh_connection
-        else:
-            #Failed to connect for some reason.
-            # Check if backup targets
-            for destination in self.attrs.get("backup_targets", []):
-                messg = " and backup targets"
-                ssh_connection = self._ssh_connect(destination)
-                if ssh_connection:
-                    return ssh_connection
-        raise IOError(f"Failed to ssh connect after 3 attempts{messg}.")
+            if retries == 0 and backup_targets:
+                destination = backup_targets.pop(0)
+                LOGGER.info("Changing destination to backup target: %s", destination)
+                retries = 3
+        raise IOError(f"Failed to ssh connect after 3 attempts.")
 
     @staticmethod
     def is_connected(connection):
@@ -378,7 +368,6 @@ class ScpMover(Mover):
         ssh_connection = self.get_connection(self.destination.hostname,
                                              self.destination.port or 22,
                                              self._dest_username)
-
         try:
             scp = SCPClient(ssh_connection.get_transport())
         except Exception as err:
