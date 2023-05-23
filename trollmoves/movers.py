@@ -304,6 +304,7 @@ class ScpMover(Mover):
         timeout = self.attrs.get("ssh_connection_timeout", None)
         destination = self.destination.hostname
         backup_targets = self.attrs.get("backup_targets", [])
+        num_backup_targets = len(backup_targets)
         while retries > 0:
             retries -= 1
             try:
@@ -330,11 +331,13 @@ class ScpMover(Mover):
             ssh_connection.close()
             time.sleep(2)
             LOGGER.debug("Retrying ssh connect ...")
+            backup_targets_message = ""
             if retries == 0 and backup_targets:
                 destination = backup_targets.pop(0)
                 LOGGER.info("Changing destination to backup target: %s", destination)
                 retries = 3
-        raise IOError(f"Failed to ssh connect after 3 attempts.")
+                backup_targets_message = f" to primary and {num_backup_targets} backup host(s)"
+        raise IOError(f"Failed to ssh connect after 3 attempts{backup_targets_message}.")
 
     @staticmethod
     def is_connected(connection):
