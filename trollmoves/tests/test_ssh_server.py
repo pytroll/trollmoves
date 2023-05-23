@@ -193,9 +193,9 @@ class TestSSHMovers(unittest.TestCase):
         try:
             with self.assertLogs(logger, level=logging.INFO) as lc, self.assertRaises(IOError):
                 scp_mover.open_connection()
-            self.assertIn(("SSH connection timed out:"), lc.output[0])
-            self.assertIn(("Changing destination to backup target: backup_host1"), lc.output[3])
-            self.assertIn(("Changing destination to backup target: backup_host2"), lc.output[7])
+            assert "SSH connection timed out:" in lc.output[0]
+            assert "Changing destination to backup target: backup_host1" in lc.output[3]
+            assert "Changing destination to backup target: backup_host2" in lc.output[7]
             mock_sshclient.return_value.connect.assert_called_with("backup_host2", username="user", port=22,
                                                                     key_filename=None, timeout=1)
         finally:
