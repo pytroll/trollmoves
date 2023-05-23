@@ -3,7 +3,7 @@
 
 def pytest_collection_modifyitems(items):
     """Modifiy test items in place to ensure test modules run in a given order."""
-    MODULE_ORDER = ["test_logging", "test_s3downloader", "test_ssh_server"]
+    MODULE_ORDER = ["test_ssh_server", "test_logging", "test_s3downloader"]
     module_mapping = {item: item.module.__name__ for item in items}
 
     sorted_items = items.copy()
