@@ -175,8 +175,8 @@ class TestSSHMovers(unittest.TestCase):
         finally:
             logger.removeHandler(stream_handler)
 
-    @patch('paramiko.SSHClient.connect', autospec=True)
-    def test_scp_open_connection_backup_targets(self, mock_sshclient_connect):
+    @patch('paramiko.SSHClient', autospec=True)
+    def test_scp_open_connection_backup_targets(self, mock_sshclient):
         """Check scp get_connection using backup targets."""
         from trollmoves.movers import ScpMover
         stream_handler = logging.StreamHandler(sys.stdout)
@@ -184,7 +184,7 @@ class TestSSHMovers(unittest.TestCase):
         logger.setLevel(logging.INFO)
 
         mocked_client = MagicMock(side_effect=socket.timeout)
-        mock_sshclient_connect.side_effect = mocked_client
+        mock_sshclient.return_value.connect.side_effect = mocked_client
 
         scp_mover = ScpMover(self.origin, self.destination_no_port,
                              attrs={'ssh_connection_timeout': 1,
@@ -196,6 +196,8 @@ class TestSSHMovers(unittest.TestCase):
             self.assertIn(("SSH connection timed out:"), lc.output[0])
             self.assertIn(("Changing destination to backup target: backup_host1"), lc.output[3])
             self.assertIn(("Changing destination to backup target: backup_host2"), lc.output[7])
+            mock_sshclient.return_value.connect.assert_called_with("backup_host2", username="user", port=22,
+                                                                    key_filename=None, timeout=1)
         finally:
             logger.removeHandler(stream_handler)
 
