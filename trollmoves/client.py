@@ -90,6 +90,7 @@ def read_config(filename):
         _set_config_defaults(res[section])
         _parse_boolean_config_items(res[section], cp_[section])
         _parse_nameservers(res[section], cp_[section])
+        _parse_backup_targets(res[section], cp_[section])
         if not _check_provider_config(res, section):
             continue
         if not _check_destination(res, section):
@@ -110,6 +111,7 @@ def _set_config_defaults(conf):
     conf.setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
     conf.setdefault("nameservers", None)
     conf.setdefault("create_target_directory", True)
+    conf.setdefault("backup_targets", None)
 
 
 def _parse_boolean_config_items(conf, raw_conf):
@@ -130,6 +132,13 @@ def _parse_nameservers(conf, raw_conf):
     if isinstance(val, str):
         val = val.split()
     conf["nameservers"] = val
+
+
+def _parse_backup_targets(conf, raw_conf):
+    val = raw_conf.get("backup_targets")
+    if isinstance(val, str):
+        val = val.split()
+    conf["backup_targets"] = val
 
 
 def _check_provider_config(conf, section):
