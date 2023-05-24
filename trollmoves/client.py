@@ -277,6 +277,10 @@ class Listener(Thread):
 
     def _process_message(self, msg):
         delay = self.ckwargs.get("processing_delay", False)
+        backup_targets = self.ckwargs.get('backup_targets', None)
+        if backup_targets:
+            LOGGER.debug("Adding backup_targets %s to the message.", str(backup_targets))
+            msg.data['backup_targets'] = backup_targets
         if delay:
             # If this is a hot spare client, wait for a while
             # for a public "push" message which will update
@@ -530,7 +534,7 @@ def replace_mda(msg, kwargs):
             try:
                 replacement = dict(item.split(':') for item in kwargs[key].split('|'))
                 replacement = replacement[msg.data[key]]
-            except ValueError:
+            except (ValueError, AttributeError):
                 replacement = kwargs[key]
             msg.data[key] = replacement
     return msg
