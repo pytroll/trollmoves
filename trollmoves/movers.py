@@ -45,7 +45,7 @@ from trollmoves.utils import clean_url
 LOGGER = logging.getLogger(__name__)
 
 
-def move_it(pathname, destination, attrs=None, hook=None, rel_path=None):
+def move_it(pathname, destination, attrs=None, hook=None, rel_path=None, backup_targets=None):
     """Check if the file pointed by *pathname* is in the filelist, and move it if it is.
 
     The *destination* provided is used, and if *rel_path* is provided, it will
@@ -71,7 +71,7 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None):
         raise
 
     try:
-        mover(pathname, new_dest, attrs=attrs).copy()
+        mover(pathname, new_dest, attrs=attrs, backup_targets=backup_targets).copy()
         if hook:
             hook(pathname, new_dest)
     except Exception as err:
@@ -88,7 +88,7 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None):
 class Mover(object):
     """Base mover object. Doesn't do anything as it has to be subclassed."""
 
-    def __init__(self, origin, destination, attrs=None):
+    def __init__(self, origin, destination, attrs=None, backup_targets=None):
         """Initialize the Mover."""
         LOGGER.debug("destination = %s", str(destination))
         try:
@@ -102,7 +102,7 @@ class Mover(object):
         LOGGER.debug("Destination: %s", str(destination))
         self.origin = origin
         self.attrs = attrs or {}
-
+        self.backup_targets = backup_targets
     def copy(self):
         """Copy the file."""
         raise NotImplementedError("Copy for scheme " + self.destination.scheme +
@@ -299,12 +299,19 @@ class ScpMover(Mover):
     def open_connection(self):
         """Open a connection."""
         from paramiko import SSHClient, SSHException
+        import copy
         retries = 3
         ssh_key_filename = self.attrs.get("ssh_key_filename", None)
-        timeout = self.attrs.get("ssh_connection_timeout", None)
+        try:
+            timeout = float(self.attrs.get("ssh_connection_timeout", None))
+        except TypeError:
+            timeout = None
         destination = self.destination.hostname
-        backup_targets = self.attrs.get("backup_targets", [])
-        num_backup_targets = len(backup_targets)
+        backup_targets = copy.deepcopy(self.backup_targets)
+        try:
+            num_backup_targets = len(backup_targets)
+        except TypeError:
+            num_backup_targets = None
         while retries > 0:
             retries -= 1
             try:
