@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2012-2020
+# Copyright (c) 2012-2023
 #
 # Author(s):
 #
@@ -142,6 +142,7 @@ class RequestManager(Thread):
         for data in gen_dict_contains(message.data, 'uri'):
             pathname = urlparse(data['uri']).path
             rel_path = data.get('path', None)
+            backup_targets = data.get('backup_targets', None)
             error_message = self._validate_requested_file(pathname, message)
             if error_message is not None:
                 break
@@ -163,7 +164,8 @@ class RequestManager(Thread):
     def _move_file(self, pathname, message, rel_path):
         error_message = None
         try:
-            move_it(pathname, message.data['destination'], self._attrs, rel_path=rel_path)
+            move_it(pathname, message.data['destination'], self._attrs, rel_path=rel_path,
+                    backup_targets=message.data.get('backup_targets', None))
         except Exception as err:
             error_message = Message(message.subject, "err", data=str(err))
         else:
