@@ -187,9 +187,9 @@ class TestSSHMovers(unittest.TestCase):
         mock_sshclient.return_value.connect.side_effect = mocked_client
 
         scp_mover = ScpMover(self.origin, self.destination_no_port,
-                             attrs={'ssh_connection_timeout': 1,
-                                    'backup_targets': ['backup_host1',
-                                                       'backup_host2']})
+                             attrs={'ssh_connection_timeout': 1},
+                             backup_targets=['backup_host1',
+                                             'backup_host2'])
         try:
             with self.assertLogs(logger, level=logging.INFO) as lc, self.assertRaises(IOError):
                 scp_mover.open_connection()

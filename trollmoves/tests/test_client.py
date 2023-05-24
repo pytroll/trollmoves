@@ -939,6 +939,37 @@ def test_request_push_single_call(send_ack, send_request, clean_ongoing_transfer
 @patch('trollmoves.client.clean_ongoing_transfer')
 @patch('trollmoves.client.send_request')
 @patch('trollmoves.client.send_ack')
+def test_request_push_backup_targets(send_ack, send_request, clean_ongoing_transfer, file_cache, ongoing_transfers):
+    """Test trollmoves.client.request_push() with a single file."""
+    from trollmoves.client import request_push
+    from tempfile import gettempdir
+
+    MSG_FILE_BACKUP_TARGETS = MSG_FILE2
+    MSG_FILE_BACKUP_TARGETS.data['backup_targets'] = ['backup_host1', 'backup_host2']
+    clean_ongoing_transfer.return_value = [MSG_FILE_BACKUP_TARGETS]
+    send_request.return_value = [MSG_FILE_BACKUP_TARGETS, 'localhost']
+    publisher = MagicMock()
+    kwargs = {'transfer_req_timeout': 1.0, 'req_timeout': 1.0}
+
+    request_push(MSG_FILE_BACKUP_TARGETS, gettempdir(), 'login', publisher=publisher,
+                 **kwargs)
+
+    send_request.assert_called_once()
+    send_ack.assert_called_once()
+    # The file should be added to ongoing transfers
+    assert UID_FILE2 in ongoing_transfers
+    # And removed
+    clean_ongoing_transfer.assert_called_once_with(UID_FILE2)
+    # The transferred file should be in the cache
+    assert MSG_FILE2.data['uid'] in file_cache
+    assert len(file_cache) == 1
+
+
+@patch('trollmoves.client.ongoing_transfers', new_callable=dict)
+@patch('trollmoves.client.file_cache', new_callable=deque)
+@patch('trollmoves.client.clean_ongoing_transfer')
+@patch('trollmoves.client.send_request')
+@patch('trollmoves.client.send_ack')
 def test_request_push_duplicate_call(send_ack, send_request, clean_ongoing_transfer, file_cache, ongoing_transfers):
     """Test trollmoves.client.request_push() with duplicate files."""
     from trollmoves.client import request_push
