@@ -129,7 +129,7 @@ class RequestManager(Thread):
     def push(self, message):
         """Reply to push request."""
         new_msg = self._move_files(message)
-        if new_msg.type is not 'err':
+        if new_msg and new_msg.type is not 'err':
             _destination = clean_url(new_msg.data['destination'])
             new_msg = Message(message.subject,
                               _get_push_message_type(message),
@@ -167,7 +167,7 @@ class RequestManager(Thread):
             destination = move_it(pathname, message.data['destination'],
                                   self._attrs, rel_path=rel_path,
                                   backup_targets=message.data.get('backup_targets', None))
-            message.data['destination'] = clean_url(destination)
+            message.data['destination'] = destination
         except Exception as err:
             return_message = Message(message.subject, "err", data=str(err))
         else:
