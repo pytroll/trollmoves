@@ -71,7 +71,12 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None, backup_
         raise
 
     try:
-        mover(pathname, new_dest, attrs=attrs, backup_targets=backup_targets).copy()
+        m = mover(pathname, new_dest, attrs=attrs, backup_targets=backup_targets)
+        m.copy()
+        last_dest = m.destination
+        if last_dest != new_dest:
+            new_dest = last_dest
+            fake_dest = clean_url(new_dest)
         if hook:
             hook(pathname, new_dest)
     except Exception as err:
@@ -306,7 +311,6 @@ class ScpMover(Mover):
             timeout = float(self.attrs.get("ssh_connection_timeout", None))
         except TypeError:
             timeout = None
-        destination = self.destination.hostname
         backup_targets = copy.deepcopy(self.backup_targets)
         try:
             num_backup_targets = len(backup_targets)
@@ -317,13 +321,13 @@ class ScpMover(Mover):
             try:
                 ssh_connection = SSHClient()
                 ssh_connection.load_system_host_keys()
-                ssh_connection.connect(destination,
+                ssh_connection.connect(self.destination.hostname,
                                        username=self._dest_username,
                                        port=self.destination.port or 22,
                                        key_filename=ssh_key_filename,
                                        timeout=timeout)
                 LOGGER.debug("Successfully connected to %s:%s as %s",
-                             destination,
+                             self.destination.hostname,
                              self.destination.port or 22,
                              self._dest_username)
             except SSHException as sshe:
@@ -340,8 +344,9 @@ class ScpMover(Mover):
             LOGGER.debug("Retrying ssh connect ...")
             backup_targets_message = ""
             if retries == 0 and backup_targets:
-                destination = backup_targets.pop(0)
-                LOGGER.info("Changing destination to backup target: %s", destination)
+                backup_target = backup_targets.pop(0)
+                self.destination = self.destination._replace(netloc=f"{self.destination.username}@{backup_target}")
+                LOGGER.info("Changing destination to backup target: %s", self.destination.hostname)
                 retries = 3
                 backup_targets_message = f" to primary and {num_backup_targets} backup host(s)"
         raise IOError(f"Failed to ssh connect after 3 attempts{backup_targets_message}.")
