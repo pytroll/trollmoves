@@ -944,14 +944,14 @@ def test_request_push_backup_targets(send_ack, send_request, clean_ongoing_trans
     from trollmoves.client import request_push
     from tempfile import gettempdir
 
-    MSG_FILE_BACKUP_TARGETS = MSG_FILE2
-    MSG_FILE_BACKUP_TARGETS.data['backup_targets'] = ['backup_host1', 'backup_host2']
-    clean_ongoing_transfer.return_value = [MSG_FILE_BACKUP_TARGETS]
-    send_request.return_value = [MSG_FILE_BACKUP_TARGETS, 'localhost']
+    msg_file_backup_targets = MSG_FILE2
+    msg_file_backup_targets.data['backup_targets'] = ['backup_host1', 'backup_host2']
+    clean_ongoing_transfer.return_value = [msg_file_backup_targets]
+    send_request.return_value = [msg_file_backup_targets, 'localhost']
     publisher = MagicMock()
     kwargs = {'transfer_req_timeout': 1.0, 'req_timeout': 1.0}
 
-    request_push(MSG_FILE_BACKUP_TARGETS, gettempdir(), 'login', publisher=publisher,
+    request_push(msg_file_backup_targets, gettempdir(), 'login', publisher=publisher,
                  **kwargs)
 
     send_request.assert_called_once()
