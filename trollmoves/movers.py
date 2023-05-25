@@ -88,7 +88,7 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None, backup_
     else:
         LOGGER.info("Successfully copied %s to %s",
                     pathname, str(fake_dest))
-
+    return m.destination
 
 class Mover(object):
     """Base mover object. Doesn't do anything as it has to be subclassed."""

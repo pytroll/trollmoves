@@ -129,28 +129,28 @@ class RequestManager(Thread):
     def push(self, message):
         """Reply to push request."""
         new_msg = self._move_files(message)
-        if new_msg is None:
+        if new_msg.type is not 'err':
+            _destination = clean_url(new_msg.data['destination'])
             new_msg = Message(message.subject,
                               _get_push_message_type(message),
                               data=message.data.copy())
-            new_msg.data['destination'] = clean_url(new_msg.data['destination'])
+            new_msg.data['destination'] = _destination 
 
         return new_msg
 
     def _move_files(self, message):
-        error_message = None
+        return_message = None
         for data in gen_dict_contains(message.data, 'uri'):
             pathname = urlparse(data['uri']).path
             rel_path = data.get('path', None)
-            backup_targets = data.get('backup_targets', None)
-            error_message = self._validate_requested_file(pathname, message)
-            if error_message is not None:
+            return_message = self._validate_requested_file(pathname, message)
+            if return_message is not None:
                 break
-            error_message = self._move_file(pathname, message, rel_path)
-            if error_message is not None:
+            return_message = self._move_file(pathname, message, rel_path)
+            if return_message.type is "err":
                 break
 
-        return error_message
+        return return_message
 
     def _validate_requested_file(self, pathname, message):
         # FIXME: check against file_cache
@@ -162,15 +162,18 @@ class RequestManager(Thread):
         return None
 
     def _move_file(self, pathname, message, rel_path):
-        error_message = None
+        return_message = None
         try:
-            move_it(pathname, message.data['destination'], self._attrs, rel_path=rel_path,
-                    backup_targets=message.data.get('backup_targets', None))
+            destination = move_it(pathname, message.data['destination'],
+                                  self._attrs, rel_path=rel_path,
+                                  backup_targets=message.data.get('backup_targets', None))
+            message.data['destination'] = clean_url(destination)
         except Exception as err:
-            error_message = Message(message.subject, "err", data=str(err))
+            return_message = Message(message.subject, "err", data=str(err))
         else:
             self._add_to_deleter(pathname)
-        return error_message
+            return_message = message
+        return return_message
 
     def _add_to_deleter(self, pathname):
         if self._attrs.get('compression') or self._is_delete_set():
