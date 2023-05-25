@@ -138,7 +138,7 @@ class Mover(object):
             timer = CTimer(int(self.attrs.get('connection_uptime', 30)),
                            self.delete_connection, (connection,))
             timer.start()
-            self.active_connections[(hostname, port, username)] = connection, timer
+            self.active_connections[(self.destination.hostname, port, username)] = connection, timer
 
             return connection
 
