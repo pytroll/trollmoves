@@ -312,6 +312,7 @@ class ScpMover(Mover):
         except TypeError:
             timeout = None
         backup_targets = copy.deepcopy(self.backup_targets)
+        backup_targets_message = ""
         try:
             num_backup_targets = len(backup_targets)
         except TypeError:
@@ -342,7 +343,6 @@ class ScpMover(Mover):
             ssh_connection.close()
             time.sleep(2)
             LOGGER.debug("Retrying ssh connect ...")
-            backup_targets_message = ""
             if retries == 0 and backup_targets:
                 backup_target = backup_targets.pop(0)
                 self.destination = self.destination._replace(netloc=f"{self.destination.username}@{backup_target}")
