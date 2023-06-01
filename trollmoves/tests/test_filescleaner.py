@@ -84,7 +84,7 @@ def test_clean_dir_non_recursive(fake_tree_of_some_files, tmp_path, caplog):
     with FakePublisher() as pub, caplog.at_level(logging.INFO):
         _ = clean_dir(pub, ref_time, pathname, False, **kws)
 
-    assert f"Cleaning {pathname}" in caplog.text
+    assert f"Cleaning under {pathname}" in caplog.text
 
     assert list_of_files_to_clean[0].exists()
     assert list_of_files_to_clean[1].exists()
