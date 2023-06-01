@@ -120,26 +120,24 @@ def parse_args():
 
 def setup_logger(args):
     """Set up logging."""
-    import sys
     msgformat = '[%(asctime)-15s %(levelname)-8s] %(message)s'
 
-    if args.verbose:
-        logging.basicConfig(stream=sys.stdout, level=logging.DEBUG, format=msgformat)
-    elif args.quiet:
-        logging.basicConfig(stream=sys.stdout, level=logging.ERROR, format=msgformat)
+    if args.logfile:
+        handler = logging.handlers.RotatingFileHandler(
+            args.logfile, maxBytes=1000000, backupCount=10)
     else:
-        logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=msgformat)
+        handler = logging.StreamHandler()
 
-    # if args.logfile:
-    #     handler = logging.handlers.RotatingFileHandler(
-    #         args.logfile, maxBytes=1000000, backupCount=10)
-    # else:
-    #     handler = logging.StreamHandler()
-    # handler.setLevel(logging.DEBUG)
-    # handler.setFormatter(
-    #     logging.Formatter('[%(asctime)-15s %(levelname)-8s] %(message)s'))
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(
+        logging.Formatter('[%(asctime)-15s %(levelname)-8s] %(message)s'))
 
-    # LOGGER.addHandler(handler)
+    if args.verbose:
+        logging.basicConfig(level=logging.DEBUG, handlers=[handler], format=msgformat)
+    elif args.quiet:
+        logging.basicConfig(level=logging.DEBUG, handlers=[handler], format=msgformat)
+    else:
+        logging.basicConfig(level=logging.DEBUG, handlers=[handler], format=msgformat)
 
 
 def setup_mailing(args, conf, info):
