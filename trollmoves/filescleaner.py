@@ -25,12 +25,14 @@ import logging
 from posttroll.message import Message
 
 
+LOGGER = logging.getLogger(__name__)
+
+
 def remove_file(filename, pub):
     """Remove a file given its filename, and publish when removed.
 
     Removing an empty directory is not published.
     """
-    LOGGER = logging.getLogger(__name__)
     try:
         if os.path.isdir(filename):
             if not os.listdir(filename):
@@ -49,40 +51,48 @@ def remove_file(filename, pub):
     return True
 
 
-def clean_dir(pub, ref_time, pathname, is_dry_run, **kwargs):
+def clean_dir(pub, ref_time, pathname_template, is_dry_run, **kwargs):
     """Clean directory of files given a path name and a time threshold.
 
     Only files older than a given time threshold are removed/cleaned.
     """
-    LOGGER = logging.getLogger(__name__)
-
     filetime_checker_type = kwargs.get('filetime_checker_type')
     stat_time_checker = {'ctime': 'st_ctime',
                          'mtime': 'st_mtime'}.get(filetime_checker_type)
     recursive = kwargs.get("recursive")
 
-    LOGGER.info("Cleaning %s", pathname)
+    LOGGER.info("Cleaning under %s", pathname_template)
 
     if not recursive:
-        filepaths = glob(pathname)
+        filepaths = glob(pathname_template)
         return clean_files_and_dirs(pub, filepaths, ref_time, stat_time_checker, is_dry_run)
 
     section_files = 0
     section_size = 0
-    for dirpath, _dirnames, filenames in os.walk(pathname):
-        filepaths = [os.path.join(dirpath, fname) for fname in filenames]
 
-        s_size, s_files = clean_files_and_dirs(pub, filepaths, ref_time, stat_time_checker, is_dry_run)
-        section_files += s_files
-        section_size = section_size + s_size
+    for pathname in glob(pathname_template):
+        for dirpath, _dirnames, filenames in os.walk(pathname):
+            files_in_dir = glob(os.path.join(dirpath, '*'))
+            if len(files_in_dir) == 0:
+                if is_dry_run:
+                    LOGGER.info("Would remove empty directory: %s", dirpath)
+                else:
+                    try:
+                        os.rmdir(dirpath)
+                    except OSError:
+                        LOGGER.debug("Was trying to remove empty directory, but failed. Should not have come here!")
+
+            filepaths = [os.path.join(dirpath, fname) for fname in filenames]
+
+            s_size, s_files = clean_files_and_dirs(pub, filepaths, ref_time, stat_time_checker, is_dry_run)
+            section_files += s_files
+            section_size = section_size + s_size
 
     return (section_size, section_files)
 
 
 def clean_files_and_dirs(pub, filepaths, ref_time, stat_time_checker, is_dry_run):
     """From a list of file paths and a reference time clean files and directories."""
-    LOGGER = logging.getLogger(__name__)
-
     section_files = 0
     section_size = 0
     for filepath in filepaths:
@@ -99,6 +109,7 @@ def clean_files_and_dirs(pub, filepaths, ref_time, stat_time_checker, is_dry_run
             if not is_dry_run:
                 was_removed = remove_file(filepath, pub)
             else:
+                # print("Would remove %s" % filepath)
                 LOGGER.info("Would remove %s" % filepath)
 
             if was_removed:
@@ -113,16 +124,21 @@ def clean_section(pub, section, conf, is_dry_run=True):
 
     This calls the clean_dir function in this module.
     """
-    LOGGER = logging.getLogger(__name__)
     section_files = 0
     section_size = 0
     info = dict(conf.items(section))
+    recursive = info.get('recursive')
+    if recursive and recursive == 'true':
+        recursive = True
+    else:
+        recursive = False
 
     base_dir = info.get("base_dir", "")
     if not os.path.exists(base_dir):
         LOGGER.warning("Path %s missing, skipping section %s", base_dir, section)
         return (section_size, section_files)
     LOGGER.info("Cleaning in %s", base_dir)
+
     templates = (item.strip() for item in info["templates"].split(","))
     kws = {}
     for key in ["days", "hours", "minutes", "seconds"]:
@@ -135,7 +151,8 @@ def clean_section(pub, section, conf, is_dry_run=True):
     for template in templates:
         pathname = os.path.join(base_dir, template)
         size, num_files = clean_dir(pub, ref_time, pathname, is_dry_run,
-                                    filetime_checker_type=info.get('filetime_checker_type', 'ctime'))
+                                    filetime_checker_type=info.get('filetime_checker_type', 'ctime'),
+                                    recursive=recursive)
         section_files += num_files
         section_size += size
 
@@ -144,7 +161,6 @@ def clean_section(pub, section, conf, is_dry_run=True):
 
 def get_config_items(args, conf):
     """Get items from ini configuration."""
-    LOGGER = logging.getLogger(__name__)
     config_items = []
 
     if args.config_item:

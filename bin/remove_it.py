@@ -29,7 +29,7 @@ import socket
 from trollmoves.filescleaner import (get_config_items,
                                      clean_section)
 
-LOGGER = logging.getLogger("remove_it")
+LOGGER = logging.getLogger(__name__)
 
 try:
     from posttroll.publisher import Publish
@@ -120,28 +120,26 @@ def parse_args():
 
 def setup_logger(args):
     """Set up logging."""
-    global LOGGER
-    LOGGER = logging.getLogger("remove_it")
+    import sys
+    msgformat = '[%(asctime)-15s %(levelname)-8s] %(message)s'
 
     if args.verbose:
-        LOGGER.setLevel(logging.DEBUG)
+        logging.basicConfig(stream=sys.stdout, level=logging.DEBUG, format=msgformat)
     elif args.quiet:
-        LOGGER.setLevel(logging.ERROR)
+        logging.basicConfig(stream=sys.stdout, level=logging.ERROR, format=msgformat)
     else:
-        LOGGER.setLevel(logging.INFO)
+        logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=msgformat)
 
-    # logging.getLogger('').setLevel(logging.DEBUG)
+    # if args.logfile:
+    #     handler = logging.handlers.RotatingFileHandler(
+    #         args.logfile, maxBytes=1000000, backupCount=10)
+    # else:
+    #     handler = logging.StreamHandler()
+    # handler.setLevel(logging.DEBUG)
+    # handler.setFormatter(
+    #     logging.Formatter('[%(asctime)-15s %(levelname)-8s] %(message)s'))
 
-    if args.logfile:
-        handler = logging.handlers.RotatingFileHandler(
-            args.logfile, maxBytes=1000000, backupCount=10)
-    else:
-        handler = logging.StreamHandler()
-    handler.setLevel(logging.DEBUG)
-    handler.setFormatter(
-        logging.Formatter('[%(asctime)-15s %(levelname)-8s] %(message)s'))
-
-    LOGGER.addHandler(handler)
+    # LOGGER.addHandler(handler)
 
 
 def setup_mailing(args, conf, info):
