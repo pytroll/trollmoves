@@ -1,4 +1,22 @@
 ###############################################################################
+## Version 0.13.0 (2023/06/05)
+
+### Issues Closed
+
+* [Issue 171](https://github.com/pytroll/trollmoves/issues/171) - Publisher need to call start method as of version 1.10.0 of posttroll
+* [Issue 169](https://github.com/pytroll/trollmoves/issues/169) - In the server add backup target host for scp ([PR 170](https://github.com/pytroll/trollmoves/pull/170) by [@TAlonglong](https://github.com/TAlonglong))
+
+In this release 2 issues were closed.
+
+### Pull Requests Merged
+
+#### Features added
+
+* [PR 170](https://github.com/pytroll/trollmoves/pull/170) - adding backup targets ([169](https://github.com/pytroll/trollmoves/issues/169))
+
+In this release 1 pull request was closed.
+
+###############################################################################
 ## Version 0.12.0 (2023/04/27)
 
 ### Issues Closed
