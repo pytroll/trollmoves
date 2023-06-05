@@ -167,6 +167,17 @@ publish_port = 0
 nameservers = ns1 ns2
 """
 
+CLIENT_CONFIG_BACKUP_TARGETS = """
+[foo]
+providers = bar
+destination = scp://primary_host/tmp/foo
+login = user
+topic = /1b/hrit-segment/0deg
+publish_port = 0
+nameservers = ns1
+backup_targets=backup_host1 backup_host2
+"""
+
 LOCAL_DIR = "/local"
 
 CHAIN_BASIC_CONFIG = {"login": "user:pass", "topic": "/foo", "publish_port": 12345, "nameservers": None,
@@ -263,6 +274,12 @@ def client_config_1_item_nameservers_is_false():
 def client_config_2_items():
     """Create a fixture for a client config."""
     yield _write_named_temporary_config(CLIENT_CONFIG_2_ITEMS)
+
+
+@pytest.fixture
+def client_config_backup_targets():
+    """Create a fixture for a client config."""
+    yield _write_named_temporary_config(CLIENT_CONFIG_BACKUP_TARGETS)
 
 
 @pytest.fixture
@@ -904,6 +921,37 @@ def test_request_push_single_call(send_ack, send_request, clean_ongoing_transfer
     kwargs = {'transfer_req_timeout': 1.0, 'req_timeout': 1.0}
 
     request_push(MSG_FILE2, gettempdir(), 'login', publisher=publisher,
+                 **kwargs)
+
+    send_request.assert_called_once()
+    send_ack.assert_called_once()
+    # The file should be added to ongoing transfers
+    assert UID_FILE2 in ongoing_transfers
+    # And removed
+    clean_ongoing_transfer.assert_called_once_with(UID_FILE2)
+    # The transferred file should be in the cache
+    assert MSG_FILE2.data['uid'] in file_cache
+    assert len(file_cache) == 1
+
+
+@patch('trollmoves.client.ongoing_transfers', new_callable=dict)
+@patch('trollmoves.client.file_cache', new_callable=deque)
+@patch('trollmoves.client.clean_ongoing_transfer')
+@patch('trollmoves.client.send_request')
+@patch('trollmoves.client.send_ack')
+def test_request_push_backup_targets(send_ack, send_request, clean_ongoing_transfer, file_cache, ongoing_transfers):
+    """Test trollmoves.client.request_push() with a single file."""
+    from trollmoves.client import request_push
+    from tempfile import gettempdir
+
+    msg_file_backup_targets = MSG_FILE2
+    msg_file_backup_targets.data['backup_targets'] = ['backup_host1', 'backup_host2']
+    clean_ongoing_transfer.return_value = [msg_file_backup_targets]
+    send_request.return_value = [msg_file_backup_targets, 'localhost']
+    publisher = MagicMock()
+    kwargs = {'transfer_req_timeout': 1.0, 'req_timeout': 1.0}
+
+    request_push(msg_file_backup_targets, gettempdir(), 'login', publisher=publisher,
                  **kwargs)
 
     send_request.assert_called_once()
@@ -1679,6 +1727,17 @@ def test_read_config_nameservers_are_a_list_or_tuple(client_config_2_items):
     assert isinstance(conf['foo']['nameservers'], (list, tuple))
 
 
+def test_read_config_backup_targets(client_config_backup_targets):
+    """Test that backup targets are given as a list."""
+    from trollmoves.client import read_config
+
+    try:
+        conf = read_config(client_config_backup_targets)
+    finally:
+        os.remove(client_config_backup_targets)
+    assert isinstance(conf['foo']['backup_targets'], list)
+
+
 @patch('trollmoves.client.ongoing_transfers', new_callable=dict)
 @patch('trollmoves.client.file_cache', new_callable=deque)
 @patch('trollmoves.client.clean_ongoing_transfer')
@@ -1686,6 +1745,32 @@ def test_read_config_nameservers_are_a_list_or_tuple(client_config_2_items):
 @patch('trollmoves.client.send_ack')
 def test_request_push_ftp(send_ack, send_request, clean_ongoing_transfer, file_cache, ongoing_transfers, tmp_path):
     """Test trollmoves.client.request_push() with a single file."""
+    from trollmoves.client import request_push
+
+    clean_ongoing_transfer.return_value = [MSG_FILE_FTP]
+    send_request.return_value = [MSG_FILE_FTP, 'localhost']
+    publisher = MagicMock()
+    kwargs = {'transfer_req_timeout': 1.0, 'req_timeout': 1.0}
+
+    destination = f"ftp://{os.fspath(tmp_path)}/some/dir"
+
+    request_push(MSG_FILE_FTP, destination, 'someuser:somepass', publisher=publisher,
+                 **kwargs)
+
+    file_msg = Message(rawstr=publisher.send.mock_calls[-1][1][0])
+    assert "someuser" not in file_msg.data["uri"]
+    assert "somepass" not in file_msg.data["uri"]
+    assert "/some/dir" in file_msg.data["uri"]
+    assert not file_msg.data["uri"].startswith("ftp://")
+
+
+@patch('trollmoves.client.ongoing_transfers', new_callable=dict)
+@patch('trollmoves.client.file_cache', new_callable=deque)
+@patch('trollmoves.client.clean_ongoing_transfer')
+@patch('trollmoves.client.send_request')
+@patch('trollmoves.client.send_ack')
+def test_request_push_scp(send_ack, send_request, clean_ongoing_transfer, file_cache, ongoing_transfers, tmp_path):
+    """Test trollmoves.client.request_push() using scp with a single file."""
     from trollmoves.client import request_push
 
     clean_ongoing_transfer.return_value = [MSG_FILE_FTP]

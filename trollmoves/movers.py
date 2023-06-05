@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2012-2020
+# Copyright (c) 2012-2023
 #
 # Author(s):
 #
@@ -45,7 +45,7 @@ from trollmoves.utils import clean_url
 LOGGER = logging.getLogger(__name__)
 
 
-def move_it(pathname, destination, attrs=None, hook=None, rel_path=None):
+def move_it(pathname, destination, attrs=None, hook=None, rel_path=None, backup_targets=None):
     """Check if the file pointed by *pathname* is in the filelist, and move it if it is.
 
     The *destination* provided is used, and if *rel_path* is provided, it will
@@ -71,7 +71,12 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None):
         raise
 
     try:
-        mover(pathname, new_dest, attrs=attrs).copy()
+        m = mover(pathname, new_dest, attrs=attrs, backup_targets=backup_targets)
+        m.copy()
+        last_dest = m.destination
+        if last_dest != new_dest:
+            new_dest = last_dest
+            fake_dest = clean_url(new_dest)
         if hook:
             hook(pathname, new_dest)
     except Exception as err:
@@ -83,12 +88,12 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None):
     else:
         LOGGER.info("Successfully copied %s to %s",
                     pathname, str(fake_dest))
-
+    return m.destination
 
 class Mover(object):
     """Base mover object. Doesn't do anything as it has to be subclassed."""
 
-    def __init__(self, origin, destination, attrs=None):
+    def __init__(self, origin, destination, attrs=None, backup_targets=None):
         """Initialize the Mover."""
         LOGGER.debug("destination = %s", str(destination))
         try:
@@ -102,7 +107,7 @@ class Mover(object):
         LOGGER.debug("Destination: %s", str(destination))
         self.origin = origin
         self.attrs = attrs or {}
-
+        self.backup_targets = backup_targets
     def copy(self):
         """Copy the file."""
         raise NotImplementedError("Copy for scheme " + self.destination.scheme +
@@ -133,7 +138,7 @@ class Mover(object):
             timer = CTimer(int(self.attrs.get('connection_uptime', 30)),
                            self.delete_connection, (connection,))
             timer.start()
-            self.active_connections[(hostname, port, username)] = connection, timer
+            self.active_connections[(self.destination.hostname, port, username)] = connection, timer
 
             return connection
 
@@ -299,10 +304,19 @@ class ScpMover(Mover):
     def open_connection(self):
         """Open a connection."""
         from paramiko import SSHClient, SSHException
-
+        import copy
         retries = 3
         ssh_key_filename = self.attrs.get("ssh_key_filename", None)
-        timeout = self.attrs.get("ssh_connection_timeout", None)
+        try:
+            timeout = float(self.attrs.get("ssh_connection_timeout", None))
+        except TypeError:
+            timeout = None
+        backup_targets = copy.deepcopy(self.backup_targets)
+        backup_targets_message = ""
+        try:
+            num_backup_targets = len(backup_targets)
+        except TypeError:
+            num_backup_targets = None
         while retries > 0:
             retries -= 1
             try:
@@ -329,7 +343,13 @@ class ScpMover(Mover):
             ssh_connection.close()
             time.sleep(2)
             LOGGER.debug("Retrying ssh connect ...")
-        raise IOError("Failed to ssh connect after 3 attempts")
+            if retries == 0 and backup_targets:
+                backup_target = backup_targets.pop(0)
+                self.destination = self.destination._replace(netloc=f"{self.destination.username}@{backup_target}")
+                LOGGER.info("Changing destination to backup target: %s", self.destination.hostname)
+                retries = 3
+                backup_targets_message = f" to primary and {num_backup_targets} backup host(s)"
+        raise IOError(f"Failed to ssh connect after 3 attempts{backup_targets_message}.")
 
     @staticmethod
     def is_connected(connection):
@@ -363,7 +383,6 @@ class ScpMover(Mover):
         ssh_connection = self.get_connection(self.destination.hostname,
                                              self.destination.port or 22,
                                              self._dest_username)
-
         try:
             scp = SCPClient(ssh_connection.get_transport())
         except Exception as err:
