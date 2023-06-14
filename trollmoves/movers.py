@@ -90,7 +90,8 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None, backup_
                     pathname, str(fake_dest))
     return m.destination
 
-class Mover(object):
+
+class Mover:
     """Base mover object. Doesn't do anything as it has to be subclassed."""
 
     def __init__(self, origin, destination, attrs=None, backup_targets=None):
@@ -108,6 +109,7 @@ class Mover(object):
         self.origin = origin
         self.attrs = attrs or {}
         self.backup_targets = backup_targets
+
     def copy(self):
         """Copy the file."""
         raise NotImplementedError("Copy for scheme " + self.destination.scheme +
@@ -155,9 +157,10 @@ class Mover(object):
             try:
                 self.close_connection(connection)
             finally:
-                for key, val in self.active_connections.items():
-                    if val[0] == connection:
+                for key, (current_connection, current_timer) in self.active_connections.items():
+                    if current_connection == connection:
                         del self.active_connections[key]
+                        current_timer.cancel()
                         break
 
 
@@ -289,9 +292,12 @@ class FtpMover(Mover):
                     connection.cwd(current_dir)
 
         LOGGER.debug('cd to %s', os.path.dirname(self.destination.path))
-        cd_tree(os.path.dirname(self.destination.path))
+        destination_dirname, destination_filename = os.path.split(self.destination.path)
+        cd_tree(destination_dirname)
+        if not destination_filename:
+            destination_filename = os.path.basename(self.origin)
         with open(self.origin, 'rb') as file_obj:
-            connection.storbinary('STOR ' + os.path.basename(self.origin),
+            connection.storbinary('STOR ' + destination_filename,
                                   file_obj)
 
 

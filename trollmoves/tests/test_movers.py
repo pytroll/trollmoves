@@ -27,10 +27,13 @@ from unittest.mock import patch
 from urllib.parse import urlunparse
 from urllib.parse import urlparse
 import yaml
+from contextlib import contextmanager
 
 import pytest
 
-ORIGIN = '/path/to/mydata/filename.ext'
+ORIGIN_FILENAME = "filename.ext"
+
+ORIGIN = '/path/to/mydata/' + ORIGIN_FILENAME
 USERNAME = 'username'
 PASSWORD = 'passwd'
 ACCOUNT = None
@@ -64,14 +67,26 @@ target-s3-example1:
 """
 
 
-def _get_ftp(destination):
+@contextmanager
+def _get_ftp(destination, origin=ORIGIN):
     from trollmoves.movers import FtpMover
 
     with patch('trollmoves.movers.FTP') as ftp:
-        ftp_mover = FtpMover(ORIGIN, destination)
-        ftp_mover.open_connection()
+        ftp_mover = FtpMover(origin, destination)
+        connection = ftp_mover.open_connection()
 
-    return ftp
+        yield ftp, ftp_mover
+
+        ftp_mover.delete_connection(connection)
+
+
+@pytest.fixture
+def file_to_move(tmp_path):
+    """Create a file that can be moved."""
+    filename = tmp_path / ORIGIN_FILENAME
+    with open(filename, "w") as fd:
+        fd.write("Hej")
+    return filename
 
 
 @patch('netrc.netrc')
@@ -79,9 +94,8 @@ def test_open_ftp_connection_with_netrc_no_netrc(netrc):
     """Check getting ftp connection when .netrc is missing."""
     netrc.side_effect = FileNotFoundError('Failed retrieve authentification details from netrc file')
 
-    ftp = _get_ftp('ftp://localhost.smhi.se/data/satellite/archive/')
-
-    ftp.return_value.login.assert_called_once_with()
+    with _get_ftp('ftp://localhost.smhi.se/data/satellite/archive/') as (ftp, _):
+        ftp.return_value.login.assert_called_once_with()
 
 
 @patch('netrc.netrc')
@@ -91,16 +105,25 @@ def test_open_ftp_connection_with_netrc(netrc):
     netrc.return_value.authenticators.return_value = (USERNAME, ACCOUNT, PASSWORD)
     netrc.side_effect = None
 
-    ftp = _get_ftp('ftp://localhost.smhi.se/data/satellite/archive/')
-
-    ftp.return_value.login.assert_called_once_with(USERNAME, PASSWORD)
+    with _get_ftp('ftp://localhost.smhi.se/data/satellite/archive/') as (ftp, _):
+        ftp.return_value.login.assert_called_once_with(USERNAME, PASSWORD)
 
 
 def test_open_ftp_connection_credentials_in_url():
     """Check getting ftp connection with credentials in the URL."""
-    ftp = _get_ftp('ftp://auser:apasswd@localhost.smhi.se/data/satellite/archive/')
+    with _get_ftp('ftp://auser:apasswd@localhost.smhi.se/data/satellite/archive/') as (ftp, _):
+        ftp.return_value.login.assert_called_once_with('auser', 'apasswd')
 
-    ftp.return_value.login.assert_called_once_with('auser', 'apasswd')
+
+@pytest.mark.parametrize("destination,expected_filename",
+                         [("ftp://localhost.smhi.se/data/satellite/archive/somefile.ext", "STOR somefile.ext"),
+                          ("ftp://localhost.smhi.se/data/satellite/archive/", "STOR " + ORIGIN_FILENAME)])
+def test_ftp_mover_uses_destination_filename(file_to_move, destination, expected_filename):
+    """Check ftp movers uses requested destination filename when provided, origin filename otherwise."""
+    with _get_ftp(destination, file_to_move) as (ftp, ftp_mover):
+        ftp_mover.copy()
+        ftp.return_value.cwd.assert_called_once_with("/data/satellite/archive")
+        assert ftp.return_value.storbinary.call_args[0][0] == expected_filename
 
 
 def _get_s3_mover(origin, destination, **attrs):
@@ -115,7 +138,7 @@ def test_s3_copy_file_to_base(S3FileSystem):
     s3_mover = _get_s3_mover(ORIGIN, "s3://data-bucket/")
     s3_mover.copy()
 
-    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/filename.ext")
+    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/" + ORIGIN_FILENAME)
 
 
 @patch('trollmoves.movers.S3FileSystem')
@@ -124,7 +147,7 @@ def test_s3_copy_file_to_prefix_with_trailing_slash(S3FileSystem):
     s3_mover = _get_s3_mover(ORIGIN, "s3://data-bucket/upload/")
     s3_mover.copy()
 
-    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/upload/filename.ext")
+    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/upload/" + ORIGIN_FILENAME)
 
 
 @patch('trollmoves.movers.S3FileSystem')
@@ -161,7 +184,7 @@ def test_s3_copy_file_to_base_using_connection_parameters(S3FileSystem):
 
     s3_mover.copy()
 
-    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/filename.ext")
+    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/" + ORIGIN_FILENAME)
 
 
 @patch('trollmoves.movers.S3FileSystem')
@@ -173,7 +196,7 @@ def test_s3_copy_file_to_sub_directory(S3FileSystem):
     s3_mover.copy()
 
     S3FileSystem.return_value.mkdirs.assert_called_once_with("data-bucket/target/directory")
-    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/target/directory/filename.ext")
+    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/target/directory/" + ORIGIN_FILENAME)
 
 
 @patch('trollmoves.movers.S3FileSystem')
