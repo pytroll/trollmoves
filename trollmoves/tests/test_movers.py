@@ -104,6 +104,34 @@ def test_open_ftp_connection_credentials_in_url():
         ftp.return_value.login.assert_called_once_with('auser', 'apasswd')
 
 
+def test_ftp_mover_uses_destination_filename(tmp_path):
+    """Check ftp movers uses requested destination filename."""
+    origin = tmp_path / "filename.ext"
+    with open(origin, "w") as fd:
+        fd.write("Hej")
+
+    destination = 'ftp://localhost.smhi.se/data/satellite/archive/somefile.ext'
+
+    with _get_ftp(destination, origin) as (ftp, ftp_mover):
+
+        ftp_mover.copy()
+        ftp.return_value.cwd.assert_called_once_with("/data/satellite/archive")
+        assert ftp.return_value.storbinary.call_args[0][0] == "STOR somefile.ext"
+
+
+def test_ftp_mover_uses_origin_filename_if_destination_is_dir(tmp_path):
+    """Check ftp movers copies file with original filename if destination is a directory (ends with /)."""
+    origin = tmp_path / "filename.ext"
+    with open(origin, "w") as fd:
+        fd.write("Hej")
+
+    destination = 'ftp://localhost.smhi.se/data/satellite/archive/'
+    with _get_ftp(destination, origin) as (ftp, ftp_mover):
+        ftp_mover.copy()
+        ftp.return_value.cwd.assert_called_once_with("/data/satellite/archive")
+        assert ftp.return_value.storbinary.call_args[0][0] == "STOR filename.ext"
+
+
 def _get_s3_mover(origin, destination, **attrs):
     from trollmoves.movers import S3Mover
 
