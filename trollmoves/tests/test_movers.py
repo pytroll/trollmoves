@@ -27,6 +27,7 @@ from unittest.mock import patch
 from urllib.parse import urlunparse
 from urllib.parse import urlparse
 import yaml
+from contextlib import contextmanager
 
 import pytest
 
@@ -64,14 +65,17 @@ target-s3-example1:
 """
 
 
-def _get_ftp(destination):
+@contextmanager
+def _get_ftp(destination, origin=ORIGIN):
     from trollmoves.movers import FtpMover
 
     with patch('trollmoves.movers.FTP') as ftp:
-        ftp_mover = FtpMover(ORIGIN, destination)
-        ftp_mover.open_connection()
+        ftp_mover = FtpMover(origin, destination)
+        connection = ftp_mover.open_connection()
 
-    return ftp
+        yield ftp, ftp_mover
+
+        ftp_mover.delete_connection(connection)
 
 
 @patch('netrc.netrc')
@@ -79,9 +83,8 @@ def test_open_ftp_connection_with_netrc_no_netrc(netrc):
     """Check getting ftp connection when .netrc is missing."""
     netrc.side_effect = FileNotFoundError('Failed retrieve authentification details from netrc file')
 
-    ftp = _get_ftp('ftp://localhost.smhi.se/data/satellite/archive/')
-
-    ftp.return_value.login.assert_called_once_with()
+    with _get_ftp('ftp://localhost.smhi.se/data/satellite/archive/') as (ftp, _):
+        ftp.return_value.login.assert_called_once_with()
 
 
 @patch('netrc.netrc')
@@ -91,16 +94,14 @@ def test_open_ftp_connection_with_netrc(netrc):
     netrc.return_value.authenticators.return_value = (USERNAME, ACCOUNT, PASSWORD)
     netrc.side_effect = None
 
-    ftp = _get_ftp('ftp://localhost.smhi.se/data/satellite/archive/')
-
-    ftp.return_value.login.assert_called_once_with(USERNAME, PASSWORD)
+    with _get_ftp('ftp://localhost.smhi.se/data/satellite/archive/') as (ftp, _):
+        ftp.return_value.login.assert_called_once_with(USERNAME, PASSWORD)
 
 
 def test_open_ftp_connection_credentials_in_url():
     """Check getting ftp connection with credentials in the URL."""
-    ftp = _get_ftp('ftp://auser:apasswd@localhost.smhi.se/data/satellite/archive/')
-
-    ftp.return_value.login.assert_called_once_with('auser', 'apasswd')
+    with _get_ftp('ftp://auser:apasswd@localhost.smhi.se/data/satellite/archive/') as (ftp, _):
+        ftp.return_value.login.assert_called_once_with('auser', 'apasswd')
 
 
 def _get_s3_mover(origin, destination, **attrs):
