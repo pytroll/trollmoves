@@ -311,10 +311,11 @@ class TestSSHMovers(unittest.TestCase):
     @patch('scp.SCPClient', autospec=True)
     def test_move_it_destination_types(self, patch_scpclient, patch_connect):
         """Test move_it handles destination string and urlparse types."""
+        import os
         from trollmoves.movers import move_it
 
         expected_destination = urlparse("scp://hostname/path/name")
-        pathname = "/tmp/dest.ext"
+        pathname = os.path.join(self.dest_dir, "dest.ext")
 
         destination = "scp://hostname/path/name"
         ret_destination = move_it(pathname, destination)
