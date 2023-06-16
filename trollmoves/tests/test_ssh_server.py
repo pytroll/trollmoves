@@ -307,5 +307,22 @@ class TestSSHMovers(unittest.TestCase):
         mocked_scp_client.put.assert_called_once_with(self.origin, urlparse(self.destination_no_port).path)
 
 
+    @patch('paramiko.SSHClient.connect', autospec=True)
+    @patch('scp.SCPClient', autospec=True)
+    def test_move_it_destination_types(self, patch_scpclient, patch_connect):
+        """Test move_it handles destination string and urlparse types."""
+        from trollmoves.movers import move_it
+
+        expected_destination = urlparse("scp://hostname/path/name")
+        pathname = "/tmp/dest.ext"
+
+        destination = "scp://hostname/path/name"
+        ret_destination = move_it(pathname, destination)
+        assert ret_destination == expected_destination
+
+        urlparse_destination = urlparse("scp://hostname/path/name")
+        ret_destination = move_it(pathname, urlparse_destination)
+        assert ret_destination == expected_destination
+
 if __name__ == '__main__':
     unittest.main()

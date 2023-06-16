@@ -52,7 +52,10 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None, backup_
     be appended to the destination path.
 
     """
-    dest_url = urlparse(destination)
+    try:
+        dest_url = urlparse(destination)
+    except AttributeError:
+        dest_url = destination
     if rel_path is not None:
         new_path = os.path.join(dest_url.path, rel_path)
     else:
