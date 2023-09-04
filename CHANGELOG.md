@@ -1,3 +1,21 @@
+## Version 0.13.1 (2023/09/04)
+
+### Issues Closed
+
+* [Issue 175](https://github.com/pytroll/trollmoves/issues/175) - urlparse in move_it function fails to parse destination parameter when destination parameter already is a urllib.parse.ParseResult ([PR 176](https://github.com/pytroll/trollmoves/pull/176) by [@TAlonglong](https://github.com/TAlonglong))
+
+In this release 1 issue was closed.
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 176](https://github.com/pytroll/trollmoves/pull/176) - Handle destination as urlparse type. Add test. ([175](https://github.com/pytroll/trollmoves/issues/175))
+* [PR 174](https://github.com/pytroll/trollmoves/pull/174) - Fix ftp mover using destination filename when provided
+
+In this release 2 pull requests were closed.
+
+
 ###############################################################################
 ## Version 0.13.0 (2023/06/05)
 
