@@ -12,3 +12,4 @@ The following people have made contributions to this project:
 - [Panu Lahtinen (pnuu)](https://github.com/pnuu)
 - [Lars Ørum Rasmussen (loerum)](https://github.com/loerum)
 - [Martin Raspaud (mraspaud)](https://github.com/mraspaud)
+- [Dario Stelitano (bornagain1981)] (https://github.com/bornagain1981)
