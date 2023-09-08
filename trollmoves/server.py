@@ -945,7 +945,7 @@ def unpack(pathname,
         except Exception:
             LOGGER.exception("Could not decompress %s", pathname)
         else:
-            if delete.lower() in ["1", "yes", "true", "on"]:
+            if delete in ["1", "yes", "true", "on"]:
                 os.remove(pathname)
             return new_path
     return pathname
