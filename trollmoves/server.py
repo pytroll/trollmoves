@@ -931,7 +931,7 @@ def unpack(pathname,
            compression=None,
            working_directory=None,
            prog=None,
-           delete="False",
+           delete=False,
            **kwargs):
     """Unpack *pathname*."""
     del kwargs
