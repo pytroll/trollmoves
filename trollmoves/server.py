@@ -931,7 +931,7 @@ def unpack(pathname,
            compression=None,
            working_directory=None,
            prog=None,
-           delete="False",
+           delete=False,
            **kwargs):
     """Unpack *pathname*."""
     del kwargs
@@ -945,7 +945,8 @@ def unpack(pathname,
         except Exception:
             LOGGER.exception("Could not decompress %s", pathname)
         else:
-            if delete.lower() in ["1", "yes", "true", "on"]:
+            if delete in ["1", "yes", "true", "on"]:
+                delete = True
                 os.remove(pathname)
             return new_path
     return pathname
