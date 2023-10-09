@@ -300,3 +300,17 @@ def test_requestmanager_is_delete_set_True(patch_validate_file_pattern):
     port = 9876
     req_man = RequestManager(port, attrs={'delete': True})
     assert req_man._is_delete_set() is True
+
+
+def test_unpack_with_delete(tmp_path):
+    """Test unpacking with deletion."""
+    import bz2
+    zipped_file = tmp_path / "my_file.txt.bz2"
+    with open(zipped_file, 'wb') as fd_:
+        fd_.write(bz2.compress(b"hello world", 5))
+
+    from trollmoves.server import unpack
+
+    res = unpack(zipped_file, delete=True, working_directory=tmp_path, compression="bzip")
+    assert not os.path.exists(zipped_file)
+    assert res == os.path.splitext(zipped_file)[0]

@@ -129,12 +129,12 @@ class RequestManager(Thread):
     def push(self, message):
         """Reply to push request."""
         new_msg = self._move_files(message)
-        if new_msg and new_msg.type is not 'err':
+        if new_msg and new_msg.type != 'err':
             _destination = clean_url(new_msg.data['destination'])
             new_msg = Message(message.subject,
                               _get_push_message_type(message),
                               data=message.data.copy())
-            new_msg.data['destination'] = _destination 
+            new_msg.data['destination'] = _destination
 
         return new_msg
 
@@ -147,7 +147,7 @@ class RequestManager(Thread):
             if return_message is not None:
                 break
             return_message = self._move_file(pathname, message, rel_path)
-            if return_message.type is "err":
+            if return_message.type == "err":
                 break
 
         return return_message
@@ -931,7 +931,7 @@ def unpack(pathname,
            compression=None,
            working_directory=None,
            prog=None,
-           delete="False",
+           delete=False,
            **kwargs):
     """Unpack *pathname*."""
     del kwargs
@@ -945,7 +945,7 @@ def unpack(pathname,
         except Exception:
             LOGGER.exception("Could not decompress %s", pathname)
         else:
-            if delete.lower() in ["1", "yes", "true", "on"]:
+            if delete:
                 os.remove(pathname)
             return new_path
     return pathname
