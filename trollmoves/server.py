@@ -40,10 +40,10 @@ from urllib.parse import urlparse
 from contextlib import suppress
 
 import bz2
-import pyinotify
 from zmq import NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers.polling import PollingObserver
+from watchdog.observers import Observer
 from posttroll import get_context
 from posttroll.message import Message, MessageError
 from posttroll.publisher import get_own_ip
@@ -54,7 +54,7 @@ from trollmoves.client import DEFAULT_REQ_TIMEOUT
 from trollmoves.movers import move_it
 from trollmoves.utils import (clean_url, gen_dict_contains, gen_dict_extract,
                               is_file_local)
-from trollmoves.move_it_base import MoveItBase, create_publisher, EventHandler
+from trollmoves.move_it_base import MoveItBase, create_publisher
 from trollmoves.logging import add_logging_options_to_parser
 
 LOGGER = logging.getLogger(__name__)
@@ -742,17 +742,17 @@ def _get_notifier_builder(use_watchdog, val):
     if 'origin' in val:
         if use_watchdog:
             LOGGER.info("Using Watchdog notifier")
-            notifier_builder = create_watchdog_notifier
+            notifier_builder = create_watchdog_polling_notifier
         else:
-            LOGGER.info("Using inotify notifier")
-            notifier_builder = create_inotify_notifier
+            LOGGER.info("Using os-based notifier")
+            notifier_builder = create_watchdog_os_notifier
     elif 'listen' in val:
         notifier_builder = create_posttroll_notifier
 
     return notifier_builder
 
 
-def create_watchdog_notifier(attrs, publisher):
+def create_watchdog_polling_notifier(attrs, publisher):
     """Create a notifier from the specified configuration attributes *attrs*."""
     pattern = globify(attrs["origin"])
     opath = os.path.dirname(pattern)
@@ -816,44 +816,19 @@ def _get_notify_message_info(attrs, orig_pathname, pathname):
     return info
 
 
-def create_inotify_notifier(attrs, publisher):
+def create_watchdog_os_notifier(attrs, publisher):
     """Create a notifier from the specified configuration attributes *attrs*."""
-    tmask = (pyinotify.IN_CLOSE_WRITE |
-             pyinotify.IN_MOVED_TO |
-             pyinotify.IN_CREATE |
-             pyinotify.IN_DELETE)
-
-    wm_ = pyinotify.WatchManager()
-
     pattern = globify(attrs["origin"])
     opath = os.path.dirname(pattern)
 
-    if 'origin_inotify_base_dir_skip_levels' in attrs:
-        """If you need to inotify monitor for new directories within the origin
-        this attribute tells the server how many levels to skip from the origin
-        before staring to inorify monitor a directory
+    timeout = float(attrs.get("watchdog_timeout", 1.))
+    LOGGER.debug("Watchdog timeout: %.1f", timeout)
+    observer = Observer(timeout=timeout)
+    handler = WatchdogHandler(process_notify, publisher, pattern, attrs)
 
-        Eg. origin=/tmp/{platform_name_dir}_{start_time_dir:%Y%m%d_%H%M}_{orbit_number_dir:05d}/
-                   {sensor}_{platform_name}_{start_time:%Y%m%d_%H%M}_{orbit_number:05d}.{data_processing_level:3s}
+    observer.schedule(handler, opath)
 
-        and origin_inotify_base_dir_skip_levels=-2
-
-        this means the inotify monitor will use opath=/tmp"""
-        pattern_list = pattern.split('/')
-        pattern_join = os.path.join(*pattern_list[:int(attrs['origin_inotify_base_dir_skip_levels'])])
-        opath = os.path.join("/", pattern_join)
-        LOGGER.debug("Using %s as base path for pyinotify add_watch.", opath)
-
-    def process_notify_publish(pathname):
-        pattern = globify(attrs["origin"])
-        return process_notify(pathname, publisher, pattern, attrs)
-
-    tnotifier = pyinotify.ThreadedNotifier(
-        wm_, EventHandler(process_notify_publish, watchManager=wm_, tmask=tmask))
-
-    wm_.add_watch(opath, tmask)
-
-    return tnotifier, process_notify
+    return observer, process_notify
 
 
 def create_posttroll_notifier(attrs, publisher):
@@ -963,6 +938,6 @@ def parse_args(args=None):
                         help="Disable glob and handling of backlog of files at start/restart",
                         action='store_true')
     parser.add_argument("-w", "--watchdog", default=False, action="store_true",
-                        help="Use Watchdog instead of inotify")
+                        help="Use Watchdog polling instead of os-based notifying")
     add_logging_options_to_parser(parser, legacy=True)
     return parser.parse_args(args)

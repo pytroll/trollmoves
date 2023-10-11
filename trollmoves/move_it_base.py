@@ -113,7 +113,9 @@ class MoveItBase(ABC):
 def create_publisher(port, publisher_name):
     """Create a publisher using port *port* and start it."""
     LOGGER.info("Starting publisher on port %s.", str(port))
-    return Publisher("tcp://*:" + str(port), publisher_name).start()
+    publisher = Publisher("tcp://*:" + str(port), publisher_name)
+    publisher.start()
+    return publisher
 
 
 # Generic event handler

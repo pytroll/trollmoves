@@ -38,7 +38,7 @@ from trollmoves.server import MoveItServer, parse_args
 @patch("trollmoves.server.process_notify")
 def test_create_watchdog_notifier(process_notify):
     """Test creating a watchdog notifier."""
-    from trollmoves.server import create_watchdog_notifier
+    from trollmoves.server import create_watchdog_polling_notifier
 
     fname = "20200428_1000_foo.tif"
     fname_pattern = "{start_time:%Y%m%d_%H%M}_{product}.tif"
@@ -47,7 +47,7 @@ def test_create_watchdog_notifier(process_notify):
         pattern_path = os.path.join(tmpdir, fname_pattern)
         file_path = os.path.join(tmpdir, fname)
         attrs = {"origin": pattern_path}
-        observer, fun = create_watchdog_notifier(attrs, publisher)
+        observer, fun = create_watchdog_polling_notifier(attrs, publisher)
         observer.start()
 
         with open(os.path.join(file_path), "w") as fid:
@@ -62,17 +62,54 @@ def test_create_watchdog_notifier(process_notify):
     fun.assert_called_with(file_path, publisher, globify(pattern_path), attrs)
 
 
+def test_file_detected_with_inotify_is_published(tmp_path):
+    """Test that a file detected with inotify is published."""
+    from posttroll.testing import patched_publisher
+    from threading import Thread
+
+    test_file_path = tmp_path / "my_file.hdf"
+
+    config_file = f"""
+        [eumetcast-hrit-0deg]
+        origin={str(test_file_path)}
+        publisher_port=9010
+        topic=/some/hdf/file
+        delete=False
+    """
+    config_path = tmp_path / "config.ini"
+    with open(config_path, "w") as fd:
+        fd.write(config_file)
+
+    cmd_args = parse_args([str(config_path)])
+
+    with patched_publisher() as message_list:
+        server = MoveItServer(cmd_args)
+        server.reload_cfg_file(cmd_args.config_file)
+        thr = Thread(target=server.run)
+        thr.start()
+        with open(test_file_path, "w") as fd:
+            fd.write("hello!")
+
+        time.sleep(.1)
+        try:
+            assert len(message_list) == 1
+            assert str(test_file_path) in message_list[0]
+        finally:
+            server.chains_stop()
+            thr.join()
+
+
 @patch("trollmoves.server.WatchdogHandler")
 @patch("trollmoves.server.PollingObserver")
 @patch("trollmoves.server.process_notify")
 def test_create_watchdog_notifier_timeout_default(process_notify, PollingObserver, WatchdogHandler):
     """Test creating a watchdog notifier with default settings."""
-    from trollmoves.server import create_watchdog_notifier
+    from trollmoves.server import create_watchdog_polling_notifier
 
     attrs = {"origin": "/tmp"}
     publisher = ""
     # No timeout, the default should be used
-    observer, fun = create_watchdog_notifier(attrs, publisher)
+    observer, fun = create_watchdog_polling_notifier(attrs, publisher)
     PollingObserver.assert_called_with(timeout=1.0)
 
 
@@ -81,11 +118,11 @@ def test_create_watchdog_notifier_timeout_default(process_notify, PollingObserve
 @patch("trollmoves.server.process_notify")
 def test_create_watchdog_notifier_timeout_float_timeout(process_notify, PollingObserver, WatchdogHandler):
     """Test creating a watchdog notifier with default settings."""
-    from trollmoves.server import create_watchdog_notifier
+    from trollmoves.server import create_watchdog_polling_notifier
 
     attrs = {"origin": "/tmp", "watchdog_timeout": 2.0}
     publisher = ""
-    observer, fun = create_watchdog_notifier(attrs, publisher)
+    observer, fun = create_watchdog_polling_notifier(attrs, publisher)
     PollingObserver.assert_called_with(timeout=2.0)
 
 
@@ -94,11 +131,11 @@ def test_create_watchdog_notifier_timeout_float_timeout(process_notify, PollingO
 @patch("trollmoves.server.process_notify")
 def test_create_watchdog_notifier_timeout_string_timeout(process_notify, PollingObserver, WatchdogHandler):
     """Test creating a watchdog notifier with default settings."""
-    from trollmoves.server import create_watchdog_notifier
+    from trollmoves.server import create_watchdog_polling_notifier
 
     attrs = {"origin": "/tmp", "watchdog_timeout": "3.0"}
     publisher = ""
-    observer, fun = create_watchdog_notifier(attrs, publisher)
+    observer, fun = create_watchdog_polling_notifier(attrs, publisher)
     PollingObserver.assert_called_with(timeout=3.0)
 
 
