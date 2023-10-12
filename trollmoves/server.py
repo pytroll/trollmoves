@@ -38,6 +38,7 @@ from configparser import ConfigParser
 from queue import Empty, Queue
 from urllib.parse import urlparse
 from contextlib import suppress
+from functools import partial
 
 import bz2
 from zmq import NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
@@ -326,7 +327,7 @@ class AbstractMoveItServer(MoveItBase):
                                   notifier_builder)
         _disable_removed_chains(self.chains, new_chain_configs)
         LOGGER.debug("Reloaded config from %s", filename)
-        _process_old_files(old_glob, disable_backlog, self.publisher)
+        _process_old_files(old_glob, disable_backlog)
         LOGGER.debug("done reloading config")
 
     def _run(self):
@@ -546,26 +547,6 @@ def _collect_attribute_info(attrs):
     return info
 
 
-class WatchdogHandler(FileSystemEventHandler):
-    """Trigger processing on filesystem events."""
-
-    def __init__(self, fun, publisher, pattern, attrs):
-        """Initialize the processor."""
-        FileSystemEventHandler.__init__(self)
-        self.fun = fun
-        self.publisher = publisher
-        self.pattern = pattern
-        self.attrs = attrs
-
-    def on_created(self, event):
-        """Process file creation."""
-        self.fun(event.src_path, self.publisher, self.pattern, self.attrs)
-
-    def on_moved(self, event):
-        """Process a file being moved to the destination directory."""
-        self.fun(event.dest_path, self.publisher, self.pattern, self.attrs)
-
-
 def read_config(filename):
     """Read the config file called *filename*."""
     return _read_ini_config(filename)
@@ -754,24 +735,33 @@ def _get_notifier_builder(use_watchdog, val):
 
 def create_watchdog_polling_notifier(attrs, publisher):
     """Create a notifier from the specified configuration attributes *attrs*."""
+    return create_watchdog_notifier(attrs, publisher, PollingObserver)
+
+
+def create_watchdog_os_notifier(attrs, publisher):
+    """Create a notifier from the specified configuration attributes *attrs*."""
+    return create_watchdog_notifier(attrs, publisher, Observer)
+
+
+def create_watchdog_notifier(attrs, publisher, observer_class):
+    """Create a watchdog notifier."""
     pattern = globify(attrs["origin"])
     opath = os.path.dirname(pattern)
 
     timeout = float(attrs.get("watchdog_timeout", 1.))
     LOGGER.debug("Watchdog timeout: %.1f", timeout)
-    observer = PollingObserver(timeout=timeout)
-    handler = WatchdogHandler(process_notify, publisher, pattern, attrs)
+    observer = observer_class(timeout=timeout)
+    partial_process_notify = partial(process_notify, publisher, attrs)
+    handler = WatchdogCreationHandler(partial_process_notify, pattern)
 
     observer.schedule(handler, opath)
 
-    return observer, process_notify
+    return observer, partial_process_notify
 
 
-def process_notify(orig_pathname, publisher, pattern, attrs):
+def process_notify(orig_pathname, publisher, attrs):
     """Publish what we have."""
-    if not fnmatch.fnmatch(orig_pathname, pattern):
-        return
-    elif os.stat(orig_pathname).st_size == 0:
+    if os.stat(orig_pathname).st_size == 0:
         LOGGER.debug("Ignoring empty file: %s", orig_pathname)
         return
     else:
@@ -784,6 +774,35 @@ def process_notify(orig_pathname, publisher, pattern, attrs):
         msg = create_message_with_remote_fs_info(pathname, orig_pathname, attrs)
     publisher.send(str(msg))
     LOGGER.debug("Message sent: %s", str(msg))
+
+
+class WatchdogCreationHandler(FileSystemEventHandler):
+    """Trigger processing on filesystem events."""
+
+    def __init__(self, fun, pattern):
+        """Initialize the processor."""
+        super().__init__(self)
+        self.pattern = pattern
+        self.fun = fun
+
+    def dispatch(self, event):
+        """Dispatches events to the appropriate methods."""
+        if event.is_directory:
+            return
+        if hasattr(event, 'dest_path'):
+            pathname = os.fsdecode(event.dest_path)
+        elif event.src_path:
+            pathname = os.fsdecode(event.src_path)
+        if fnmatch.fnmatch(pathname, self.pattern):
+            super().dispatch(event)
+
+    def on_created(self, event):
+        """Process file creation."""
+        self.fun(event.src_path)
+
+    def on_moved(self, event):
+        """Process a file being moved to the destination directory."""
+        self.fun(event.dest_path)
 
 
 def create_message_with_request_info(pathname, orig_pathname, attrs):
@@ -816,21 +835,6 @@ def _get_notify_message_info(attrs, orig_pathname, pathname):
     return info
 
 
-def create_watchdog_os_notifier(attrs, publisher):
-    """Create a notifier from the specified configuration attributes *attrs*."""
-    pattern = globify(attrs["origin"])
-    opath = os.path.dirname(pattern)
-
-    timeout = float(attrs.get("watchdog_timeout", 1.))
-    LOGGER.debug("Watchdog timeout: %.1f", timeout)
-    observer = Observer(timeout=timeout)
-    handler = WatchdogHandler(process_notify, publisher, pattern, attrs)
-
-    observer.schedule(handler, opath)
-
-    return observer, process_notify
-
-
 def create_posttroll_notifier(attrs, publisher):
     """Create a notifier listening to posttroll messages from *attrs*."""
     listener = Listener(attrs, publisher)
@@ -845,22 +849,21 @@ def _disable_removed_chains(chains, new_chains):
         LOGGER.debug("Removed %s", key)
 
 
-def _process_old_files(old_glob, disable_backlog, publisher):
+def _process_old_files(old_glob, disable_backlog):
     if old_glob and not disable_backlog:
         time.sleep(3)
-        for pattern, fun, attrs in old_glob:
-            process_old_files(pattern, fun, publisher, attrs)
+        for pattern, fun, _ in old_glob:
+            process_old_files(pattern, fun)
 
 
-def process_old_files(pattern, fun, publisher, kwargs):
+def process_old_files(pattern, fun):
     """Process files from *pattern* with function *fun*."""
     fnames = glob.glob(pattern)
     if fnames:
-        # time.sleep(3)
         LOGGER.debug("Touching old files")
         for fname in fnames:
             if os.path.exists(fname):
-                fun(fname, publisher, pattern, kwargs)
+                fun(fname)
 
 
 def xrit(pathname, destination=None, cmd="./xRITDecompress"):

@@ -733,7 +733,6 @@ class Chain(Thread):
         self._config = config
         self._name = name
         self.publisher = None
-        self._pub_starter = None
         self.listeners = {}
         self.listener_died_event = Event()
         self.running = True
@@ -749,8 +748,8 @@ class Chain(Thread):
                     "port": self._config["publish_port"],
                     "nameservers": nameservers,
                 }
-                self._pub_starter = create_publisher_from_dict_config(pub_settings)
-                self.publisher = self._pub_starter.start()
+                self.publisher = create_publisher_from_dict_config(pub_settings)
+                self.publisher.start()
 
     def setup_listeners(self, keep_providers=None):
         """Set up the listeners."""
@@ -885,8 +884,7 @@ class Chain(Thread):
 
     def _stop_publisher(self):
         if self.publisher:
-            self._pub_starter.stop()
-            self._pub_starter = None
+            self.publisher.stop()
             self.publisher = None
 
     def restart(self):

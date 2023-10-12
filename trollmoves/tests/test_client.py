@@ -32,6 +32,7 @@ from collections import deque
 
 import pytest
 from posttroll.message import Message
+from posttroll.testing import patched_publisher
 from trollmoves.client import MoveItClient, parse_args
 
 
@@ -1557,6 +1558,17 @@ nameservers = localhost 192.168.0.10 192.168.0.11
 heartbeat_alarm_scale = 10
 """
 
+config_without_nameservers = b"""
+[eumetcast_hrit_0deg_ftp]
+providers = satmottag2:9010 satmottag:9010 explorer:9010
+destination = ftp:///data/geo_in/0deg/
+login = user:pass
+topic = /1b/hrit-segment/0deg
+publish_port = 2023
+nameservers = False
+heartbeat_alarm_scale = 10
+"""
+
 
 class TestMoveItClient:
     """Test the move it client."""
@@ -1601,6 +1613,28 @@ class TestMoveItClient:
             client = MoveItClient(cmd_args)
             client.signal_reload_cfg_file()
             mock_reload_config.assert_called_once()
+
+    def test_reloads_config_on_newly_written_config_file(self, tmp_path):
+        """Test that config can be reloaded with basic example."""
+        config_filename = tmp_path / "my_config_file.ini"
+        with open(config_filename, "wb") as fd:
+            fd.write(config_without_nameservers)
+        cmd_args = parse_args([os.fspath(config_filename)])
+        with patched_publisher():
+            client = MoveItClient(cmd_args)
+            from threading import Thread
+            thr = Thread(target=client.run)
+            thr.start()
+            try:
+                assert len(client.chains.keys()) == 0
+                with open(config_filename, "a"):
+                    pass
+                import time
+                time.sleep(.1)
+                assert len(client.chains.keys()) == 1
+            finally:
+                client.chains_stop()
+                thr.join()
 
 
 def test_create_local_dir():

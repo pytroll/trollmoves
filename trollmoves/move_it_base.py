@@ -25,15 +25,15 @@
 
 import logging
 import logging.handlers
-import os
 import signal
 import time
-from threading import Lock
 from abc import ABC, abstractmethod
 from contextlib import suppress
+from threading import Lock
 
-import pyinotify
 from posttroll.publisher import Publisher
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 
 LOGGER = logging.getLogger("move_it_base")
 
@@ -74,17 +74,14 @@ class MoveItBase(ABC):
 
     def setup_watchers(self):
         """Set up watcher for the configuration file."""
-        mask = (pyinotify.IN_CLOSE_WRITE |
-                pyinotify.IN_MOVED_TO |
-                pyinotify.IN_CREATE)
-        self.watchman = pyinotify.WatchManager()
+        config_file = self.cmd_args.config_file
 
-        event_handler = EventHandler(self.reload_cfg_file,
-                                     watchManager=self.watchman,
-                                     tmask=mask,
-                                     cmd_filename=self.cmd_args.config_file)
-        self.notifier = pyinotify.ThreadedNotifier(self.watchman, event_handler)
-        self.watchman.add_watch(os.path.dirname(self.cmd_args.config_file), mask)
+        observer = Observer()
+        handler = WatchdogChangeHandler(self.reload_cfg_file)
+
+        observer.schedule(handler, config_file)
+
+        self.notifier = observer
 
     def run(self):
         """Start the transfer chains."""
@@ -118,66 +115,18 @@ def create_publisher(port, publisher_name):
     return publisher
 
 
-# Generic event handler
-# fixme: on deletion, the file should be removed from the filecache
-class EventHandler(pyinotify.ProcessEvent):
-    """Handle events with a generic *fun* function."""
+class WatchdogChangeHandler(FileSystemEventHandler):
+    """Trigger processing on filesystem events."""
 
-    def __init__(self, fun, *args, **kwargs):
-        """Initialize event handler."""
-        pyinotify.ProcessEvent.__init__(self, *args, **kwargs)
-        self._cmd_filename = kwargs.get('cmd_filename')
-        if self._cmd_filename:
-            self._cmd_filename = os.path.abspath(self._cmd_filename)
-        self._fun = fun
-        self._watched_dirs = dict()
-        self._watchManager = kwargs.get('watchManager', None)
-        self._tmask = kwargs.get('tmask', None)
+    def __init__(self, fun):
+        """Initialize the processor."""
+        super().__init__()
+        self.fun = fun
 
-    def process_IN_CLOSE_WRITE(self, event):
-        """On closing after writing."""
-        if self._cmd_filename and os.path.abspath(
-                event.pathname) != self._cmd_filename:
-            return
-        self._fun(event.pathname)
+    def on_closed(self, event):
+        """Process file creation."""
+        self.fun(event.src_path)
 
-    def process_IN_CREATE(self, event):
-        """On closing after linking."""
-        if (event.mask & pyinotify.IN_ISDIR):
-            self._watched_dirs.update(self._watchManager.add_watch(event.pathname, self._tmask))
-
-        if self._cmd_filename and os.path.abspath(
-                event.pathname) != self._cmd_filename:
-            return
-        try:
-            if os.stat(event.pathname).st_nlink > 1:
-                self._fun(event.pathname)
-        except OSError:
-            return
-
-    def process_IN_MOVED_TO(self, event):
-        """On closing after moving."""
-        if self._cmd_filename and os.path.abspath(
-                event.pathname) != self._cmd_filename:
-            return
-        self._fun(event.pathname)
-
-    def process_IN_DELETE(self, event):
-        """On delete."""
-        if (event.mask & pyinotify.IN_ISDIR):
-            try:
-                try:
-                    self._watchManager.rm_watch(self._watched_dirs[event.pathname], quiet=False)
-                except pyinotify.WatchManagerError:
-                    # As the directory is deleted prior removing the
-                    # watch will cause a error message from
-                    # pyinotify. This is ok, so just pass the
-                    # exception.
-                    pass
-                finally:
-                    del self._watched_dirs[event.pathname]
-            except KeyError:
-                LOGGER.warning(
-                    "Dir %s not watched by inotify. Can not delete watch.",
-                    event.pathname)
-        return
+    def on_moved(self, event):
+        """Process a file being moved to the destination directory."""
+        self.fun(event.dest_path)

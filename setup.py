@@ -30,10 +30,8 @@ extras_require = {
         's3fs',
     ],
     'server': [
-        'inotify',
         'paramiko',
         'scp',
-        'watchdog',
     ],
     "remote_fs": ["pytroll-collectors>=0.13.0"],
 }
@@ -72,7 +70,7 @@ setup(name="trollmoves",
           'posttroll>=1.5.1',
           'trollsift',
           'netifaces',
-          'pyinotify',
+          'watchdog'
           'pyyaml',
           'pyzmq',
       ],
