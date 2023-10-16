@@ -75,13 +75,9 @@ class MoveItBase(ABC):
     def setup_watchers(self):
         """Set up watcher for the configuration file."""
         config_file = self.cmd_args.config_file
+        reload_function = self.reload_cfg_file
 
-        observer = Observer()
-        handler = WatchdogChangeHandler(self.reload_cfg_file)
-
-        observer.schedule(handler, config_file)
-
-        self.notifier = observer
+        self.notifier = create_notifier_for_file(config_file, reload_function)
 
     def run(self):
         """Start the transfer chains."""
@@ -107,9 +103,20 @@ class MoveItBase(ABC):
         raise NotImplementedError
 
 
+def create_notifier_for_file(file_to_watch, function_to_run_on_file):
+    """Create a notifier for a given file."""
+    observer = Observer()
+    handler = WatchdogChangeHandler(function_to_run_on_file)
+
+    observer.schedule(handler, file_to_watch)
+    return observer
+
+
 def create_publisher(port, publisher_name):
     """Create a publisher using port *port* and start it."""
     LOGGER.info("Starting publisher on port %s.", str(port))
+    if port is None:
+        return None
     publisher = Publisher("tcp://*:" + str(port), publisher_name)
     publisher.start()
     return publisher

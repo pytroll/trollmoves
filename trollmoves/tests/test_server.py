@@ -22,50 +22,25 @@
 
 """Test Trollmoves server."""
 
-from unittest.mock import MagicMock, patch
-import unittest
-from tempfile import TemporaryDirectory, NamedTemporaryFile
-import os
-from collections import deque
-import time
 import datetime as dt
+import os
+import time
+import unittest
+from collections import deque
+from tempfile import NamedTemporaryFile, TemporaryDirectory
+from unittest.mock import MagicMock, patch
+
 import pytest
-
 from trollsift import globify
+
 from trollmoves.server import MoveItServer, parse_args
-
-
-@patch("trollmoves.server.process_notify")
-def test_create_watchdog_notifier(process_notify):
-    """Test creating a watchdog notifier."""
-    from trollmoves.server import create_watchdog_polling_notifier
-
-    fname = "20200428_1000_foo.tif"
-    fname_pattern = "{start_time:%Y%m%d_%H%M}_{product}.tif"
-    publisher = "publisher"
-    with TemporaryDirectory() as tmpdir:
-        pattern_path = os.path.join(tmpdir, fname_pattern)
-        file_path = os.path.join(tmpdir, fname)
-        attrs = {"origin": pattern_path}
-        observer, fun = create_watchdog_polling_notifier(attrs, publisher)
-        observer.start()
-
-        with open(os.path.join(file_path), "w") as fid:
-            fid.write('')
-
-        # Wait for a while for the watchdog to register the event
-        time.sleep(2.0)
-
-        observer.stop()
-        observer.join()
-
-    fun.assert_called_with(file_path, publisher, globify(pattern_path), attrs)
 
 
 def test_file_detected_with_inotify_is_published(tmp_path):
     """Test that a file detected with inotify is published."""
-    from posttroll.testing import patched_publisher
     from threading import Thread
+
+    from posttroll.testing import patched_publisher
 
     test_file_path = tmp_path / "my_file.hdf"
 
@@ -90,7 +65,7 @@ def test_file_detected_with_inotify_is_published(tmp_path):
         with open(test_file_path, "w") as fd:
             fd.write("hello!")
 
-        time.sleep(.1)
+        time.sleep(.2)
         try:
             assert len(message_list) == 1
             assert str(test_file_path) in message_list[0]
@@ -99,62 +74,58 @@ def test_file_detected_with_inotify_is_published(tmp_path):
             thr.join()
 
 
-@patch("trollmoves.server.WatchdogHandler")
-@patch("trollmoves.server.PollingObserver")
-@patch("trollmoves.server.process_notify")
-def test_create_watchdog_notifier_timeout_default(process_notify, PollingObserver, WatchdogHandler):
-    """Test creating a watchdog notifier with default settings."""
+def test_create_watchdog_notifier(tmp_path):
+    """Test creating a polling notifier."""
     from trollmoves.server import create_watchdog_polling_notifier
 
-    attrs = {"origin": "/tmp"}
-    publisher = ""
-    # No timeout, the default should be used
-    observer, fun = create_watchdog_polling_notifier(attrs, publisher)
-    PollingObserver.assert_called_with(timeout=1.0)
+    fname = "20200428_1000_foo.tif"
+    fname_pattern = "{start_time:%Y%m%d_%H%M}_{product}.tif"
+    pattern_path = os.path.join(tmp_path, fname_pattern)
+    file_path = os.path.join(tmp_path, fname)
+    function_to_run = MagicMock()
+    observer = create_watchdog_polling_notifier(globify(pattern_path), function_to_run, timeout=.1)
+    observer.start()
+    with open(os.path.join(file_path), "w") as fid:
+        fid.write('')
+
+    # Wait for a while for the watchdog to register the event
+    time.sleep(.2)
+
+    observer.stop()
+    observer.join()
+
+    function_to_run.assert_called_with(file_path)
 
 
-@patch("trollmoves.server.WatchdogHandler")
+@pytest.mark.parametrize("config,expected_timeout",
+                         [({"origin": "/tmp"}, 1.0),
+                          ({"origin": "/tmp", "watchdog_timeout": 2.0}, 2.0),
+                          ({"origin": "/tmp", "watchdog_timeout": "3.0"}, 3.0),
+                          ])
 @patch("trollmoves.server.PollingObserver")
-@patch("trollmoves.server.process_notify")
-def test_create_watchdog_notifier_timeout_float_timeout(process_notify, PollingObserver, WatchdogHandler):
+def test_create_watchdog_notifier_timeout_default(PollingObserver, config, expected_timeout):
     """Test creating a watchdog notifier with default settings."""
-    from trollmoves.server import create_watchdog_polling_notifier
-
-    attrs = {"origin": "/tmp", "watchdog_timeout": 2.0}
-    publisher = ""
-    observer, fun = create_watchdog_polling_notifier(attrs, publisher)
-    PollingObserver.assert_called_with(timeout=2.0)
-
-
-@patch("trollmoves.server.WatchdogHandler")
-@patch("trollmoves.server.PollingObserver")
-@patch("trollmoves.server.process_notify")
-def test_create_watchdog_notifier_timeout_string_timeout(process_notify, PollingObserver, WatchdogHandler):
-    """Test creating a watchdog notifier with default settings."""
-    from trollmoves.server import create_watchdog_polling_notifier
-
-    attrs = {"origin": "/tmp", "watchdog_timeout": "3.0"}
-    publisher = ""
-    observer, fun = create_watchdog_polling_notifier(attrs, publisher)
-    PollingObserver.assert_called_with(timeout=3.0)
+    from trollmoves.server import Chain
+    chain = Chain("some_chain", config)
+    function_to_run = MagicMock()
+    chain.create_notifier(notifier_builder=None, use_polling=True, function_to_run_on_matching_files=function_to_run)
+    PollingObserver.assert_called_with(timeout=expected_timeout)
 
 
-@patch("trollmoves.server.file_cache", new_callable=deque)
-@patch("trollmoves.server.Message")
-def test_process_notify_not_matching_file(Message, file_cache):
-    """Test process_notify() with a file that doesn't match the configured pattern."""
-    from trollmoves.server import process_notify
+def test_handler_does_not_dispatch_files_not_matching_pattern():
+    """Test that the handle does not dispatch files that are not matching the pattern."""
+    from trollmoves.server import WatchdogCreationHandler
 
-    publisher = MagicMock()
-    not_matching_pattern = "bar"
+    function_to_run = MagicMock()
 
-    _ = _run_process_notify(process_notify, publisher, not_matching_pattern)
-
-    publisher.assert_not_called()
-    assert len(file_cache) == 0
+    handler = WatchdogCreationHandler(function_to_run, pattern="bar")
+    event = MagicMock()
+    event.dest_path = "foo"
+    event.is_directory = False
+    assert handler.dispatch(event) is None
 
 
-def _run_process_notify(process_notify, publisher, pattern=None):
+def _run_process_notify(process_notify, publisher):
     fname = "20200428_1000_foo.tif"
     fname_pattern = "{start_time:%Y%m%d_%H%M}_{product}.tif"
 
@@ -165,13 +136,11 @@ def _run_process_notify(process_notify, publisher, pattern=None):
                   "request_address": "localhost",
                   "request_port": "9001",
                   "topic": "/topic"}
-        if pattern is None:
-            pattern = globify(matching_pattern)
 
         with open(os.path.join(pathname), "w") as fid:
             fid.write('foo')
 
-        process_notify(pathname, publisher, pattern, kwargs)
+        process_notify(pathname, publisher, kwargs)
 
     return pathname, fname, kwargs
 
@@ -278,9 +247,10 @@ def test_requestmanager_run_valid_pytroll_message(patch_process_request,
                                                   patch_poller,
                                                   patch_get_context):
     """Test request manager run with valid address and payload."""
-    from zmq import POLLIN
-    from trollmoves.server import RequestManager
     from posttroll.message import _MAGICK
+    from zmq import POLLIN
+
+    from trollmoves.server import RequestManager
     payload = (_MAGICK +
                r'/test/1/2/3 info ras@hawaii 2008-04-11T22:13:22.123000 v1.01' +
                r' text/ascii "what' + r"'" + r's up doc"')
@@ -308,9 +278,11 @@ def test_requestmanager_run_MessageError_exception(patch_validate_file_pattern,
                                                    patch_get_context,
                                                    caplog):
     """Test request manager run with invalid payload causing a MessageError exception."""
-    from zmq import POLLIN
-    from trollmoves.server import RequestManager
     import logging
+
+    from zmq import POLLIN
+
+    from trollmoves.server import RequestManager
     patch_get_address_and_payload.return_value = "address", "fake_payload"
     port = 9876
     patch_poller.return_value = {'POLLIN': POLLIN}

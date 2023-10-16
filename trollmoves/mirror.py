@@ -22,21 +22,18 @@
 
 """All you need for mirroring."""
 import argparse
-import os
 import logging
-
-from urllib.parse import urlparse, urlunparse
+import os
 from threading import Lock, Timer
+from urllib.parse import urlparse, urlunparse
 
 from posttroll.message import Message
 from posttroll.publisher import get_own_ip
 
-from trollmoves.client import Listener
-from trollmoves.client import request_push
+from trollmoves.client import Listener, request_push
 from trollmoves.logging import add_logging_options_to_parser
-from trollmoves.server import RequestManager, Deleter, AbstractMoveItServer
 from trollmoves.move_it_base import create_publisher
-
+from trollmoves.server import AbstractMoveItServer, Deleter, RequestManager
 
 LOGGER = logging.getLogger(__name__)
 file_registry = {}
@@ -92,6 +89,7 @@ class MoveItMirror(AbstractMoveItServer):
         publisher = create_publisher(cmd_args.port, self.name)
         super().__init__(cmd_args, publisher=publisher)
         self.request_manager = MirrorRequestManager
+        self.function_to_run_on_matching_files = noop
 
     def reload_cfg_file(self, filename):
         """Reload the config file."""
@@ -108,7 +106,7 @@ class MoveItMirror(AbstractMoveItServer):
             attrs["publisher"] = publisher
         listeners = Listeners(attrs.pop("client_topic"), attrs.pop("providers"), **attrs)
 
-        return listeners, noop
+        return listeners
 
 
 def noop(*args, **kwargs):
