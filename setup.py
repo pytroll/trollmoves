@@ -22,8 +22,8 @@
 """Setup file."""
 
 from setuptools import setup
-import versioneer
 
+import versioneer
 
 extras_require = {
     's3': [
@@ -70,7 +70,7 @@ setup(name="trollmoves",
           'posttroll>=1.5.1',
           'trollsift',
           'netifaces',
-          'watchdog'
+          'watchdog',
           'pyyaml',
           'pyzmq',
       ],
