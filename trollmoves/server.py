@@ -32,6 +32,7 @@ import os
 import subprocess
 import tempfile
 import time
+import warnings
 from collections import deque
 from threading import Lock, Thread
 from configparser import ConfigParser
@@ -662,6 +663,9 @@ def _form_connection_parameters_dict(original):
         res["connection_parameters"] = {}
     for key in original.keys():
         if key in CONNECTION_CONFIG_ITEMS:
+            warnings.warn(
+                f"Consider using connection_parameters__{key} instead of {key}.",
+                category=UserWarning)
             res["connection_parameters"][key] = original[key]
             del res[key]
     return res

@@ -196,7 +196,8 @@ def test_read_config_ini_with_dicts():
     with NamedTemporaryFile(suffix=".ini") as config_file:
         config_file.write(CONFIG_INI)
         config_file.flush()
-        config = read_config(config_file.name)
+        with pytest.warns(UserWarning, match="Consider using connection_parameters__"):
+            config = read_config(config_file.name)
         eumetcast = config["eumetcast-hrit-0deg"]
         assert "origin" in eumetcast
         assert "request_port" in eumetcast
