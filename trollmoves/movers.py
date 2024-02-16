@@ -483,6 +483,27 @@ class S3Mover(Mover):
     changing the filename. The new destination filename will be the last part
     of the provided destination following the last slash ('/').
 
+    In the Trollmoves Server config, which is in .ini format, the connection parameters
+    and other dictionary-like items can be defined with douple underscore format::
+
+        connection_parameters__secret = secret
+        connection_parameters__client_kwargs__endpoint_url = https://endpoint.url
+        connection_parameters__client_kwargs__verify = false
+
+    will result in a nested dictionary item::
+
+        {
+            'connection_parameters': {
+                'secret': 'secret',
+                'client_kwargs': {
+                    'endpoint_url': 'https://endpoint.url',
+                    'verify': False
+                }
+            }
+        }
+
+    Note that boolean values are converted. No handling for numeric values have been implemented!
+
     """
 
     def copy(self):

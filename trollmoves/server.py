@@ -584,6 +584,7 @@ def _read_ini_config(filename):
         _parse_nameserver(res[section], cp_[section])
         _parse_addresses(res[section])
         _parse_delete(res[section], cp_[section])
+        res[section] = _create_config_sub_dicts(res[section])
         if not _check_origin_and_listen(res, section):
             continue
         if not _check_topic(res, section):
@@ -620,6 +621,34 @@ def _parse_delete(conf, raw_conf):
     val = raw_conf.getboolean("delete")
     if val is not None:
         conf["delete"] = val
+
+
+def _create_config_sub_dicts(original):
+    # Take a copy so we can modify the values if necessary
+    res = dict(original.items())
+    for key in original.keys():
+        parts = key.split("__")
+        if len(parts) > 1:
+            _create_dicts(res, parts, original[key])
+            del res[key]
+    return res
+
+
+def _create_dicts(res, parts, val):
+    cur = res
+    for part in parts[:-1]:
+        if part not in cur:
+            cur[part] = {}
+        cur = cur[part]
+    cur[parts[-1]] = _check_bool(val)
+
+
+def _check_bool(val):
+    if val.lower() in ["0", "false"]:
+        return False
+    elif val.lower() in ["1", "true"]:
+        return True
+    return val
 
 
 def _check_origin_and_listen(res, section):
