@@ -64,6 +64,8 @@ file_cache = deque(maxlen=61000)
 file_cache_lock = Lock()
 START_TIME = datetime.datetime.utcnow()
 
+CONNECTION_CONFIG_ITEMS = ["connection_uptime", "ssh_key_filename", "ssh_connection_timeout", "ssh_private_key_file"]
+
 
 class RequestManager(Thread):
     """Manage requests."""
@@ -165,7 +167,8 @@ class RequestManager(Thread):
         return_message = None
         try:
             destination = move_it(pathname, message.data['destination'],
-                                  self._attrs, rel_path=rel_path,
+                                  self._attrs["connection_parameters"],
+                                  rel_path=rel_path,
                                   backup_targets=message.data.get('backup_targets', None))
             message.data['destination'] = destination
         except Exception as err:
@@ -585,6 +588,7 @@ def _read_ini_config(filename):
         _parse_addresses(res[section])
         _parse_delete(res[section], cp_[section])
         res[section] = _create_config_sub_dicts(res[section])
+        res[section] = _form_connection_parameters_dict(res[section])
         if not _check_origin_and_listen(res, section):
             continue
         if not _check_topic(res, section):
@@ -649,6 +653,18 @@ def _check_bool(val):
     elif val.lower() in ["1", "true"]:
         return True
     return val
+
+
+def _form_connection_parameters_dict(original):
+    # Take a copy so we can modify the values if necessary
+    res = dict(original.items())
+    if "connection_parameters" not in res:
+        res["connection_parameters"] = {}
+    for key in original.keys():
+        if key in CONNECTION_CONFIG_ITEMS:
+            res["connection_parameters"][key] = original[key]
+            del res[key]
+    return res
 
 
 def _check_origin_and_listen(res, section):

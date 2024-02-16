@@ -502,7 +502,7 @@ class S3Mover(Mover):
             }
         }
 
-    Note that boolean values are converted. No handling for numeric values have been implemented!
+    Note that boolean values are converted. Numeric values are handled where they are used.
 
     """
 
@@ -510,8 +510,7 @@ class S3Mover(Mover):
         """Copy the file to a bucket."""
         if S3FileSystem is None:
             raise ImportError("S3Mover requires 's3fs' to be installed.")
-        connection_parameters = self.attrs.get("connection_parameters", {})
-        s3 = S3FileSystem(**connection_parameters)
+        s3 = S3FileSystem(**self.attrs)
         destination_file_path = self._get_destination()
         LOGGER.debug('destination_file_path = %s', destination_file_path)
         _create_s3_destination_path(s3, destination_file_path)

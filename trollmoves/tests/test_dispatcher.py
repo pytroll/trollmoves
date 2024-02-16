@@ -454,7 +454,7 @@ def test_get_destinations_single_destination(viirs_green_snow_message, dispatche
     assert len(res) == 1
     url, attrs, client = res[0]
     assert url == expected_url
-    assert attrs["connection_parameters"] == expected_attrs
+    assert attrs == expected_attrs
     assert client == "target1"
 
 
@@ -481,7 +481,7 @@ def _assert_get_destinations_res(res, expected_length, expected_url, expected_at
     assert len(res) == expected_length
     for i, (url, attrs, client) in enumerate(res):
         assert url == expected_url[i]
-        assert attrs["connection_parameters"] == expected_attrs[i]
+        assert attrs == expected_attrs[i]
         assert client == expected_client[i]
 
 
@@ -684,7 +684,7 @@ def test_create_dest_url_ssh_no_username(create_dest_url_message):
 
         expected_url = "ssh://server.target2.com/satellite/viirs/sat_201909190919_NOAA-20.tif"
         assert url == expected_url
-        assert params["connection_parameters"] == {'ssh_key_filename': '~/.ssh/rsa_id.pub'}
+        assert params == {'ssh_key_filename': '~/.ssh/rsa_id.pub'}
         assert client == "target2"
     finally:
         if dispatcher is not None:

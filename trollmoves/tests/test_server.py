@@ -178,6 +178,11 @@ publisher_port = 9010
 info = sensor=seviri;variant=0DEG
 topic = /1b/hrit-segment/0deg
 delete = False
+# Everything below this should end up in connection_parameters dict
+connection_uptime = 30
+ssh_key_filename = id_rsa.pub
+ssh_private_key_file = id_rsa
+ssh_connection_timeout = 30
 connection_parameters__secret = secret
 connection_parameters__client_kwargs__endpoint_url = https://endpoint.url
 connection_parameters__client_kwargs__verify = false
@@ -199,9 +204,18 @@ def test_read_config_ini_with_dicts():
         assert "info" in eumetcast
         assert "topic" in eumetcast
         assert "delete" in eumetcast
-        assert eumetcast["connection_parameters"]["secret"] == "secret"
-        assert eumetcast["connection_parameters"]["client_kwargs"]["endpoint_url"] == "https://endpoint.url"
-        assert eumetcast["connection_parameters"]["client_kwargs"]["verify"] is False
+        expected_conn_params = {
+            "secret": "secret",
+            "client_kwargs": {
+                "endpoint_url": "https://endpoint.url",
+                "verify": False,
+            },
+            "connection_uptime": "30",
+            "ssh_key_filename": "id_rsa.pub",
+            "ssh_private_key_file": "id_rsa",
+            "ssh_connection_timeout": "30",
+        }
+        assert eumetcast["connection_parameters"] == expected_conn_params
 
 
 class TestMoveItServer:
