@@ -277,7 +277,6 @@ class Dispatcher:
         config = self.config[client].copy()
         _verify_filepattern(config, msg)
         config.update(conf)
-        connection_parameters = config.get('connection_parameters')
 
         host = config['host']
 
@@ -289,7 +288,7 @@ class Dispatcher:
             metadata)
         parts = urlsplit(host)
         host_path = urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment))
-        return host_path, connection_parameters, client
+        return host_path, config, client
 
     def _get_file_messages_from_dataset_message(self, msg):
         """From a dataset type message create individual messages for each file in the dataset."""
