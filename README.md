@@ -23,7 +23,6 @@ destination given in the request.
 Required libraries:
 - ``netifaces``
 - ``posttroll``
-- ``pyinotify``
 - ``pyzmq``
 - ``trollsift``
 - ``watchdog``
@@ -58,7 +57,6 @@ which files are already handled, so duplicate transfers should not happen.
 Required libraries:
 - ``netifaces``
 - ``posttroll``
-- ``pyinotify``
 - ``pyzmq``
 - ``trollsift``
 
@@ -73,7 +71,6 @@ Server to temporary directory and further on to the external destination.
 Required libraries:
 - ``netifaces``
 - ``posttroll``
-- ``pyinotify``
 - ``pyzmq``
 - ``trollsift``
 - ``watchdog``
