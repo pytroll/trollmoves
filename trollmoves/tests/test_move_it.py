@@ -49,6 +49,8 @@ def test_move_it_moves_files(tmp_path):
 
 def test_move_it_published_a_message(tmp_path):
     """Test that move it is publishing messages when provided a port."""
+    from posttroll.message import Message
+
     input_dir = tmp_path / "in"
     output_dir = tmp_path / "out"
     os.mkdir(input_dir)
@@ -79,7 +81,7 @@ def test_move_it_published_a_message(tmp_path):
             move_it_thread.chains_stop()
 
     assert len(message_list) == 1
-    message = message_list[0]
+    message = Message(rawstr=message_list[0])
     assert message.type == "file"
     assert message.data == {"sensors": "seviri", "stream": "eumetcast", "number": "1",
                             "uri": str(output_dir / "bla1.txt"), "uid": "bla1.txt"}

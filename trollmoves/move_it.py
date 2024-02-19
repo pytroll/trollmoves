@@ -39,7 +39,7 @@ def publish_hook(pathname, dest_url, config, publisher):
     """Publish hook for move_it."""
     dest = os.path.join(dest_url.path, os.path.basename(pathname))
     msg = create_message_with_request_info(dest, pathname, config)
-    publisher.send(msg)
+    publisher.send(str(msg))
 
 
 def process_notify(pathname, publisher, chain_config):
