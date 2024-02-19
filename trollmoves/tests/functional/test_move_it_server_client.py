@@ -1,19 +1,20 @@
 """Acceptance tests for move it server/client."""
 
-from pytest_bdd import scenario, given, when, then
+import os
+import socket
+import time
+from datetime import datetime
+from pathlib import Path
+from threading import Thread
+
 import pytest
-from trollmoves.server import MoveItServer
-from trollmoves.server import parse_args as parse_args_server
+from posttroll.subscriber import Subscriber
+from pytest_bdd import given, scenario, then, when
+
 from trollmoves.client import MoveItClient
 from trollmoves.client import parse_args as parse_args_client
-from pathlib import Path
-from datetime import datetime
-import time
-import socket
-from threading import Thread
-from posttroll.subscriber import Subscriber
-
-import os
+from trollmoves.server import MoveItServer
+from trollmoves.server import parse_args as parse_args_server
 
 
 @pytest.fixture
@@ -243,7 +244,7 @@ def server_without_request_port_and_untarring(source_dir, tmp_path, free_port, r
 @given("Move it server with no request port is started with untarring option activated")
 def start_move_it_server_with_untarring(server_without_request_port_and_untarring):
     """Start a move_it_server instance without a request port."""
-    return server_without_request_port
+    return server_without_request_port_and_untarring
 
 
 @when("A new tar file arrives matching the pattern", target_fixture="moved_filename")
