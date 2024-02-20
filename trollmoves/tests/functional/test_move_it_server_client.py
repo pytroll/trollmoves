@@ -184,7 +184,7 @@ def start_move_it_server_without_request_port(server_without_request_port):
 @pytest.fixture
 def subscriber(free_port):
     """Create a subscriber."""
-    sub = Subscriber([f"tcp://localhost:{free_port}"], "")
+    sub = Subscriber([f"tcp://localhost:{free_port}"], "/1b/hrit-segment/0deg")
     yield sub(timeout=2)
     sub.close()
 
