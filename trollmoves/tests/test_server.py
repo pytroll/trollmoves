@@ -62,6 +62,9 @@ def test_file_detected_with_inotify_is_published(tmp_path):
         server.reload_cfg_file(cmd_args.config_file)
         thr = Thread(target=server.run)
         thr.start()
+
+        # Wait a bit so that the watcher is properly up and running
+        time.sleep(.2)
         with open(test_file_path, "w") as fd:
             fd.write("hello!")
 
@@ -85,6 +88,7 @@ def test_create_watchdog_notifier(tmp_path):
     function_to_run = MagicMock()
     observer = create_watchdog_polling_notifier(globify(pattern_path), function_to_run, timeout=.1)
     observer.start()
+
     with open(os.path.join(file_path), "w") as fid:
         fid.write('')
 
