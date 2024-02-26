@@ -761,7 +761,8 @@ def create_watchdog_notifier(pattern, function_to_run_on_matching_files, observe
     """Create a watchdog notifier."""
     opath = os.path.dirname(pattern)
     observer = observer_class()
-    handler = WatchdogCreationHandler(function_to_run_on_matching_files, pattern)
+    use_polling = observer_class.func is PollingObserver
+    handler = WatchdogCreationHandler(function_to_run_on_matching_files, pattern, use_polling=use_polling)
 
     observer.schedule(handler, opath)
 
@@ -793,11 +794,12 @@ def publish_file(orig_pathname, publisher, attrs, unpacked_pathname):
 class WatchdogCreationHandler(FileSystemEventHandler):
     """Trigger processing on filesystem events."""
 
-    def __init__(self, fun, pattern):
+    def __init__(self, fun, pattern, use_polling=False):
         """Initialize the processor."""
         super().__init__()
         self.pattern = pattern
         self.fun = fun
+        self.use_polling = use_polling
 
     def dispatch(self, event):
         """Dispatches events to the appropriate methods."""
@@ -812,6 +814,8 @@ class WatchdogCreationHandler(FileSystemEventHandler):
 
     def on_created(self, event):
         """Do nothing on file creation."""
+        if self.use_polling:
+            self.fun(event.src_path)
 
     def on_closed(self, event):
         """Process file closing."""
