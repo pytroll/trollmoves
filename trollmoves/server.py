@@ -813,7 +813,10 @@ class WatchdogCreationHandler(FileSystemEventHandler):
             super().dispatch(event)
 
     def on_created(self, event):
-        """Do nothing on file creation."""
+        """Process created files.
+
+        The function is called only when using polling observer.
+        """
         if self.use_polling:
             self.fun(event.src_path)
 
