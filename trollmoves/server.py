@@ -811,7 +811,10 @@ class WatchdogCreationHandler(FileSystemEventHandler):
             super().dispatch(event)
 
     def on_created(self, event):
-        """Process file creation."""
+        """Do nothing on file creation."""
+
+    def on_closed(self, event):
+        """Process file closing."""
         self.fun(event.src_path)
 
     def on_moved(self, event):
