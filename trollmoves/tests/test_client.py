@@ -329,8 +329,8 @@ def chain_config_with_one_item_nameservers_is_false(client_config_1_item_nameser
 
 @patch('os.remove')
 @patch('trollmoves.client.check_output')
-def test_unpack_xrit(check_output, remove):
-    """Test unpacking of Eumetsat SEVIRI XRIT/HRIT segments."""
+def test_unpack_xrit_decompressed_no_config(check_output, remove):
+    """Test unpacking of already decompressed xrit segments without config."""
     from trollmoves.client import unpack_xrit
 
     # No configured options
@@ -344,6 +344,16 @@ def test_unpack_xrit(check_output, remove):
     check_output.assert_not_called()
     remove.assert_not_called()
 
+
+@patch('os.remove')
+@patch('trollmoves.client.check_output')
+def test_unpack_xrit_compressed_no_config(check_output, remove):
+    """Test unpacking of xrit segments without config."""
+    from trollmoves.client import unpack_xrit
+
+    # No configured options
+    kwargs = {}
+
     # Compressed segment
     fname_in = "/tmp/H-000-MSG4__-MSG4________-IR_134___-000003___-201909031245-C_"
 
@@ -355,14 +365,28 @@ def test_unpack_xrit(check_output, remove):
         pass
     remove.assert_not_called()
 
-    # Define xritdecompressor path
+
+@patch('os.remove')
+@patch('trollmoves.client.check_output')
+def test_unpack_xrit_compressed_xritdecopressor(check_output, remove):
+    """Test unpacking of xrit segments."""
+    from trollmoves.client import unpack_xrit
+
     kwargs = {'xritdecompressor': '/path/to/xRITDecompress'}
+    fname_in = "/tmp/H-000-MSG4__-MSG4________-IR_134___-000003___-201909031245-C_"
     res = unpack_xrit(fname_in, **kwargs)
     check_output.assert_called_once_with(
         ['/path/to/xRITDecompress', fname_in], cwd=('/tmp'))
     remove.assert_not_called()
 
-    # Define also delete
+
+@patch('os.remove')
+@patch('trollmoves.client.check_output')
+def test_unpack_xrit_compressed_xritdecopressor_and_delete(check_output, remove):
+    """Test unpacking of xrit segments with file deletion."""
+    from trollmoves.client import unpack_xrit
+
+    fname_in = "/tmp/H-000-MSG4__-MSG4________-IR_134___-000003___-201909031245-C_"
     kwargs = {'delete': True, 'xritdecompressor': '/path/to/xRITDecompress'}
 
     res = unpack_xrit(fname_in, **kwargs)
