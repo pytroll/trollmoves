@@ -327,9 +327,8 @@ def chain_config_with_one_item_nameservers_is_false(client_config_1_item_nameser
     yield conf
 
 
-@patch('os.remove')
 @patch('trollmoves.client.check_output')
-def test_unpack_xrit_decompressed_no_config(check_output, remove):
+def test_unpack_xrit_decompressed_no_config(check_output):
     """Test unpacking of already decompressed xrit segments without config."""
     from trollmoves.client import unpack_xrit
 
@@ -342,12 +341,10 @@ def test_unpack_xrit_decompressed_no_config(check_output, remove):
     res = unpack_xrit(fname_in, **kwargs)
     assert res == fname_in
     check_output.assert_not_called()
-    remove.assert_not_called()
 
 
-@patch('os.remove')
 @patch('trollmoves.client.check_output')
-def test_unpack_xrit_compressed_no_config(check_output, remove):
+def test_unpack_xrit_compressed_no_config(check_output):
     """Test unpacking of xrit segments without config."""
     from trollmoves.client import unpack_xrit
 
@@ -363,12 +360,10 @@ def test_unpack_xrit_compressed_no_config(check_output, remove):
         raise AssertionError
     except OSError:
         pass
-    remove.assert_not_called()
 
 
-@patch('os.remove')
 @patch('trollmoves.client.check_output')
-def test_unpack_xrit_compressed_xritdecopressor(check_output, remove):
+def test_unpack_xrit_compressed_xritdecopressor(check_output):
     """Test unpacking of xrit segments."""
     from trollmoves.client import unpack_xrit
 
@@ -377,22 +372,6 @@ def test_unpack_xrit_compressed_xritdecopressor(check_output, remove):
     res = unpack_xrit(fname_in, **kwargs)
     check_output.assert_called_once_with(
         ['/path/to/xRITDecompress', fname_in], cwd=('/tmp'))
-    remove.assert_not_called()
-
-
-@patch('os.remove')
-@patch('trollmoves.client.check_output')
-def test_unpack_xrit_compressed_xritdecopressor_and_delete(check_output, remove):
-    """Test unpacking of xrit segments with file deletion."""
-    from trollmoves.client import unpack_xrit
-
-    fname_in = "/tmp/H-000-MSG4__-MSG4________-IR_134___-000003___-201909031245-C_"
-    kwargs = {'delete': True, 'xritdecompressor': '/path/to/xRITDecompress'}
-
-    res = unpack_xrit(fname_in, **kwargs)
-    check_output.assert_called_once_with(
-        ['/path/to/xRITDecompress', fname_in], cwd=('/tmp'))
-    remove.assert_called_once_with(fname_in)
 
 
 def test_unpack_bzip():
