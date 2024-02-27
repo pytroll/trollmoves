@@ -358,7 +358,7 @@ def test_unpack_xrit(check_output, remove):
     # Define xritdecompressor path
     kwargs = {'xritdecompressor': '/path/to/xRITDecompress'}
     res = unpack_xrit(fname_in, **kwargs)
-    assert check_output.called_once_with(
+    check_output.assert_called_once_with(
         ['/path/to/xRITDecompress', fname_in], cwd=('/tmp'))
     remove.assert_not_called()
 
@@ -366,9 +366,9 @@ def test_unpack_xrit(check_output, remove):
     kwargs = {'delete': True, 'xritdecompressor': '/path/to/xRITDecompress'}
 
     res = unpack_xrit(fname_in, **kwargs)
-    assert check_output.called_once_with(
+    check_output.assert_called_once_with(
         ['/path/to/xRITDecompress', fname_in], cwd=('/tmp'))
-    assert remove.called_once_with(fname_in)
+    remove.assert_called_once_with(fname_in)
 
 
 def test_unpack_bzip():
@@ -543,7 +543,7 @@ def test_unpack_and_create_local_message_xrit_compression_with_delete(unpackers)
     unpackers['xrit'].return_value = 'new_file1.png'
     with patch('os.remove') as remove:
         _ = unp(copy.copy(MSG_FILE_XRIT), LOCAL_DIR, **kwargs)
-    assert remove.called_once_with(os.path.join(LOCAL_DIR, MSG_FILE_XRIT.data['uid']))
+    remove.assert_called_once_with(os.path.join(LOCAL_DIR, MSG_FILE_XRIT.data['uid']))
     del kwargs['delete']
 
 
