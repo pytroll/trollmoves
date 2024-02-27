@@ -176,8 +176,8 @@ def test_s3_copy_file_to_base_using_connection_parameters(S3FileSystem):
     attrs = config['target-s3-example1']['connection_parameters']
 
     s3_mover = _get_s3_mover(ORIGIN, "s3://data-bucket/", **attrs)
-    assert s3_mover.attrs['client_kwargs'] == {'endpoint_url': 'https://minio-server.mydomain.se:9000',
-                                               'verify': False}
+    assert s3_mover.attrs['client_kwargs'] == {
+        'endpoint_url': 'https://minio-server.mydomain.se:9000', 'verify': False}
     assert s3_mover.attrs['secret'] == 'my-super-secret-key'
     assert s3_mover.attrs['key'] == 'my-access-key'
     assert s3_mover.attrs['use_ssl'] is True

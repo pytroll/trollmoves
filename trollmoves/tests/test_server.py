@@ -182,7 +182,7 @@ class TestDeleter(unittest.TestCase):
         Deleter(dict()).add('bla')
 
 
-config_file = b"""
+CONFIG_INI = b"""
 [eumetcast-hrit-0deg]
 origin = /local_disk/tellicast/received/MSGHRIT/H-000-{nominal_time:%Y%m%d%H%M}-{compressed:_<2s}
 request_port = 9094
@@ -190,7 +190,45 @@ publisher_port = 9010
 info = sensor=seviri;variant=0DEG
 topic = /1b/hrit-segment/0deg
 delete = False
+# Everything below this should end up in connection_parameters dict
+connection_uptime = 30
+ssh_key_filename = id_rsa.pub
+ssh_private_key_file = id_rsa
+ssh_connection_timeout = 30
+connection_parameters__secret = secret
+connection_parameters__client_kwargs__endpoint_url = https://endpoint.url
+connection_parameters__client_kwargs__verify = false
 """
+
+
+def test_read_config_ini_with_dicts():
+    """Test reading a config in ini format when dictionary values should be created."""
+    from trollmoves.server import read_config
+
+    with NamedTemporaryFile(suffix=".ini") as config_file:
+        config_file.write(CONFIG_INI)
+        config_file.flush()
+        with pytest.warns(UserWarning, match="Consider using connection_parameters__"):
+            config = read_config(config_file.name)
+        eumetcast = config["eumetcast-hrit-0deg"]
+        assert "origin" in eumetcast
+        assert "request_port" in eumetcast
+        assert "publisher_port" in eumetcast
+        assert "info" in eumetcast
+        assert "topic" in eumetcast
+        assert "delete" in eumetcast
+        expected_conn_params = {
+            "secret": "secret",
+            "client_kwargs": {
+                "endpoint_url": "https://endpoint.url",
+                "verify": False,
+            },
+            "connection_uptime": "30",
+            "ssh_key_filename": "id_rsa.pub",
+            "ssh_private_key_file": "id_rsa",
+            "ssh_connection_timeout": "30",
+        }
+        assert eumetcast["connection_parameters"] == expected_conn_params
 
 
 class TestMoveItServer:
@@ -207,7 +245,7 @@ class TestMoveItServer:
     def test_reloads_config_on_example_config(self, fake_publisher):
         """Test that config can be reloaded with basic example."""
         with NamedTemporaryFile() as temporary_config_file:
-            temporary_config_file.write(config_file)
+            temporary_config_file.write(CONFIG_INI)
             config_filename = temporary_config_file.name
             cmd_args = parse_args(["--port", "9999", config_filename])
             server = MoveItServer(cmd_args)
@@ -218,7 +256,7 @@ class TestMoveItServer:
     def test_reloads_config_calls_reload_config(self, mock_reload_config, mock_publisher):
         """Test that config file can be reloaded."""
         with NamedTemporaryFile() as temporary_config_file:
-            temporary_config_file.write(config_file)
+            temporary_config_file.write(CONFIG_INI)
             config_filename = temporary_config_file.name
             cmd_args = parse_args(["--port", "9999", config_filename])
             server = MoveItServer(cmd_args)
@@ -230,7 +268,7 @@ class TestMoveItServer:
     def test_signal_reloads_config_calls_reload_config(self, mock_reload_config, mock_publisher):
         """Test that config file can be reloaded through signal."""
         with NamedTemporaryFile() as temporary_config_file:
-            temporary_config_file.write(config_file)
+            temporary_config_file.write(CONFIG_INI)
             config_filename = temporary_config_file.name
             cmd_args = parse_args([config_filename])
             client = MoveItServer(cmd_args)
