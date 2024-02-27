@@ -37,11 +37,9 @@ moving/unpacking.
 Installation
 ------------
 
-This scripts needs pyinotify and argparse which are available on pypi, or via
-pip/easy_install (on redhat systems, install the packages python-inotify.noarch
-and python-argparse.noarch).  Other than this, the script doesn't need any
-installation, and can be run as is. If you wish though, you can install it to
-your standard python path with::
+This scripts needs watchdog and argparse which are available on pypi, or via
+pip. Other than this, the script doesn't need any installation, and can be run as is.
+If you wish though, you can install it to your standard python path with::
 
   python setup.py install
 

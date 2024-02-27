@@ -23,17 +23,18 @@
 """Test the trollmoves client."""
 
 import copy
-from unittest.mock import MagicMock, patch, call
-from tempfile import NamedTemporaryFile
 import os
 import time
-from threading import Thread
 from collections import deque
+from tempfile import NamedTemporaryFile
+from threading import Thread
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 from posttroll.message import Message
-from trollmoves.client import MoveItClient, parse_args
+from posttroll.testing import patched_publisher
 
+from trollmoves.client import MoveItClient, parse_args
 
 MSG_FILE = Message('/topic', 'file', {'uid': 'file1.png',
                                       'uri': '/tmp/file1.png'})
@@ -217,8 +218,8 @@ def _write_named_temporary_config(data):
 
 
 def _write_to_tar(file_to_add, remove_in_file=False, filename=None):
-    from tempfile import gettempdir
     import tarfile
+    from tempfile import gettempdir
 
     mode = 'a'
     if filename is None:
@@ -372,9 +373,10 @@ def test_unpack_xrit(check_output, remove):
 
 def test_unpack_bzip():
     """Test unpacking of bzip2 files."""
-    from trollmoves.client import unpack_bzip
-    from tempfile import gettempdir
     import bz2
+    from tempfile import gettempdir
+
+    from trollmoves.client import unpack_bzip
 
     try:
         # Write a bz2 file
@@ -614,8 +616,8 @@ def test_unpack_and_create_local_message_config_no_compression(compression_confi
 
     Case with using a configuration file without compression
     """
-    from trollmoves.client import unpack_and_create_local_message as unp
     from trollmoves.client import read_config
+    from trollmoves.client import unpack_and_create_local_message as unp
 
     try:
         config = read_config(compression_config)
@@ -636,8 +638,8 @@ def test_unpack_and_create_local_message_config_xrit_compression(unpackers, comp
 
     Case with using a configuration file with xrit compression
     """
-    from trollmoves.client import unpack_and_create_local_message as unp
     from trollmoves.client import read_config
+    from trollmoves.client import unpack_and_create_local_message as unp
 
     try:
         config = read_config(compression_config)
@@ -912,8 +914,9 @@ def test_add_to_file_cache_two_files(lock, file_cache):
 @patch('trollmoves.client.send_ack')
 def test_request_push_single_call(send_ack, send_request, clean_ongoing_transfer, file_cache, ongoing_transfers):
     """Test trollmoves.client.request_push() with a single file."""
-    from trollmoves.client import request_push
     from tempfile import gettempdir
+
+    from trollmoves.client import request_push
 
     clean_ongoing_transfer.return_value = [MSG_FILE2]
     send_request.return_value = [MSG_FILE2, 'localhost']
@@ -941,8 +944,9 @@ def test_request_push_single_call(send_ack, send_request, clean_ongoing_transfer
 @patch('trollmoves.client.send_ack')
 def test_request_push_backup_targets(send_ack, send_request, clean_ongoing_transfer, file_cache, ongoing_transfers):
     """Test trollmoves.client.request_push() with a single file."""
-    from trollmoves.client import request_push
     from tempfile import gettempdir
+
+    from trollmoves.client import request_push
 
     msg_file_backup_targets = MSG_FILE2
     msg_file_backup_targets.data['backup_targets'] = ['backup_host1', 'backup_host2']
@@ -972,8 +976,9 @@ def test_request_push_backup_targets(send_ack, send_request, clean_ongoing_trans
 @patch('trollmoves.client.send_ack')
 def test_request_push_duplicate_call(send_ack, send_request, clean_ongoing_transfer, file_cache, ongoing_transfers):
     """Test trollmoves.client.request_push() with duplicate files."""
-    from trollmoves.client import request_push
     from tempfile import gettempdir
+
+    from trollmoves.client import request_push
 
     clean_ongoing_transfer.return_value = [MSG_FILE2]
     send_request.return_value = [MSG_FILE2, 'localhost']
@@ -1261,7 +1266,8 @@ def test_reload_config_chain_not_recreated(Chain, request_push, client_config_1_
 @patch('trollmoves.client.CTimer')
 def test_add_request_push_timer(CTimer, hot_spare_timer_lock):
     """Test adding timer."""
-    from trollmoves.client import add_request_push_timer, ongoing_hot_spare_timers, request_push
+    from trollmoves.client import (add_request_push_timer,
+                                   ongoing_hot_spare_timers, request_push)
 
     # Mock timer
     timer = MagicMock()
@@ -1282,7 +1288,7 @@ def test_add_request_push_timer(CTimer, hot_spare_timer_lock):
 @patch('trollmoves.client.ongoing_transfers_lock')
 def test_iterate_messages(lock):
     """Test iterate_messages()."""
-    from trollmoves.client import ongoing_transfers, iterate_messages
+    from trollmoves.client import iterate_messages, ongoing_transfers
     values = ["bar", "baz"]
     ongoing_transfers["foo"] = values.copy()
     res = iterate_messages("foo")
@@ -1346,8 +1352,8 @@ def test_chain_listeners(Listener, create_publisher_from_dict_config, request_pu
 def test_chain_restart_dead_listeners(Listener, create_publisher_from_dict_config, request_push, caplog,
                                       chain_config_with_one_item):
     """Test the Chain object."""
-    from trollmoves.client import Chain
     import trollmoves.client
+    from trollmoves.client import Chain
 
     _mock_listener_for_chain_tests(Listener)
 
@@ -1380,8 +1386,8 @@ def test_chain_restart_dead_listeners(Listener, create_publisher_from_dict_confi
 def test_chain_listener_crashing_once(Listener, create_publisher_from_dict_config, request_push, caplog,
                                       chain_config_with_one_item):
     """Test the Chain object."""
-    from trollmoves.client import Chain
     import trollmoves.client
+    from trollmoves.client import Chain
 
     _mock_listener_for_chain_tests(Listener)
 
@@ -1411,8 +1417,8 @@ def test_chain_listener_crashing_once(Listener, create_publisher_from_dict_confi
 def test_chain_listener_crashing_all_the_time(Listener, create_publisher_from_dict_config, request_push,
                                               caplog, chain_config_with_one_item):
     """Test the Chain object."""
-    from trollmoves.client import Chain
     import trollmoves.client
+    from trollmoves.client import Chain
 
     def restart():
         return Listener
@@ -1557,6 +1563,17 @@ nameservers = localhost 192.168.0.10 192.168.0.11
 heartbeat_alarm_scale = 10
 """
 
+config_without_nameservers = b"""
+[eumetcast_hrit_0deg_ftp]
+providers = satmottag2:9010 satmottag:9010 explorer:9010
+destination = ftp:///data/geo_in/0deg/
+login = user:pass
+topic = /1b/hrit-segment/0deg
+publish_port = 2023
+nameservers = False
+heartbeat_alarm_scale = 10
+"""
+
 
 class TestMoveItClient:
     """Test the move it client."""
@@ -1602,11 +1619,34 @@ class TestMoveItClient:
             client.signal_reload_cfg_file()
             mock_reload_config.assert_called_once()
 
+    def test_reloads_config_on_newly_written_config_file(self, tmp_path):
+        """Test that config can be reloaded with basic example."""
+        config_filename = tmp_path / "my_config_file.ini"
+        with open(config_filename, "wb") as fd:
+            fd.write(config_without_nameservers)
+        cmd_args = parse_args([os.fspath(config_filename)])
+        with patched_publisher():
+            client = MoveItClient(cmd_args)
+            from threading import Thread
+            thr = Thread(target=client.run)
+            thr.start()
+            time.sleep(0.1)
+            try:
+                assert len(client.chains.keys()) == 0
+                with open(config_filename, "a"):
+                    pass
+                time.sleep(.1)
+                assert len(client.chains.keys()) == 1
+            finally:
+                client.chains_stop()
+                thr.join()
+
 
 def test_create_local_dir():
     """Test creation of local directory."""
-    from tempfile import mkdtemp
     import shutil
+    from tempfile import mkdtemp
+
     from trollmoves.client import create_local_dir
 
     destination = "ftp://server.foo/public_path/subdir/"
@@ -1668,8 +1708,9 @@ def test_make_uris_remote_destination_with_login():
 
 def test_make_uris_local_destination_with_ftp():
     """Test that the published messages are formulated correctly for local destinations provided with scheme."""
-    from trollmoves.client import make_uris
     import socket
+
+    from trollmoves.client import make_uris
 
     local_directory = "/san1/polar_in/regional/osisaf"
     destination = "ftp://" + socket.gethostname() + local_directory
@@ -1680,8 +1721,9 @@ def test_make_uris_local_destination_with_ftp():
 
 def test_make_uris_local_destination_with_ftp_and_login():
     """Test published messages for local destinations provided with scheme and login."""
-    from trollmoves.client import make_uris
     import socket
+
+    from trollmoves.client import make_uris
 
     user = "user1"
     password = "1234bleh"

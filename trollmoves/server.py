@@ -23,6 +23,7 @@
 
 """Classes and functions for Trollmoves server."""
 import argparse
+import bz2
 import datetime
 import errno
 import fnmatch
@@ -33,29 +34,29 @@ import subprocess
 import tempfile
 import time
 from collections import deque
-from threading import Lock, Thread
 from configparser import ConfigParser
-from queue import Empty, Queue
-from urllib.parse import urlparse
 from contextlib import suppress
+from functools import partial
+from queue import Empty, Queue
+from threading import Lock, Thread
+from urllib.parse import urlparse
 
-import bz2
-import pyinotify
-from zmq import NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
-from watchdog.events import FileSystemEventHandler
-from watchdog.observers.polling import PollingObserver
 from posttroll import get_context
 from posttroll.message import Message, MessageError
 from posttroll.publisher import get_own_ip
 from posttroll.subscriber import Subscribe
 from trollsift import globify, parse
+from watchdog.observers import Observer
+from watchdog.observers.polling import PollingObserver
+from zmq import NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
 
 from trollmoves.client import DEFAULT_REQ_TIMEOUT
+from trollmoves.logging import add_logging_options_to_parser
+from trollmoves.move_it_base import (MoveItBase, WatchdogChangeHandler,
+                                     WatchdogCreationHandler, create_publisher)
 from trollmoves.movers import move_it
 from trollmoves.utils import (clean_url, gen_dict_contains, gen_dict_extract,
                               is_file_local)
-from trollmoves.move_it_base import MoveItBase, create_publisher, EventHandler
-from trollmoves.logging import add_logging_options_to_parser
 
 LOGGER = logging.getLogger(__name__)
 
@@ -316,17 +317,17 @@ class AbstractMoveItServer(MoveItBase):
     def reload_config(self, filename,
                       notifier_builder=None,
                       disable_backlog=False,
-                      use_watchdog=False):
+                      use_polling=False):
         """Rebuild chains if needed (if the configuration changed) from *filename*."""
         LOGGER.debug("New config file detected: %s", filename)
 
         new_chain_configs = read_config(filename)
 
-        old_glob = _update_chains(self.chains, new_chain_configs, self.request_manager, use_watchdog, self.publisher,
-                                  notifier_builder)
+        old_glob = _update_chains(self.chains, new_chain_configs, self.request_manager, use_polling,
+                                  notifier_builder, self.function_to_run_on_matching_files)
         _disable_removed_chains(self.chains, new_chain_configs)
         LOGGER.debug("Reloaded config from %s", filename)
-        _process_old_files(old_glob, disable_backlog, self.publisher)
+        _process_old_files(old_glob, disable_backlog)
         LOGGER.debug("done reloading config")
 
     def _run(self):
@@ -335,6 +336,8 @@ class AbstractMoveItServer(MoveItBase):
         except ZMQError:
             if self.running:
                 raise
+        except AttributeError:
+            pass
 
 
 class MoveItServer(AbstractMoveItServer):
@@ -346,12 +349,13 @@ class MoveItServer(AbstractMoveItServer):
         publisher = create_publisher(cmd_args.port, self.name)
         super().__init__(cmd_args, publisher=publisher)
         self.request_manager = RequestManager
+        self.function_to_run_on_matching_files = partial(process_notify, publisher=self.publisher)
 
     def reload_cfg_file(self, filename):
         """Reload configuration file."""
         self.reload_config(filename,
                            disable_backlog=self.cmd_args.disable_backlog,
-                           use_watchdog=self.cmd_args.watchdog)
+                           use_polling=self.cmd_args.watchdog)
 
     def signal_reload_cfg_file(self, *args):
         """Handle reload signal."""
@@ -546,26 +550,6 @@ def _collect_attribute_info(attrs):
     return info
 
 
-class WatchdogHandler(FileSystemEventHandler):
-    """Trigger processing on filesystem events."""
-
-    def __init__(self, fun, publisher, pattern, attrs):
-        """Initialize the processor."""
-        FileSystemEventHandler.__init__(self)
-        self.fun = fun
-        self.publisher = publisher
-        self.pattern = pattern
-        self.attrs = attrs
-
-    def on_created(self, event):
-        """Process file creation."""
-        self.fun(event.src_path, self.publisher, self.pattern, self.attrs)
-
-    def on_moved(self, event):
-        """Process a file being moved to the destination directory."""
-        self.fun(event.dest_path, self.publisher, self.pattern, self.attrs)
-
-
 def read_config(filename):
     """Read the config file called *filename*."""
     return _read_ini_config(filename)
@@ -646,7 +630,8 @@ def _verify_publish_port(conf):
         conf["publish_port"] = 0
 
 
-def _update_chains(chains, new_chain_configs, manager, use_watchdog, publisher, notifier_builder):
+def _update_chains(chains, new_chain_configs, manager, use_polling, notifier_builder,
+                   function_to_run_on_matching_files):
     old_glob = []
     for chain_name, chain_config in new_chain_configs.items():
         chain_updated = False
@@ -661,10 +646,11 @@ def _update_chains(chains, new_chain_configs, manager, use_watchdog, publisher, 
         except ConfigError:
             continue
 
-        fun = chain.create_notifier_and_get_function(notifier_builder, use_watchdog, publisher)
+        chain.create_notifier(notifier_builder, use_polling, function_to_run_on_matching_files)
+        chain.start()
 
         if 'origin' in chain_config:
-            old_glob.append((globify(chain_config["origin"]), fun, chain_config))
+            old_glob.append((globify(chain_config["origin"]), chain.function_to_run, chain_config))
 
         if chain_updated:
             LOGGER.debug("Updated %s", chain_name)
@@ -675,14 +661,12 @@ def _update_chains(chains, new_chain_configs, manager, use_watchdog, publisher, 
 
 
 def _chains_are_identical(chains, new_chains, chain_name):
-    identical = True
     for config_key, config_value in new_chains[chain_name].items():
         if ((config_key not in ["notifier", "publisher"]) and
             ((config_key not in chains[chain_name].config) or
                 (chains[chain_name].config[config_key] != config_value))):
-            identical = False
-            break
-    return identical
+            return False
+    return True
 
 
 class Chain:
@@ -695,6 +679,7 @@ class Chain:
         self.request_manager = None
         self.notifier = None
         self.needs_manager = "request_port" in self.config
+        self.function_to_run = None
 
     def create_manager(self, manager):
         """Create a request manager."""
@@ -709,16 +694,24 @@ class Chain:
             LOGGER.error('Invalid config parameters in %s: %s', self.name, str(err))
             LOGGER.warning('Remove and skip %s', self.name)
             raise
-        self.request_manager.start()
 
-    def create_notifier_and_get_function(self, notifier_builder, use_watchdog, publisher):
+    def create_notifier(self, notifier_builder, use_polling, function_to_run_on_matching_files):
         """Create a notifier and get the function."""
         if notifier_builder is None:
-            notifier_builder = _get_notifier_builder(use_watchdog, self.config)
-        self.notifier, fun = notifier_builder(self.config, publisher)
-        self.notifier.start()
+            notifier_builder = _get_notifier_builder(use_polling, self.config)
 
-        return fun
+        self.function_to_run = partial(function_to_run_on_matching_files, chain_config=self.config)
+        pattern = globify(self.config["origin"])
+        timeout = float(self.config.get("watchdog_timeout", 1.))
+        LOGGER.debug("Watchdog timeout: %.1f", timeout)
+
+        self.notifier = notifier_builder(pattern, self.function_to_run, timeout)
+
+    def start(self):
+        """Start the chain."""
+        if self.request_manager is not None:
+            self.request_manager.start()
+        self.notifier.start()
 
     def stop(self):
         """Stop the chain."""
@@ -738,50 +731,63 @@ def _add_chain(chains, chain_name, chain_config, manager):
     return current_chain
 
 
-def _get_notifier_builder(use_watchdog, val):
-    if 'origin' in val:
-        if use_watchdog:
+def _get_notifier_builder(use_polling, chain_config):
+    if 'origin' in chain_config:
+        if use_polling:
             LOGGER.info("Using Watchdog notifier")
-            notifier_builder = create_watchdog_notifier
+            notifier_builder = create_watchdog_polling_notifier
         else:
-            LOGGER.info("Using inotify notifier")
-            notifier_builder = create_inotify_notifier
-    elif 'listen' in val:
+            LOGGER.info("Using os-based notifier")
+            notifier_builder = create_watchdog_os_notifier
+    elif 'listen' in chain_config:
         notifier_builder = create_posttroll_notifier
 
     return notifier_builder
 
 
-def create_watchdog_notifier(attrs, publisher):
+def create_watchdog_polling_notifier(pattern, function_to_run_on_matching_files, timeout=1.0):
     """Create a notifier from the specified configuration attributes *attrs*."""
-    pattern = globify(attrs["origin"])
-    opath = os.path.dirname(pattern)
+    observer_class = partial(PollingObserver, timeout=timeout)
+    handler_class = WatchdogCreationHandler
+    return create_watchdog_notifier(pattern, function_to_run_on_matching_files, observer_class, handler_class)
 
-    timeout = float(attrs.get("watchdog_timeout", 1.))
-    LOGGER.debug("Watchdog timeout: %.1f", timeout)
-    observer = PollingObserver(timeout=timeout)
-    handler = WatchdogHandler(process_notify, publisher, pattern, attrs)
+
+def create_watchdog_os_notifier(pattern, function_to_run_on_matching_files, timeout=1.0):
+    """Create a notifier from the specified configuration attributes *attrs*."""
+    observer_class = partial(Observer, timeout=timeout, generate_full_events=True)
+    handler_class = WatchdogChangeHandler
+    return create_watchdog_notifier(pattern, function_to_run_on_matching_files, observer_class, handler_class)
+
+
+def create_watchdog_notifier(pattern, function_to_run_on_matching_files, observer_class, handler_class):
+    """Create a watchdog notifier."""
+    opath = os.path.dirname(pattern)
+    observer = observer_class()
+    handler = handler_class(function_to_run_on_matching_files, pattern)
 
     observer.schedule(handler, opath)
 
-    return observer, process_notify
+    return observer
 
 
-def process_notify(orig_pathname, publisher, pattern, attrs):
+def process_notify(orig_pathname, publisher, chain_config):
     """Publish what we have."""
-    if not fnmatch.fnmatch(orig_pathname, pattern):
-        return
-    elif os.stat(orig_pathname).st_size == 0:
+    if os.stat(orig_pathname).st_size == 0:
         LOGGER.debug("Ignoring empty file: %s", orig_pathname)
         return
     else:
         LOGGER.debug('We have a match: %s', orig_pathname)
 
-    pathname = unpack(orig_pathname, **attrs)
+    pathname = unpack(orig_pathname, **chain_config)
+    publish_file(orig_pathname, publisher, chain_config, pathname)
+
+
+def publish_file(orig_pathname, publisher, attrs, unpacked_pathname):
+    """Publish a file."""
     if "request_port" in attrs:
-        msg = create_message_with_request_info(pathname, orig_pathname, attrs)
+        msg = create_message_with_request_info(unpacked_pathname, orig_pathname, attrs)
     else:
-        msg = create_message_with_remote_fs_info(pathname, orig_pathname, attrs)
+        msg = create_message_with_remote_fs_info(unpacked_pathname, orig_pathname, attrs)
     publisher.send(str(msg))
     LOGGER.debug("Message sent: %s", str(msg))
 
@@ -797,7 +803,8 @@ def create_message_with_request_info(pathname, orig_pathname, attrs):
 
 def create_message_with_remote_fs_info(pathname, orig_pathname, attrs):
     """Create a message containing remote filesystem info."""
-    from pytroll_collectors.fsspec_to_message import extract_local_files_to_message_for_remote_use
+    from pytroll_collectors.fsspec_to_message import \
+        extract_local_files_to_message_for_remote_use
     msg = extract_local_files_to_message_for_remote_use(pathname, attrs['topic'], attrs.get("unpack"))
     info = _collect_attribute_info(attrs)
     info.update(parse(attrs["origin"], orig_pathname))
@@ -816,46 +823,6 @@ def _get_notify_message_info(attrs, orig_pathname, pathname):
     return info
 
 
-def create_inotify_notifier(attrs, publisher):
-    """Create a notifier from the specified configuration attributes *attrs*."""
-    tmask = (pyinotify.IN_CLOSE_WRITE |
-             pyinotify.IN_MOVED_TO |
-             pyinotify.IN_CREATE |
-             pyinotify.IN_DELETE)
-
-    wm_ = pyinotify.WatchManager()
-
-    pattern = globify(attrs["origin"])
-    opath = os.path.dirname(pattern)
-
-    if 'origin_inotify_base_dir_skip_levels' in attrs:
-        """If you need to inotify monitor for new directories within the origin
-        this attribute tells the server how many levels to skip from the origin
-        before staring to inorify monitor a directory
-
-        Eg. origin=/tmp/{platform_name_dir}_{start_time_dir:%Y%m%d_%H%M}_{orbit_number_dir:05d}/
-                   {sensor}_{platform_name}_{start_time:%Y%m%d_%H%M}_{orbit_number:05d}.{data_processing_level:3s}
-
-        and origin_inotify_base_dir_skip_levels=-2
-
-        this means the inotify monitor will use opath=/tmp"""
-        pattern_list = pattern.split('/')
-        pattern_join = os.path.join(*pattern_list[:int(attrs['origin_inotify_base_dir_skip_levels'])])
-        opath = os.path.join("/", pattern_join)
-        LOGGER.debug("Using %s as base path for pyinotify add_watch.", opath)
-
-    def process_notify_publish(pathname):
-        pattern = globify(attrs["origin"])
-        return process_notify(pathname, publisher, pattern, attrs)
-
-    tnotifier = pyinotify.ThreadedNotifier(
-        wm_, EventHandler(process_notify_publish, watchManager=wm_, tmask=tmask))
-
-    wm_.add_watch(opath, tmask)
-
-    return tnotifier, process_notify
-
-
 def create_posttroll_notifier(attrs, publisher):
     """Create a notifier listening to posttroll messages from *attrs*."""
     listener = Listener(attrs, publisher)
@@ -870,22 +837,21 @@ def _disable_removed_chains(chains, new_chains):
         LOGGER.debug("Removed %s", key)
 
 
-def _process_old_files(old_glob, disable_backlog, publisher):
+def _process_old_files(old_glob, disable_backlog):
     if old_glob and not disable_backlog:
         time.sleep(3)
-        for pattern, fun, attrs in old_glob:
-            process_old_files(pattern, fun, publisher, attrs)
+        for pattern, fun, _ in old_glob:
+            process_old_files(pattern, fun)
 
 
-def process_old_files(pattern, fun, publisher, kwargs):
+def process_old_files(pattern, fun):
     """Process files from *pattern* with function *fun*."""
     fnames = glob.glob(pattern)
     if fnames:
-        # time.sleep(3)
         LOGGER.debug("Touching old files")
         for fname in fnames:
             if os.path.exists(fname):
-                fun(fname, publisher, pattern, kwargs)
+                fun(fname)
 
 
 def xrit(pathname, destination=None, cmd="./xRITDecompress"):
@@ -951,18 +917,18 @@ def unpack(pathname,
     return pathname
 
 
-def parse_args(args=None):
+def parse_args(args=None, default_port=9010):
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser()
     parser.add_argument("config_file",
                         help="The configuration file to run on.")
     parser.add_argument("-p", "--port",
                         help="The port to publish on. 9010 is the default",
-                        default=9010)
+                        default=default_port)
     parser.add_argument("--disable-backlog",
                         help="Disable glob and handling of backlog of files at start/restart",
                         action='store_true')
     parser.add_argument("-w", "--watchdog", default=False, action="store_true",
-                        help="Use Watchdog instead of inotify")
+                        help="Use Watchdog polling instead of os-based notifying")
     add_logging_options_to_parser(parser, legacy=True)
     return parser.parse_args(args)

@@ -22,18 +22,16 @@
 """Setup file."""
 
 from setuptools import setup
-import versioneer
 
+import versioneer
 
 extras_require = {
     's3': [
         's3fs',
     ],
     'server': [
-        'inotify',
         'paramiko',
         'scp',
-        'watchdog',
     ],
     "remote_fs": ["pytroll-collectors>=0.13.0"],
 }
@@ -72,7 +70,7 @@ setup(name="trollmoves",
           'posttroll>=1.5.1',
           'trollsift',
           'netifaces',
-          'pyinotify',
+          'watchdog!=4.0.0',
           'pyyaml',
           'pyzmq',
       ],
