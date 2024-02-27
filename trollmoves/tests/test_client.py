@@ -363,8 +363,8 @@ def test_unpack_xrit_compressed_no_config(check_output):
 
 
 @patch('trollmoves.client.check_output')
-def test_unpack_xrit_compressed_xritdecopressor(check_output):
-    """Test unpacking of xrit segments."""
+def test_unpack_xrit_compressed_xritdecompressor(check_output):
+    """Test unpacking of xrit segments when xritdecompressor is defined."""
     from trollmoves.client import unpack_xrit
 
     kwargs = {'xritdecompressor': '/path/to/xRITDecompress'}
