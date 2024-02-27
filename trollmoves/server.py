@@ -46,14 +46,14 @@ from posttroll.message import Message, MessageError
 from posttroll.publisher import get_own_ip
 from posttroll.subscriber import Subscribe
 from trollsift import globify, parse
-from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from watchdog.observers.polling import PollingObserver
 from zmq import NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
 
 from trollmoves.client import DEFAULT_REQ_TIMEOUT
 from trollmoves.logging import add_logging_options_to_parser
-from trollmoves.move_it_base import MoveItBase, create_publisher
+from trollmoves.move_it_base import (MoveItBase, WatchdogChangeHandler,
+                                     WatchdogCreationHandler, create_publisher)
 from trollmoves.movers import move_it
 from trollmoves.utils import (clean_url, gen_dict_contains, gen_dict_extract,
                               is_file_local)
@@ -748,21 +748,22 @@ def _get_notifier_builder(use_polling, chain_config):
 def create_watchdog_polling_notifier(pattern, function_to_run_on_matching_files, timeout=1.0):
     """Create a notifier from the specified configuration attributes *attrs*."""
     observer_class = partial(PollingObserver, timeout=timeout)
-    return create_watchdog_notifier(pattern, function_to_run_on_matching_files, observer_class)
+    handler_class = WatchdogCreationHandler
+    return create_watchdog_notifier(pattern, function_to_run_on_matching_files, observer_class, handler_class)
 
 
 def create_watchdog_os_notifier(pattern, function_to_run_on_matching_files, timeout=1.0):
     """Create a notifier from the specified configuration attributes *attrs*."""
-    observer_class = partial(Observer, timeout=timeout)
-    return create_watchdog_notifier(pattern, function_to_run_on_matching_files, observer_class)
+    observer_class = partial(Observer, timeout=timeout, generate_full_events=True)
+    handler_class = WatchdogChangeHandler
+    return create_watchdog_notifier(pattern, function_to_run_on_matching_files, observer_class, handler_class)
 
 
-def create_watchdog_notifier(pattern, function_to_run_on_matching_files, observer_class):
+def create_watchdog_notifier(pattern, function_to_run_on_matching_files, observer_class, handler_class):
     """Create a watchdog notifier."""
     opath = os.path.dirname(pattern)
     observer = observer_class()
-    use_polling = observer_class.func is PollingObserver
-    handler = WatchdogCreationHandler(function_to_run_on_matching_files, pattern, use_polling=use_polling)
+    handler = handler_class(function_to_run_on_matching_files, pattern)
 
     observer.schedule(handler, opath)
 
@@ -789,44 +790,6 @@ def publish_file(orig_pathname, publisher, attrs, unpacked_pathname):
         msg = create_message_with_remote_fs_info(unpacked_pathname, orig_pathname, attrs)
     publisher.send(str(msg))
     LOGGER.debug("Message sent: %s", str(msg))
-
-
-class WatchdogCreationHandler(FileSystemEventHandler):
-    """Trigger processing on filesystem events."""
-
-    def __init__(self, fun, pattern, use_polling=False):
-        """Initialize the processor."""
-        super().__init__()
-        self.pattern = pattern
-        self.fun = fun
-        self.use_polling = use_polling
-
-    def dispatch(self, event):
-        """Dispatches events to the appropriate methods."""
-        if event.is_directory:
-            return
-        if hasattr(event, 'dest_path'):
-            pathname = os.fsdecode(event.dest_path)
-        elif event.src_path:
-            pathname = os.fsdecode(event.src_path)
-        if fnmatch.fnmatch(pathname, self.pattern):
-            super().dispatch(event)
-
-    def on_created(self, event):
-        """Process created files.
-
-        The function is called only when using polling observer.
-        """
-        if self.use_polling:
-            self.fun(event.src_path)
-
-    def on_closed(self, event):
-        """Process file closing."""
-        self.fun(event.src_path)
-
-    def on_moved(self, event):
-        """Process a file being moved to the destination directory."""
-        self.fun(event.dest_path)
 
 
 def create_message_with_request_info(pathname, orig_pathname, attrs):

@@ -82,11 +82,13 @@ def test_create_watchdog_notifier(tmp_path):
     from trollmoves.server import create_watchdog_polling_notifier
 
     fname = "20200428_1000_foo.tif"
-    fname_pattern = "{start_time:%Y%m%d_%H%M}_{product}.tif"
-    pattern_path = os.path.join(tmp_path, fname_pattern)
-    file_path = os.path.join(tmp_path, fname)
+    file_path = tmp_path / fname
+
+    fname_pattern = tmp_path / "{start_time:%Y%m%d_%H%M}_{product}.tif"
+    pattern_path = tmp_path / fname_pattern
+
     function_to_run = MagicMock()
-    observer = create_watchdog_polling_notifier(globify(pattern_path), function_to_run, timeout=.1)
+    observer = create_watchdog_polling_notifier(globify(str(pattern_path)), function_to_run, timeout=.1)
     observer.start()
 
     with open(os.path.join(file_path), "w") as fid:
@@ -98,7 +100,7 @@ def test_create_watchdog_notifier(tmp_path):
     observer.stop()
     observer.join()
 
-    function_to_run.assert_called_with(file_path)
+    function_to_run.assert_called_with(str(file_path))
 
 
 @pytest.mark.parametrize("config,expected_timeout",

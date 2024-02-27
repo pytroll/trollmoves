@@ -17,16 +17,7 @@ info=sensors=seviri;stream=eumetcast
 
 def test_move_it_moves_files(tmp_path):
     """Test that move it moves a file."""
-    input_dir = tmp_path / "in"
-    output_dir = tmp_path / "out"
-    os.mkdir(input_dir)
-    os.mkdir(output_dir)
-    origin = "origin=" + str(input_dir / "bla{number:1s}.txt")
-    destinations = "destinations=" + str(output_dir)
-    local_move_it_config = "\n".join([move_it_config_template, origin, destinations])
-    config_file = tmp_path / "move_it.cfg"
-    with open(config_file, "w") as fd:
-        fd.write(local_move_it_config)
+    input_dir, output_dir, config_file = create_config_file(tmp_path)
 
     cmd_args = parse_args([str(config_file)], default_port=None)
     move_it_thread = MoveItSimple(cmd_args)
@@ -47,10 +38,8 @@ def test_move_it_moves_files(tmp_path):
         move_it_thread.chains_stop()
 
 
-def test_move_it_published_a_message(tmp_path):
-    """Test that move it is publishing messages when provided a port."""
-    from posttroll.message import Message
-
+def create_config_file(tmp_path):
+    """Create a move_it config file."""
     input_dir = tmp_path / "in"
     output_dir = tmp_path / "out"
     os.mkdir(input_dir)
@@ -61,6 +50,13 @@ def test_move_it_published_a_message(tmp_path):
     config_file = tmp_path / "move_it.cfg"
     with open(config_file, "w") as fd:
         fd.write(local_move_it_config)
+    return input_dir, output_dir, config_file
+
+
+def test_move_it_published_a_message(tmp_path):
+    """Test that move it is publishing messages when provided a port."""
+    from posttroll.message import Message
+    input_dir, output_dir, config_file = create_config_file(tmp_path)
 
     with patched_publisher() as message_list:
         cmd_args = parse_args([str(config_file), "-p", "2022"])
