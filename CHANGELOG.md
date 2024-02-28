@@ -1,3 +1,30 @@
+## Version 0.14.0 (2024/02/28)
+
+### Issues Closed
+
+* [Issue 192](https://github.com/pytroll/trollmoves/issues/192) - Migrate away from `pyinotify` ([PR 185](https://github.com/pytroll/trollmoves/pull/185) by [@mraspaud](https://github.com/mraspaud))
+* [Issue 189](https://github.com/pytroll/trollmoves/issues/189) - S3 mover passes all config items to `S3FileSystem()` ([PR 190](https://github.com/pytroll/trollmoves/pull/190) by [@pnuu](https://github.com/pnuu))
+
+In this release 2 issues were closed.
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 190](https://github.com/pytroll/trollmoves/pull/190) - Fix connection parameter handling ([189](https://github.com/pytroll/trollmoves/issues/189))
+* [PR 184](https://github.com/pytroll/trollmoves/pull/184) - Make sure unpack takes `delete` as a boolean
+* [PR 183](https://github.com/pytroll/trollmoves/pull/183) - Update versioneer
+
+#### Features added
+
+* [PR 193](https://github.com/pytroll/trollmoves/pull/193) - Use log file in tmp_path instead of 'somefile'
+* [PR 191](https://github.com/pytroll/trollmoves/pull/191) - Update python CI versions to cover 3.10 - 3.12
+* [PR 190](https://github.com/pytroll/trollmoves/pull/190) - Fix connection parameter handling ([189](https://github.com/pytroll/trollmoves/issues/189))
+* [PR 185](https://github.com/pytroll/trollmoves/pull/185) - Replace pyinotify with watchdog ([192](https://github.com/pytroll/trollmoves/issues/192))
+
+In this release 7 pull requests were closed.
+
+
 ## Version 0.13.1 (2023/09/04)
 
 ### Issues Closed
