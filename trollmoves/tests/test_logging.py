@@ -101,12 +101,13 @@ def test_unknown_log_config_crashes(tmp_path):
         setup_logging("my_logger", cmd_args)
 
 
-def test_legacy_arguments_work():
+def test_legacy_arguments_work(tmp_path):
     """Test that legacy arguments work."""
     handlers = logging.getLogger("").handlers.copy()
     parser = argparse.ArgumentParser()
     add_logging_options_to_parser(parser, legacy=True)
-    args = ["-l", "somefile", "-v"]
+    log_file = tmp_path / "log.txt"
+    args = ["-l", os.fspath(log_file), "-v"]
     cmd_args = parser.parse_args(args)
     logger = setup_logging("my_logger", cmd_args)
     handlers = list(set(logger.handlers + logger.parent.handlers) - set(handlers))
@@ -116,13 +117,15 @@ def test_legacy_arguments_work():
     assert handler.backupCount == 7
     assert handler.when.lower() == "midnight"
     assert handler.level == logging.DEBUG
+    assert log_file.exists()
 
 
-def test_legacy_arguments_raise_warnings():
+def test_legacy_arguments_raise_warnings(tmp_path):
     """Test that legacy arguments raise warnings."""
     parser = argparse.ArgumentParser()
     add_logging_options_to_parser(parser, legacy=True)
-    args = ["-l", "somefile"]
+    log_file = tmp_path / "log.txt"
+    args = ["-l", os.fspath(log_file)]
     with pytest.warns(RuntimeWarning, match='deprecation'):
         parser.parse_args(args)
     args = ["-v"]
@@ -140,10 +143,13 @@ def test_legacy_activation_still_uses_config_first(tmp_path):
     with open(config_file, "w") as fd:
         fd.write(log_config)
 
-    cmd_args = parser.parse_args(["-l", "somefile", "-c", config_file, "-v"])
+    log_file = tmp_path / "log.txt"
+    cmd_args = parser.parse_args(["-l", os.fspath(log_file), "-c", config_file, "-v"])
 
     logger = setup_logging("my_logger", cmd_args)
 
     handlers = list(set(logger.handlers + logger.parent.handlers) - set(handlers))
     assert len(handlers) == 1
     assert isinstance(handlers[0], logging.NullHandler)
+    # The log file of '-l' option is overridden by the config file
+    assert not log_file.exists()
