@@ -37,25 +37,25 @@ from posttroll.testing import patched_publisher
 from trollmoves.client import MoveItClient, parse_args
 
 MSG_FILE = Message('/topic', 'file', {'uid': 'file1.png',
-                                      'uri': '/tmp/file1.png'})
+                                      'uri': '/data_dir/file1.png'})
 MSG_FILE_TAR = Message('/topic', 'file', {'uid': 'file1.tar',
-                                          'uri': '/tmp/file1.tar'})
+                                          'uri': '/data_dir/file1.tar'})
 MSG_FILE_BZ2 = Message('/topic', 'file', {'uid': 'file1.png.bz2',
-                                          'uri': '/tmp/file1.png.bz2'})
+                                          'uri': '/data_dir/file1.png.bz2'})
 MSG_FILE_XRIT = Message('/topic', 'file', {'uid': 'file1-C_',
-                                           'uri': '/tmp/file1-C_'})
+                                           'uri': '/data_dir/file1-C_'})
 MSG_DATASET_TAR = Message('/topic', 'dataset',
                           {'dataset': [{'uid': 'file1.tgz',
-                                        'uri': '/tmp/file1.tgz'},
+                                        'uri': '/data_dir/file1.tgz'},
                                        {'uid': 'file2.tar.gz',
-                                        'uri': '/tmp/file2.tar.gz'}]})
+                                        'uri': '/data_dir/file2.tar.gz'}]})
 MSG_COLLECTION_TAR = Message('/topic', 'collection',
                              {'collection':
                               [{'dataset': [{'uid': 'file1.tar.bz2',
-                                             'uri': '/tmp/file1.tar.bz2'}]}]})
+                                             'uri': '/data_dir/file1.tar.bz2'}]}]})
 MSG_MIRROR = Message('/topic', 'file', {'fname': 'file1', 'uri':
-                                        'scp://user@host/tmp/bar/file1.txt', 'uid':
-                                        'file1.txt', 'destination': 'scp://targethost.domain/tmp/bar/',
+                                        'scp://user@host/data_dir/bar/file1.txt', 'uid':
+                                        'file1.txt', 'destination': 'scp://targethost.domain/data_dir/bar/',
                                         'origin': 'sourcehost.domain:9201'})
 COMPRESSION_CONFIG = """
 [DEFAULT]
@@ -86,7 +86,7 @@ CLIENT_CONFIG_1_ITEM = """
 # Example acting as a hot spare
 [eumetcast_hrit_0deg_scp_hot_spare]
 providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
-destination = scp:///tmp/foo
+destination = scp:///data_dir/foo
 login = user
 topic = /1b/hrit-segment/0deg
 publish_port = 0
@@ -97,7 +97,7 @@ CLIENT_CONFIG_1_ITEM_NON_PUB_PROVIDER_ITEM_MODIFIED = """
 # Example acting as a hot spare
 [eumetcast_hrit_0deg_scp_hot_spare]
 providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
-destination = scp:///tmp/bar
+destination = scp:///data_dir/bar
 login = user
 topic = /1b/hrit-segment/0deg
 publish_port = 0
@@ -108,7 +108,7 @@ CLIENT_CONFIG_1_PUB_ITEM_MODIFIED = """
 # Example acting as a hot spare
 [eumetcast_hrit_0deg_scp_hot_spare]
 providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
-destination = scp:///tmp/foo
+destination = scp:///data_dir/foo
 login = user
 topic = /1b/hrit-segment/0deg
 publish_port = 12345
@@ -119,7 +119,7 @@ CLIENT_CONFIG_1_ITEM_TWO_PROVIDERS = """
 # Example acting as a hot spare
 [eumetcast_hrit_0deg_scp_hot_spare]
 providers = satmottag2:9010 satmottag:9010
-destination = scp:///tmp/foo
+destination = scp:///data_dir/foo
 login = user
 topic = /1b/hrit-segment/0deg
 publish_port = 0
@@ -130,7 +130,7 @@ CLIENT_CONFIG_1_ITEM_TOPIC_CHANGED = """
 # Example acting as a hot spare
 [eumetcast_hrit_0deg_scp_hot_spare]
 providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
-destination = scp:///tmp/foo
+destination = scp:///data_dir/foo
 login = user
 topic = /1b/hrit-segment/zero_degrees
 publish_port = 0
@@ -141,7 +141,7 @@ CLIENT_CONFIG_1_ITEM_NAMESERVERS_IS_FALSE = """
 # Example acting as a hot spare
 [eumetcast_hrit_0deg_scp_hot_spare]
 providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
-destination = scp:///tmp/foo
+destination = scp:///data_dir/foo
 login = user
 topic = /1b/hrit-segment/0deg
 publish_port = 0
@@ -153,7 +153,7 @@ CLIENT_CONFIG_2_ITEMS = """
 # Example acting as a hot spare
 [eumetcast_hrit_0deg_scp_hot_spare]
 providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
-destination = scp:///tmp/foo
+destination = scp:///data_dir/foo
 login = user
 topic = /1b/hrit-segment/0deg
 publish_port = 0
@@ -161,7 +161,7 @@ processing_delay = 0.02
 
 [foo]
 providers = bar
-destination = scp:///tmp/foo
+destination = scp:///data_dir/foo
 login = user
 topic = /1b/hrit-segment/0deg
 publish_port = 0
@@ -171,7 +171,7 @@ nameservers = ns1 ns2
 CLIENT_CONFIG_BACKUP_TARGETS = """
 [foo]
 providers = bar
-destination = scp://primary_host/tmp/foo
+destination = scp://primary_host/data_dir/foo
 login = user
 topic = /1b/hrit-segment/0deg
 publish_port = 0
@@ -336,7 +336,7 @@ def test_unpack_xrit_decompressed_no_config(check_output):
     kwargs = {}
 
     # File already decompressed
-    fname_in = "/tmp/H-000-MSG4__-MSG4________-_________-PRO______-201909031245-__"
+    fname_in = "/data_dir/H-000-MSG4__-MSG4________-_________-PRO______-201909031245-__"
 
     res = unpack_xrit(fname_in, **kwargs)
     assert res == fname_in
@@ -352,10 +352,10 @@ def test_unpack_xrit_compressed_no_config(check_output):
     kwargs = {}
 
     # Compressed segment
-    fname_in = "/tmp/H-000-MSG4__-MSG4________-IR_134___-000003___-201909031245-C_"
+    fname_in = "/data_dir/H-000-MSG4__-MSG4________-IR_134___-000003___-201909031245-C_"
 
     try:
-        res = unpack_xrit(fname_in, **kwargs)
+        _ = unpack_xrit(fname_in, **kwargs)
         # Should raise OSError as xritdecompressor hasn't been defined
         raise AssertionError
     except OSError:
@@ -368,10 +368,10 @@ def test_unpack_xrit_compressed_xritdecompressor(check_output):
     from trollmoves.client import unpack_xrit
 
     kwargs = {'xritdecompressor': '/path/to/xRITDecompress'}
-    fname_in = "/tmp/H-000-MSG4__-MSG4________-IR_134___-000003___-201909031245-C_"
-    res = unpack_xrit(fname_in, **kwargs)
+    fname_in = "/data_dir/H-000-MSG4__-MSG4________-IR_134___-000003___-201909031245-C_"
+    _ = unpack_xrit(fname_in, **kwargs)
     check_output.assert_called_once_with(
-        ['/path/to/xRITDecompress', fname_in], cwd=('/tmp'))
+        ['/path/to/xRITDecompress', fname_in], cwd=('/data_dir'))
 
 
 def test_unpack_bzip():
@@ -1504,7 +1504,7 @@ def test_chain_publisher_needs_restarting_non_publisher_value_added(Listener, cr
 
     config = CHAIN_BASIC_CONFIG.copy()
     chain = Chain("foo", config.copy())
-    config["destination"] = "file:///tmp/"
+    config["destination"] = "file:///data_dir/"
     assert chain.publisher_needs_restarting(config.copy()) is False
 
 
