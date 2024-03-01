@@ -118,6 +118,16 @@ def test_create_watchdog_notifier_timeout_default(PollingObserver, config, expec
     PollingObserver.assert_called_with(timeout=expected_timeout)
 
 
+def test_create_posttroll_notifier():
+    """Test creating a posttroll notifier."""
+    from trollmoves.server import Chain
+    config = {"listen": "some_topic"}
+    chain = Chain("some_chain", config)
+    function_to_run = MagicMock()
+    # assert no crash
+    chain.create_notifier(notifier_builder=None, use_polling=True, function_to_run_on_matching_files=function_to_run)
+
+
 def test_handler_does_not_dispatch_files_not_matching_pattern():
     """Test that the handle does not dispatch files that are not matching the pattern."""
     from trollmoves.server import WatchdogCreationHandler
@@ -152,14 +162,15 @@ def _run_process_notify(process_notify, publisher):
 
 
 @patch("trollmoves.server.file_cache", new_callable=deque)
-@patch("trollmoves.server.Message")
-def test_process_notify_matching_file(Message, file_cache):
+def test_process_notify_matching_file(file_cache):
     """Test process_notify() with a file matching the configured pattern."""
-    from trollmoves.server import process_notify
+    from posttroll.message import Message
+
+    from trollmoves.server import process_notification
 
     publisher = MagicMock()
 
-    pathname, fname, kwargs = _run_process_notify(process_notify, publisher)
+    pathname, fname, kwargs = _run_process_notify(process_notification, publisher)
 
     # Check that the message was formed correctly
     message_info = {'start_time': dt.datetime(2020, 4, 28, 10, 0),
@@ -167,8 +178,12 @@ def test_process_notify_matching_file(Message, file_cache):
                     'uri': pathname,
                     'uid': fname,
                     'request_address': 'localhost:9001'}
-    Message.assert_called_with(kwargs['topic'], 'file', message_info)
-    publisher.send.assert_called_with(str(Message.return_value))
+
+    message = Message(rawstr=publisher.send.mock_calls[0][1][0])
+    assert message.subject == kwargs["topic"]
+    assert message.type == "file"
+    assert message.data == message_info
+
     assert "/topic/20200428_1000_foo.tif" in file_cache
     assert len(file_cache) == 1
 
