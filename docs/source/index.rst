@@ -21,6 +21,7 @@ These include:
    :caption: Contents:
 
    fetcher
+   s3downloader
 
 
 Indices and tables
