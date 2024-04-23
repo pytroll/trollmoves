@@ -33,7 +33,8 @@ extras_require = {
         'paramiko',
         'scp',
     ],
-    "remote_fs": ["pytroll-collectors>=0.16.0"],
+    "remote_fs": ["pytroll-collectors>=0.16.0", "fsspec"],
+    "docs": [],
 }
 
 all_extras = []
