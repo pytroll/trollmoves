@@ -1,17 +1,4 @@
-"""Fetch files from other (remote) filesystems.
-
-An example config would be for the command line interface would be::
-
-    destination: /home/myuser/downloads/
-    publisher_config:
-        nameservers: false
-        port: 1979
-    subscriber_config:
-        addresses:
-        - ipc://some_pipe
-        nameserver: false
-
-"""
+"""Fetch files from other (remote) filesystems."""
 
 import argparse
 import json
@@ -78,7 +65,15 @@ def _fetch_from_filesystem(path_to_fetch, download_dir, fs):
 
 
 def fetch_from_message(message, destination):
-    """Fetch a file provided in a message."""
+    """Fetch a file provided in a message.
+
+    Args:
+        message: A posttroll message instance with information about the files to fetch.
+        destination: the directory to save the files to.
+
+    Returns:
+        The path to the downloaded file.
+    """
     try:
         return fetch_file(message.data["path"], destination, message.data["filesystem"])
     except KeyError:
@@ -86,7 +81,19 @@ def fetch_from_message(message, destination):
 
 
 def fetch_from_subscriber(destination, subscriber_config, publisher_config):
-    """Fetch files published using a subscriber."""
+    """Fetch files published using a subscriber.
+
+    Warning:
+        At the moment, messages that are not of type `file` will be ignored.
+
+    Args:
+        destination: the directory to save the files to.
+        subscriber_config: the settings for the subscriber. Will be passed on as is to posttroll's
+            :py:func:`create_subscriber_from_dict_config`
+        publisher_config: the settings for the publisher. Will be passed on as is to posttroll's
+            :py:func:`create_publisher_from_dict_config`
+
+    """  # noqa
     destination = Path(destination)
 
     pub = create_publisher_from_dict_config(publisher_config)
