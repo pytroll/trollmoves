@@ -89,9 +89,9 @@ def fetch_from_subscriber(destination, subscriber_config, publisher_config):
     Args:
         destination: the directory to save the files to.
         subscriber_config: the settings for the subscriber. Will be passed on as is to posttroll's
-            :py:func:`create_subscriber_from_dict_config`
+            :py:func:`~posttroll.subscriber.create_subscriber_from_dict_config`
         publisher_config: the settings for the publisher. Will be passed on as is to posttroll's
-            :py:func:`create_publisher_from_dict_config`
+            :py:func:`~posttroll.publisher.create_publisher_from_dict_config`
 
     """  # noqa
     destination = Path(destination)
