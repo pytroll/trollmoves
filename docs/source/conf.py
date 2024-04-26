@@ -15,6 +15,7 @@ author = 'Pytroll devs'
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = ["sphinx.ext.napoleon", "sphinx.ext.autodoc", "sphinx.ext.intersphinx"]
+autodoc_mock_imports = ["fsspec"]
 
 templates_path = ['_templates']
 exclude_patterns = []
