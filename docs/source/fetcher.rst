@@ -8,7 +8,7 @@ Command line script
 *******************
 
 The pytroll-fetcher script listen to posttroll messages and reacts by downloading files to a given locations. The help
-command of the scripts gives::
+command of the script gives::
 
     usage: pytroll-fetcher [-h] [-c LOG_CONFIG] config
 
