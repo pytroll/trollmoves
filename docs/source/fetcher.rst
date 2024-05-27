@@ -36,6 +36,12 @@ An example config would be for this command line interface would be::
         nameserver: false
 
 
+The `publisher_config` and `subscriber_config` dictionaries in the config are passed straight to posttroll's
+:py:func:`~posttroll.publisher.create_publisher_from_dict_config` and
+:py:func:`~posttroll.subscriber.create_subscriber_from_dict_config` respectively, so refer to the corresponding
+documentation to see how to populate them.
+
+
 API
 ***
 
