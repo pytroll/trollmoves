@@ -1,3 +1,25 @@
+## Version 0.15.0 (2024/05/27)
+
+### Issues Closed
+
+* [Issue 194](https://github.com/pytroll/trollmoves/issues/194) - move it server fails to start when config uses listen instead of origin ([PR 195](https://github.com/pytroll/trollmoves/pull/195) by [@mraspaud](https://github.com/mraspaud))
+
+In this release 1 issue was closed.
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 195](https://github.com/pytroll/trollmoves/pull/195) - Fix posttroll-based notifier for move it server ([194](https://github.com/pytroll/trollmoves/issues/194))
+
+#### Features added
+
+* [PR 199](https://github.com/pytroll/trollmoves/pull/199) - Replace utcnow (and fix style along the way)
+* [PR 198](https://github.com/pytroll/trollmoves/pull/198) - Add the fetcher functionality and documentation on rtd
+
+In this release 3 pull requests were closed.
+
+
 ## Version 0.14.0 (2024/02/28)
 
 ### Issues Closed
