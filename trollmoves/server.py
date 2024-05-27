@@ -64,7 +64,7 @@ LOGGER = logging.getLogger(__name__)
 
 file_cache = deque(maxlen=61000)
 file_cache_lock = Lock()
-START_TIME = datetime.datetime.now(datetime.UTC)
+START_TIME = datetime.datetime.now(datetime.timezone.utc)
 
 CONNECTION_CONFIG_ITEMS = ["connection_uptime", "ssh_key_filename", "ssh_connection_timeout", "ssh_private_key_file"]
 
@@ -204,7 +204,7 @@ class RequestManager(Thread):
 
     def info(self, message):
         """Collect information from file cache to message."""
-        uptime = datetime.datetime.now(datetime.UTC) - START_TIME
+        uptime = datetime.datetime.now(datetime.timezone.utc) - START_TIME
         files, max_count = _collect_cached_files(message)
 
         return Message(message.subject, "info", data={"files": files, "max_count": max_count, "uptime": str(uptime)})

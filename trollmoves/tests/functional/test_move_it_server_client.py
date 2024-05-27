@@ -132,7 +132,7 @@ def start_move_it_client(client):
 def create_new_file(source_dir):
     """Create a new file in source_dir."""
     pattern = "H-000-%Y%m%d%H%M-__"
-    filename = dt.datetime.now(dt.UTC).strftime(pattern)
+    filename = dt.datetime.now(dt.timezone.utc).strftime(pattern)
     path = Path(source_dir / filename)
     path.write_bytes(b"Very Important Satellite Data")
     return filename
@@ -251,7 +251,7 @@ def start_move_it_server_with_untarring(server_without_request_port_and_untarrin
 def create_new_tar_file(source_dir):
     """Create a new file in source_dir."""
     pattern = "H-000-%Y%m%d%H%M-__"
-    filename = dt.datetime.now(dt.UTC).strftime(pattern)
+    filename = dt.datetime.now(dt.timezone.utc).strftime(pattern)
     path = source_dir / filename
     path.write_bytes(b"Very Important Satellite Data")
     tarfilename = source_dir / (filename + ".tar")

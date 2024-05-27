@@ -246,7 +246,7 @@ def clean_section(pub, section, conf, is_dry_run=True):
             kws[key] = int(info[key])
         except KeyError:
             pass
-    ref_time = dt.datetime.now(dt.UTC) - dt.timedelta(**kws)
+    ref_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(**kws)
 
     for template in templates:
         pathname = os.path.join(base_dir, template)
