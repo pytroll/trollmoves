@@ -730,9 +730,6 @@ class Chain:
             notifier_builder = _get_notifier_builder(use_polling, self.config)
 
         self.function_to_run = partial(function_to_run_on_matching_files, chain_config=self.config)
-        # pattern = globify(self.config["origin"])
-        # timeout = float(self.config.get("watchdog_timeout", 1.))
-        # LOGGER.debug("Watchdog timeout: %.1f", timeout)
 
         self.notifier = notifier_builder(self.function_to_run)
 
