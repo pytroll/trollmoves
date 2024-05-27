@@ -629,12 +629,8 @@ def _form_connection_parameters_dict(original):
         if key in CONNECTION_CONFIG_ITEMS:
             warnings.warn(
                 f"Consider using connection_parameters__{key} instead of {key}.",
-<<<<<<< fix-utcnow
                 category=UserWarning,
                 stacklevel=2)
-=======
-                category=UserWarning, stacklevel=2)
->>>>>>> main
             res["connection_parameters"][key] = original[key]
             del res[key]
     return res
