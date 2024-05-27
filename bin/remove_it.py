@@ -22,42 +22,47 @@
 
 """Remove files, and send messages about it."""
 
-from configparser import RawConfigParser, NoOptionError
-from datetime import datetime, timedelta
-from glob import glob
-import os
-import time
 import argparse
+import datetime as dt
+import getpass
 import logging
 import logging.handlers
-import getpass
+import os
 import socket
+import time
+from configparser import NoOptionError, RawConfigParser
+from glob import glob
 
 LOGGER = logging.getLogger("remove_it")
 
 try:
-    from posttroll.publisher import Publish
     from posttroll.message import Message
+    from posttroll.publisher import Publish
 except ImportError:
 
     class Publish(object):
+        """A fake publish in case posttroll isn't installed."""
 
         def __enter__(self):
+            """Fake enter."""
             return self
 
         def __exit__(self, etype, value, traceback):
-            pass
+            """Fake exit."""
 
         def send(self, msg):
-            pass
+            """Fake send."""
 
     def Message(*args, **kwargs):
+        """Fake message object in case posttroll isn't installed."""
         del args, kwargs
 
 
 class BufferingSMTPHandler(logging.handlers.BufferingHandler):
+    """A logging handler for emails."""
 
     def __init__(self, mailhost, fromaddr, toaddrs, subject, capacity):
+        """Set up the handler."""
         logging.handlers.BufferingHandler.__init__(self, capacity)
         self.mailhost = mailhost
         self.mailport = None
@@ -68,6 +73,7 @@ class BufferingSMTPHandler(logging.handlers.BufferingHandler):
             logging.Formatter("[%(asctime)s %(levelname)-5s] %(message)s"))
 
     def flush(self):
+        """Flush the messages."""
         if len(self.buffer) > 0:
             try:
                 import smtplib
@@ -88,6 +94,7 @@ class BufferingSMTPHandler(logging.handlers.BufferingHandler):
 
 
 def parse_args():
+    """Parse the command line arguments."""
     parser = argparse.ArgumentParser()
     parser.add_argument("configuration_file",
                         help="the configuration file to use")
@@ -114,6 +121,7 @@ def parse_args():
 
 
 def setup_logger(args):
+    """Set up a logger."""
     global LOGGER
     LOGGER = logging.getLogger("remove_it")
 
@@ -137,6 +145,7 @@ def setup_logger(args):
 
 
 def setup_mailing(args, conf, info):
+    """Set up the mailing handler."""
     if args.mail:
         try:
             mailhandler = BufferingSMTPHandler(
@@ -153,6 +162,7 @@ def setup_mailing(args, conf, info):
 
 
 def get_config_items(args, conf):
+    """Get the configuration items."""
     config_items = []
 
     if args.config_item:
@@ -169,6 +179,7 @@ def get_config_items(args, conf):
 
 
 def remove_file(filename, pub):
+    """Remove one file or directory."""
     try:
         if os.path.isdir(filename):
             if not os.listdir(filename):
@@ -180,7 +191,9 @@ def remove_file(filename, pub):
             msg = Message("deletion", "del", {"uri": filename})
             pub.send(str(msg))
             LOGGER.debug("Removed %s", filename)
-    except (IOError, OSError) as err:
+    except FileNotFoundError:
+        LOGGER.debug("File already removed.")
+    except OSError as err:
         LOGGER.warning("Can't remove %s: %s", filename,
                        str(err))
         return False
@@ -188,6 +201,7 @@ def remove_file(filename, pub):
 
 
 def clean_dir(pub, ref_time, pathname, is_dry_run):
+    """Clean up a directory."""
     section_files = 0
     section_size = 0
     LOGGER.info("Cleaning %s", pathname)
@@ -201,7 +215,7 @@ def clean_dir(pub, ref_time, pathname, is_dry_run):
             LOGGER.warning("Couldn't lstat path=%s", str(filename))
             continue
 
-        if datetime.fromtimestamp(stat.st_ctime) < ref_time:
+        if dt.datetime.fromtimestamp(stat.st_ctime) < ref_time:
             was_removed = False
             if not is_dry_run:
                 was_removed = remove_file(filename, pub)
@@ -215,6 +229,7 @@ def clean_dir(pub, ref_time, pathname, is_dry_run):
 
 
 def clean_section(pub, section, conf, is_dry_run=True):
+    """Clean up according to the configuration section."""
     section_files = 0
     section_size = 0
     info = dict(conf.items(section))
@@ -231,7 +246,7 @@ def clean_section(pub, section, conf, is_dry_run=True):
             kws[key] = int(info[key])
         except KeyError:
             pass
-    ref_time = datetime.utcnow() - timedelta(**kws)
+    ref_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(**kws)
 
     for template in templates:
         pathname = os.path.join(base_dir, template)
@@ -243,6 +258,7 @@ def clean_section(pub, section, conf, is_dry_run=True):
 
 
 def run(args, conf):
+    """Run the remove_it tool."""
     config_items = get_config_items(args, conf)
     LOGGER.debug("Setting up posttroll connection...")
     with Publish("remover") as pub:
@@ -261,6 +277,7 @@ def run(args, conf):
 
 
 def main():
+    """Parse args and run the remove_it tool."""
     conf = RawConfigParser()
 
     args = parse_args()
