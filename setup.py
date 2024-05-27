@@ -33,7 +33,8 @@ extras_require = {
         'paramiko',
         'scp',
     ],
-    "remote_fs": ["pytroll-collectors>=0.16.0"],
+    "remote_fs": ["pytroll-collectors>=0.16.0", "fsspec"],
+    "docs": [],
 }
 
 all_extras = []
@@ -63,6 +64,12 @@ setup(name="trollmoves",
                'bin/dispatcher.py',
                'bin/s3downloader.py',
                ],
+      entry_points={
+          'console_scripts': [
+              'pytroll-fetcher = trollmoves.fetcher:cli',
+          ],
+      },
+
       data_files=[],
       packages=['trollmoves'],
       zip_safe=False,
