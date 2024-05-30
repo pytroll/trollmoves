@@ -215,7 +215,7 @@ def clean_dir(pub, ref_time, pathname, is_dry_run):
             LOGGER.warning("Couldn't lstat path=%s", str(filename))
             continue
 
-        if dt.datetime.fromtimestamp(stat.st_ctime) < ref_time:
+        if dt.datetime.fromtimestamp(stat.st_ctime, dt.timezone.utc) < ref_time:
             was_removed = False
             if not is_dry_run:
                 was_removed = remove_file(filename, pub)
