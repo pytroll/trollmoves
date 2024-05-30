@@ -141,7 +141,7 @@ def test_fetch_message_with_uri(tmp_path):
 
 def test_fetch_message_logs(tmp_path, caplog):
     """Test fetch_message logs."""
-    caplog.set_level("INFO")
+    caplog.set_level("DEBUG")
 
     uid = "IVCDB_j02_d20240419_t1114110_e1115356_b07465_c20240419113435035578_cspp_dev.h5"
     sdr_file = tmp_path / "sdr" / uid
@@ -153,8 +153,15 @@ def test_fetch_message_logs(tmp_path, caplog):
     dest_path2 = tmp_path / "dest2"
     dest_path2.mkdir()
 
-    downloaded_file = fetch_from_message(Message(rawstr=msg), dest_path2)
-    assert str(downloaded_file) in caplog.text
+    subscriber_settings = dict(nameserver=False, addresses=["ipc://bla"])
+    publisher_settings = dict(nameservers=False, port=1979)
+
+    with patched_subscriber_recv([Message(rawstr=msg)]):
+        fetch_from_subscriber(dest_path2, subscriber_settings, publisher_settings)
+
+    assert str(msg) in caplog.text
+    assert str(dest_path2 / uid) in caplog.text
+    assert "Published pytroll://" in caplog.text
 
 
 def test_subscribe_and_fetch(tmp_path):
