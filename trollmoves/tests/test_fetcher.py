@@ -156,12 +156,13 @@ def test_fetch_message_logs(tmp_path, caplog):
     subscriber_settings = dict(nameserver=False, addresses=["ipc://bla"])
     publisher_settings = dict(nameservers=False, port=1979)
 
-    with patched_subscriber_recv([Message(rawstr=msg)]):
-        fetch_from_subscriber(dest_path2, subscriber_settings, publisher_settings)
+    with patched_publisher() as messages:
+        with patched_subscriber_recv([Message(rawstr=msg)]):
+            fetch_from_subscriber(dest_path2, subscriber_settings, publisher_settings)
 
     assert str(msg) in caplog.text
     assert str(dest_path2 / uid) in caplog.text
-    assert "Published pytroll://" in caplog.text
+    assert f"Published {messages[0]}" in caplog.text
 
 
 def test_subscribe_and_fetch(tmp_path):
