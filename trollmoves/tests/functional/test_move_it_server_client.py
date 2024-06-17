@@ -266,7 +266,7 @@ def check_message_for_filesystem_info_and_untarring(subscriber, tmp_path, moved_
     """Check the posttroll message for filesystem info and untarring."""
     msg = next(subscriber)
     host = socket.gethostname()
-    expected_filesystem = {"cls": "fsspec.implementations.tar.TarFileSystem",
+    expected_filesystem = {"cls": "fsspec.implementations.tar:TarFileSystem",
                            "protocol": "tar",
                            "args": [],
                            "target_options": {"host": host},
