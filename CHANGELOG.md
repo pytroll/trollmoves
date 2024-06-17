@@ -1,3 +1,17 @@
+## Version 0.15.1 (2024/06/17)
+
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 204](https://github.com/pytroll/trollmoves/pull/204) - Fix tests for newer fsspec
+* [PR 202](https://github.com/pytroll/trollmoves/pull/202) - Fix removal topic
+* [PR 200](https://github.com/pytroll/trollmoves/pull/200) - Fix naive timestamp
+
+In this release 3 pull requests were closed.
+
+
 ## Version 0.15.0 (2024/05/27)
 
 ### Issues Closed
