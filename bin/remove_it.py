@@ -188,7 +188,7 @@ def remove_file(filename, pub):
                 LOGGER.info("%s not empty.", filename)
         else:
             os.remove(filename)
-            msg = Message("deletion", "del", {"uri": filename})
+            msg = Message("/deletion", "del", {"uri": filename})
             pub.send(str(msg))
             LOGGER.debug("Removed %s", filename)
     except FileNotFoundError:
