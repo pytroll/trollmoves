@@ -104,11 +104,13 @@ def fetch_from_subscriber(destination, subscriber_config, publisher_config):
             for message in sub.recv():
                 if message.type != "file":
                     continue
+                logger.debug(f"Fetching from {str(message)}")
                 downloaded_file = fetch_from_message(message, destination)
                 message.data.pop("filesystem", None)
                 message.data.pop("path", None)
                 message.data["uri"] = downloaded_file.as_uri()
                 pub.send(str(message))
+                logger.debug(f"Published {str(message)}")
 
 
 def cli(args=None):
