@@ -1,3 +1,15 @@
+## Version 0.15.2 (2024/06/17)
+
+
+### Pull Requests Merged
+
+#### Features added
+
+* [PR 201](https://github.com/pytroll/trollmoves/pull/201) - Add logging to fetcher
+
+In this release 1 pull request was closed.
+
+
 ## Version 0.15.1 (2024/06/17)
 
 
