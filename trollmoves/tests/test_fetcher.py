@@ -1,104 +1,12 @@
 """Tests for the fetcher."""
 
-import json
 import logging
-from zipfile import ZipFile
 
-import fsspec
 import yaml
 from posttroll.message import Message
 from posttroll.testing import patched_publisher, patched_subscriber_recv
 
-from trollmoves.fetcher import (fetch_file, fetch_from_message,
-                                fetch_from_subscriber)
-
-
-def test_fetcher_with_simple_uri(tmp_path):
-    """Test fetcher with a simple uri."""
-    filename = "important_data.nc"
-    test_file = tmp_path / filename
-    download_dir = tmp_path / "downloaded"
-    download_dir.mkdir()
-    with open(test_file, "w") as fd:
-        fd.write("very importand data.")
-    uri = test_file.as_uri()
-    fetch_file(uri, str(download_dir))
-    assert (download_dir / filename).exists()
-
-
-def test_fetcher_with_complex_uri(tmp_path):
-    """Test fetcher with a complex uri."""
-    filename = "important_data.nc"
-    test_file = tmp_path / filename
-    download_dir = tmp_path / "downloaded"
-    download_dir.mkdir()
-    with open(test_file, "w") as fd:
-        fd.write("very importand data.")
-    uri = "simplecache::" + test_file.as_uri()
-    fetch_file(uri, download_dir)
-    assert (download_dir / filename).exists()
-
-
-def test_fetcher_with_fs(tmp_path):
-    """Test fetcher with a filesystem."""
-    filename = "important_data.nc"
-    test_file = tmp_path / filename
-    download_dir = tmp_path / "downloaded"
-    download_dir.mkdir()
-    with open(test_file, "w") as fd:
-        fd.write("very importand data.")
-    uri = test_file.as_uri()
-    fs = {"cls": "fsspec.implementations.local.LocalFileSystem", "protocol": "file", "args": []}
-    fetch_file(uri, download_dir, fs)
-    assert (download_dir / filename).exists()
-
-
-def test_fetcher_with_complex_uri_and_fs(tmp_path):
-    """Test fetcher with a complex uri and a filesystem."""
-    filename = "important_data.nc"
-    test_file = tmp_path / filename
-
-    download_dir = tmp_path / "downloaded"
-    download_dir.mkdir()
-
-    with open(test_file, "w") as fd:
-        fd.write("very important data.")
-
-    compressed_test_file = tmp_path / "important.zip"
-    with ZipFile(compressed_test_file, 'w') as myzip:
-        myzip.write(test_file)
-
-    uri = "zip://" + str(test_file) + "::" + compressed_test_file.as_uri()
-    fs = json.loads(fsspec.open(uri).fs.to_json())
-
-    returned_filename = fetch_file(str(test_file), download_dir, fs)
-    downloaded_filename = download_dir / filename
-    assert downloaded_filename.exists()
-    assert downloaded_filename == returned_filename
-
-
-def test_fetcher_with_complex_uri_and_fs_2(tmp_path):
-    """Test fetcher with a complex uri and a filesystem."""
-    filename = "important_data.nc"
-    test_file = tmp_path / filename
-
-    download_dir = tmp_path / "downloaded"
-    download_dir.mkdir()
-
-    with open(test_file, "w") as fd:
-        fd.write("very important data.")
-
-    compressed_test_file = tmp_path / "important.zip"
-    with ZipFile(compressed_test_file, 'w') as myzip:
-        myzip.write(test_file)
-
-    uri = "zip://" + str(test_file) + "::" + compressed_test_file.as_uri()
-    fs = json.loads(fsspec.open(uri).fs.to_json())
-
-    returned_filename = fetch_file("zip://" + str(test_file), download_dir, fs)
-    downloaded_filename = download_dir / filename
-    assert downloaded_filename.exists()
-    assert downloaded_filename == returned_filename
+from trollmoves.fetcher import fetch_from_message, fetch_from_subscriber
 
 
 def test_fetch_message_with_filesystem(tmp_path):

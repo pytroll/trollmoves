@@ -1,67 +1,19 @@
 """Fetch files from other (remote) filesystems."""
 
 import argparse
-import json
 import logging
-import os
 from contextlib import closing
 from pathlib import Path
+from urllib.parse import unquote
 
-import fsspec
 import yaml
 from posttroll.publisher import create_publisher_from_dict_config
 from posttroll.subscriber import create_subscriber_from_dict_config
+from pytroll_watchers.fetch import fetch_file
 
 from trollmoves.logging import add_logging_options_to_parser, setup_logging
 
 logger = logging.getLogger(__name__)
-
-
-def fetch_file(file_to_fetch, download_dir, filesystem=None):
-    """Fetch a file.
-
-    Args:
-        file_to_fetch: The Path of the file to fetch. Can be a UPath form universal_path.
-        download_dir: The directory to download the file to.
-        filesystem: The file system to use if provided. Should be a dictionary that will be fed to fsspec.
-
-    Returns:
-        The Path to the downloaded file.
-
-    Example:
-
-        >>> fetch_file("https://noaa-himawari8.s3.amazonaws.com/AHI-L1b-FLDK/2017/02/02/0020/HS_H08_20170202_0020_B01_FLDK_R10_S0101.DAT.bz2", "/tmp/")
-        ... # HS_H08_20170202_0020_B01_FLDK_R10_S0101.DAT.bz2 is now present in /tmp/
-
-
-    """  # noqa
-    download_dir = Path(download_dir)
-
-    if filesystem:
-        downloaded_file = _fetch_from_filesystem(file_to_fetch, download_dir, filesystem)
-    else:
-        downloaded_file = _fetch_from_uri(file_to_fetch, download_dir)
-    logger.info(f"Fetched {str(downloaded_file)}")
-    return downloaded_file
-
-
-def _fetch_from_uri(file_to_fetch, download_dir):
-    """Fetch a file from a uri."""
-    fs_file = fsspec.open(file_to_fetch)
-    filesystem = fs_file.fs
-    basename = os.path.basename(fs_file.path)
-    downloaded_file = download_dir / basename
-    filesystem.get_file(fs_file.path, download_dir / basename)
-    return downloaded_file
-
-
-def _fetch_from_filesystem(path_to_fetch, download_dir, fs):
-    """Fetch a file from a path and a filesystem specification."""
-    filesystem = fsspec.AbstractFileSystem.from_json(json.dumps(fs))
-    basename = os.path.basename(path_to_fetch)
-    downloaded_file = download_dir / basename
-    filesystem.get_file(path_to_fetch, download_dir / basename)
-    return downloaded_file
 
 
 def fetch_from_message(message, destination):
@@ -104,13 +56,13 @@ def fetch_from_subscriber(destination, subscriber_config, publisher_config):
             for message in sub.recv():
                 if message.type != "file":
                     continue
-                logger.debug(f"Fetching from {str(message)}")
+                logger.info(f"Fetching from {str(message)}")
                 downloaded_file = fetch_from_message(message, destination)
                 message.data.pop("filesystem", None)
                 message.data.pop("path", None)
-                message.data["uri"] = downloaded_file.as_uri()
+                message.data["uri"] = unquote(downloaded_file.as_uri())
                 pub.send(str(message))
-                logger.debug(f"Published {str(message)}")
+                logger.info(f"Published {str(message)}")
 
 
 def cli(args=None):
