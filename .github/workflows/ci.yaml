@@ -27,7 +27,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -U pytest!=8.1.1 pytest-cov pytest-bdd pytest-reraise pyyaml trollsift posttroll>=1.11 paramiko scp watchdog!=4.0.0 pytroll-collectors>=0.16.0 fsspec s3fs
+          pip install -U pytest!=8.1.1 pytest-cov pytest-bdd pytest-reraise pyyaml trollsift posttroll>=1.11 paramiko scp watchdog!=4.0.0 pytroll-collectors>=0.16.0 fsspec s3fs pytroll-watchers>=0.5.0
 
       - name: Install trollmoves
         run: |
