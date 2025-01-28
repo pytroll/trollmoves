@@ -47,7 +47,8 @@ class DeprecationWarningAction(argparse.Action):
 
     def __call__(self, parser, namespace, values, option_string=None):
         """Call the action."""
-        warnings.warn(f"{option_string} is pending deprecation, please use --log-config instead.", RuntimeWarning)
+        warnings.warn(f"{option_string} is pending deprecation, please use --log-config instead.", RuntimeWarning,
+                      stacklevel=2)
         setattr(namespace, self.dest, values)
 
 
@@ -85,6 +86,27 @@ def setup_legacy_logger(cmd_args):
 
 def setup_default_logger():
     """Set up the default logger."""
-    root = logging.getLogger('')
-    handler = logging.StreamHandler()
-    root.addHandler(handler)
+    log_config = {
+        "version": 1,
+        "formatters": {
+            "pytroll": {
+                "format": "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
+            }
+        },
+        "handlers": {
+            "console": {
+                "class": "logging.StreamHandler",
+                "level": "INFO",
+                "formatter": "pytroll",
+            },
+        },
+        "disable_existing_loggers": False,
+        "loggers": {
+            "": {
+                "level": "INFO",
+                "handlers": ["console"],
+                "propagate": True
+            },
+        },
+    }
+    logging.config.dictConfig(log_config)
