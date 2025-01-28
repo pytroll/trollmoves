@@ -56,7 +56,7 @@ def test_fetch_message_logs(tmp_path, caplog):
     create_data_file(sdr_file)
     msg = ('pytroll://segment/viirs/l1b/ file a001673@c22519.ad.smhi.se 2024-04-19T11:35:00.487388 v1.01 '
            'application/json {"sensor": "viirs", '
-           f'"uid": "{uid}", "uri": "file://{str(sdr_file)}"' '}')
+           f'"uid": "{uid}", "uri": "{str(sdr_file)}"' '}')
 
     dest_path2 = tmp_path / "dest2"
     dest_path2.mkdir()
@@ -70,7 +70,7 @@ def test_fetch_message_logs(tmp_path, caplog):
 
     assert str(msg) in caplog.text
     assert str(dest_path2 / uid) in caplog.text
-    assert f"Published {messages[0]}" in caplog.text
+    assert f"Sending {messages[0]}" in caplog.text
 
 
 def test_subscribe_and_fetch(tmp_path):
@@ -97,7 +97,7 @@ def test_subscribe_and_fetch(tmp_path):
     assert (dest_path2 / uid).exists()
     assert len(messages) == 1
     message = Message(rawstr=messages[0])
-    expected_uri = f"file://{str(dest_path2)}/{uid}"
+    expected_uri = f"{str(dest_path2)}/{uid}"
     assert "path" not in message.data
     assert "filesystem" not in message.data
     assert message.data["uri"] == expected_uri
@@ -126,7 +126,7 @@ def test_fetcher_cli(tmp_path):
     assert (destination / uid).exists()
     assert len(messages) == 1
     message = Message(rawstr=messages[0])
-    expected_uri = f"file://{str(destination)}/{uid}"
+    expected_uri = f"{str(destination)}/{uid}"
     assert "path" not in message.data
     assert "filesystem" not in message.data
     assert message.data["uri"] == expected_uri

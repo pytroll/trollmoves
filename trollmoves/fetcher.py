@@ -4,12 +4,11 @@ import argparse
 import logging
 from contextlib import closing
 from pathlib import Path
-from urllib.parse import unquote
 
 import yaml
-from posttroll.publisher import create_publisher_from_dict_config
 from posttroll.subscriber import create_subscriber_from_dict_config
 from pytroll_watchers.fetch import fetch_file
+from pytroll_watchers.publisher import file_publisher_from_generator
 
 from trollmoves.logging import add_logging_options_to_parser, setup_logging
 
@@ -47,22 +46,30 @@ def fetch_from_subscriber(destination, subscriber_config, publisher_config):
 
     """  # noqa
     destination = Path(destination)
+    generator = generate_file_items_from_subscriber(destination, subscriber_config)
+    config = dict(publisher_config=publisher_config, message_config=dict())
+    file_publisher_from_generator(generator, config)
 
-    pub = create_publisher_from_dict_config(publisher_config)
-    pub.start()
-    with closing(pub):
-        sub = create_subscriber_from_dict_config(subscriber_config)
-        with closing(sub):
-            for message in sub.recv():
-                if message.type != "file":
-                    continue
-                logger.info(f"Fetching from {str(message)}")
-                downloaded_file = fetch_from_message(message, destination)
-                message.data.pop("filesystem", None)
-                message.data.pop("path", None)
-                message.data["uri"] = unquote(downloaded_file.as_uri())
-                pub.send(str(message))
-                logger.info(f"Published {str(message)}")
+
+def generate_file_items_from_subscriber(destination, subscriber_config):
+    """Generate file items from subscriber."""
+    sub = create_subscriber_from_dict_config(subscriber_config)
+    with closing(sub):
+        for message in sub.recv():
+            if message.type != "file":
+                continue
+
+            logger.info(f"Fetching from {str(message)}")
+            file_item = fetch_from_message(message, destination)
+            file_metadata = message.data.copy()
+            file_metadata.pop("filesystem", None)
+            file_metadata.pop("path", None)
+            file_metadata.pop("uid", None)
+            file_metadata.pop("uri", None)
+            message_config = {"subject": message.subject,
+                              "atype": message.type}
+            message_config["data"] = file_metadata
+            yield file_item, message_config
 
 
 def cli(args=None):
