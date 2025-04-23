@@ -27,10 +27,10 @@ import logging
 import netrc
 import os
 import shutil
+import socket
 import sys
 import time
 import traceback
-import socket
 from ftplib import FTP, all_errors, error_perm
 from threading import Event, Lock, Thread, current_thread
 from urllib.parse import urlparse
@@ -41,6 +41,13 @@ except ImportError:
     S3FileSystem = None
 
 from trollmoves.utils import clean_url
+
+S3_ALLOWED_SETTINGS = ["anon", "endpoint_url", "key", "secret",
+                       "token", "use_ssl", "s3_additional_kwargs", "client_kwargs",
+                       "requester_pays", "default_block_size", "default_fill_cache",
+                       "default_cache_type", "version_aware", "cache_regions",
+                       "asynchronous", "config_kwargs", "kwargs", "session",
+                       "max_concurrency", "fixed_upload_size"]
 
 LOGGER = logging.getLogger(__name__)
 
@@ -312,8 +319,9 @@ class ScpMover(Mover):
 
     def open_connection(self):
         """Open a connection."""
-        from paramiko import SSHClient, SSHException
         import copy
+
+        from paramiko import SSHClient, SSHException
         retries = 3
         ssh_key_filename = self.attrs.get("ssh_key_filename", None)
         try:
@@ -510,6 +518,7 @@ class S3Mover(Mover):
         """Copy the file to a bucket."""
         if S3FileSystem is None:
             raise ImportError("S3Mover requires 's3fs' to be installed.")
+        self._sanitize_attrs()
         s3 = S3FileSystem(**self.attrs)
         destination_file_path = self._get_destination()
         LOGGER.debug('destination_file_path = %s', destination_file_path)
@@ -517,6 +526,12 @@ class S3Mover(Mover):
         LOGGER.debug('Before call to put: destination_file_path = %s', destination_file_path)
         LOGGER.debug('self.origin = %s', self.origin)
         s3.put(self.origin, destination_file_path)
+
+    def _sanitize_attrs(self):
+        keys = list(self.attrs.keys())
+        for key in keys:
+            if key not in S3_ALLOWED_SETTINGS:
+                del self.attrs[key]
 
     def _get_destination(self):
         bucket_parts = []

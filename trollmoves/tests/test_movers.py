@@ -23,13 +23,12 @@
 """Test the movers."""
 
 import os
-from unittest.mock import patch
-from urllib.parse import urlunparse
-from urllib.parse import urlparse
-import yaml
 from contextlib import contextmanager
+from unittest.mock import patch
+from urllib.parse import urlparse, urlunparse
 
 import pytest
+import yaml
 
 ORIGIN_FILENAME = "filename.ext"
 
@@ -139,6 +138,17 @@ def test_s3_copy_file_to_base(S3FileSystem):
     s3_mover.copy()
 
     S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/" + ORIGIN_FILENAME)
+
+
+@patch('trollmoves.movers.S3FileSystem')
+def test_s3_attrs_are_sanitized(S3FileSystem):
+    """Test that only accepted attrs are passed to S3Filesystem."""
+    attrs = {"ssh_key_filename": "should_be_removed", "endpoint_url": "should_be_included"}
+    s3_mover = _get_s3_mover(ORIGIN, "s3://data-bucket/", **attrs)
+    s3_mover.copy()
+
+    expected_attrs = {"endpoint_url": "should_be_included"}
+    S3FileSystem.assert_called_once_with(**expected_attrs)
 
 
 @patch('trollmoves.movers.S3FileSystem')
