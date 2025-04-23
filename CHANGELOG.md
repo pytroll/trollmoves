@@ -1,3 +1,19 @@
+## Version 0.16.0 (2025/04/23)
+
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 216](https://github.com/pytroll/trollmoves/pull/216) - Sanitize connection settings when using S3Mover
+
+#### Features added
+
+* [PR 214](https://github.com/pytroll/trollmoves/pull/214) - Refactor fetcher
+
+In this release 2 pull requests were closed.
+
+
 ## Version 0.15.2 (2024/06/17)
 
 
