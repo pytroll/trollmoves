@@ -35,6 +35,7 @@ extras_require = {
     ],
     "remote_fs": ["pytroll-collectors>=0.16.0", "fsspec"],
     "docs": [],
+    "fetcher": ["pytroll-watchers>=0.6.0"],
 }
 
 all_extras = []
