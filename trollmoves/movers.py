@@ -514,11 +514,15 @@ class S3Mover(Mover):
 
     """
 
+    def __init__(self, origin, destination, attrs=None, backup_targets=None):
+        """Initialize the S3Mover."""
+        super().__init__(origin, destination, attrs, backup_targets)
+        self._sanitize_attrs()
+
     def copy(self):
         """Copy the file to a bucket."""
         if S3FileSystem is None:
             raise ImportError("S3Mover requires 's3fs' to be installed.")
-        self._sanitize_attrs()
         s3 = S3FileSystem(**self.attrs)
         destination_file_path = self._get_destination()
         LOGGER.debug('destination_file_path = %s', destination_file_path)
