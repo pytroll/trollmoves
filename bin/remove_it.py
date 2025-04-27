@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2015, 2016, 2019 Martin Raspaud
+# Copyright (c) 2015, 2016, 2019, 2025 Martin Raspaud
 #
 # Author(s):
 #
@@ -23,15 +23,14 @@
 """Remove files, and send messages about it."""
 
 import argparse
-import datetime as dt
 import getpass
 import logging
 import logging.handlers
-import os
 import socket
 import time
 from configparser import NoOptionError, RawConfigParser
-from glob import glob
+
+from trollmoves.filescleaner import FilesCleaner
 
 LOGGER = logging.getLogger("remove_it")
 
@@ -178,88 +177,10 @@ def get_config_items(args, conf):
     return config_items
 
 
-def remove_file(filename, pub):
-    """Remove one file or directory."""
-    try:
-        if os.path.isdir(filename):
-            if not os.listdir(filename):
-                os.rmdir(filename)
-            else:
-                LOGGER.info("%s not empty.", filename)
-        else:
-            os.remove(filename)
-            msg = Message("/deletion", "del", {"uri": filename})
-            pub.send(str(msg))
-            LOGGER.debug("Removed %s", filename)
-    except FileNotFoundError:
-        LOGGER.debug("File already removed.")
-    except OSError as err:
-        LOGGER.warning("Can't remove %s: %s", filename,
-                       str(err))
-        return False
-    return True
-
-
-def clean_dir(pub, ref_time, pathname, is_dry_run):
-    """Clean up a directory."""
-    section_files = 0
-    section_size = 0
-    LOGGER.info("Cleaning %s", pathname)
-    flist = glob(pathname)
-    for filename in flist:
-        if not os.path.exists(filename):
-            continue
-        try:
-            stat = os.lstat(filename)
-        except OSError:
-            LOGGER.warning("Couldn't lstat path=%s", str(filename))
-            continue
-
-        if dt.datetime.fromtimestamp(stat.st_ctime, dt.timezone.utc) < ref_time:
-            was_removed = False
-            if not is_dry_run:
-                was_removed = remove_file(filename, pub)
-            else:
-                LOGGER.debug("Would remove %s", filename)
-            if was_removed:
-                section_files += 1
-                section_size += stat.st_size
-
-    return (section_size, section_files)
-
-
-def clean_section(pub, section, conf, is_dry_run=True):
-    """Clean up according to the configuration section."""
-    section_files = 0
-    section_size = 0
-    info = dict(conf.items(section))
-    base_dir = info.get("base_dir", "")
-    if not os.path.exists(base_dir):
-        LOGGER.warning("Path %s missing, skipping section %s",
-                       base_dir, section)
-        return (section_size, section_files)
-    LOGGER.info("Cleaning in %s", base_dir)
-    templates = (item.strip() for item in info["templates"].split(","))
-    kws = {}
-    for key in ["days", "hours", "minutes", "seconds"]:
-        try:
-            kws[key] = int(info[key])
-        except KeyError:
-            pass
-    ref_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(**kws)
-
-    for template in templates:
-        pathname = os.path.join(base_dir, template)
-        size, num_files = clean_dir(pub, ref_time, pathname, is_dry_run)
-        section_files += num_files
-        section_size += size
-
-    return (section_size, section_files)
-
-
 def run(args, conf):
     """Run the remove_it tool."""
     config_items = get_config_items(args, conf)
+
     LOGGER.debug("Setting up posttroll connection...")
     with Publish("remover") as pub:
         time.sleep(3)
@@ -267,8 +188,9 @@ def run(args, conf):
         tot_size = 0
         tot_files = 0
         for section in config_items:
-            size, num_files = clean_section(pub, section, conf,
-                                            is_dry_run=args.dry_run)
+            info = dict(conf.items(section))
+            fcleaner = FilesCleaner(pub, section, info, dry_run=args.dry_run)
+            size, num_files = fcleaner.clean_section()
             tot_size += size
             tot_files += num_files
 
