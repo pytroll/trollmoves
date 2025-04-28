@@ -26,7 +26,7 @@ from glob import glob
 
 from posttroll.message import Message
 
-LOGGER = logging.getLogger("__name__")
+LOGGER = logging.getLogger(__name__)
 
 
 class FilesCleaner():
@@ -56,7 +56,7 @@ class FilesCleaner():
                 LOGGER.warning("Couldn't lstat path=%s", str(filename))
                 continue
 
-            if dt.datetime.fromtimestamp(getattr(stat,self.st_time), dt.timezone.utc) < ref_time:
+            if dt.datetime.fromtimestamp(getattr(stat, self.st_time), dt.timezone.utc) < ref_time:
                 was_removed = False
                 if not self.dry_run:
                     was_removed = self.remove_file(filename)
