@@ -22,10 +22,10 @@
 from configparser import RawConfigParser
 
 
-def test_read_config_params(fake_config_file):
+def test_read_config_params(minimal_config_file):
     """Test reading configuration from a config file."""
     conf = RawConfigParser()
-    conf.read(fake_config_file)
+    conf.read(minimal_config_file)
 
     info = dict(conf.items('DEFAULT'))
     assert info == {'mailhost': 'localhost', 'to': 'some_users@xxx.yy', 'subject': 'Cleanup Error on {hostname}'}

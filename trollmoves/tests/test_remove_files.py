@@ -36,11 +36,11 @@ class FakePublisher():
         print(msg)
 
 
-def test_remove_files_default(fake_file_structure):
+def test_remove_files_default(file_structure_with_some_old_files):
     """Test remove files - using default st_ctime as criteria."""
     pub = FakePublisher()
 
-    dir_base, sub_dir1, sub_dir2 = fake_file_structure
+    dir_base, sub_dir1, sub_dir2 = file_structure_with_some_old_files
 
     basedir = str(dir_base)
     subdir1 = sub_dir1.name
@@ -75,10 +75,10 @@ def test_remove_files_default(fake_file_structure):
                            ())
                           ]
                          )
-def test_remove_files_access_time(fake_file_structure, hours, expected_files_removed):
+def test_remove_files_access_time(file_structure_with_some_old_files, hours, expected_files_removed):
     """Test remove files."""
     pub = FakePublisher()
-    dir_base, sub_dir1, sub_dir2 = fake_file_structure
+    dir_base, sub_dir1, sub_dir2 = file_structure_with_some_old_files
 
     basedir = str(dir_base)
     subdir1 = sub_dir1.name

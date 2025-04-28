@@ -24,15 +24,9 @@ import logging
 import os
 from glob import glob
 
+from posttroll.message import Message
+
 LOGGER = logging.getLogger("__name__")
-
-
-try:
-    from posttroll.message import Message
-except ImportError:
-    def Message(*args, **kwargs):
-        """Fake message object in case posttroll isn't installed."""
-        del args, kwargs
 
 
 class FilesCleaner():

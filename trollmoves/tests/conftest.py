@@ -35,7 +35,7 @@ def pytest_collection_modifyitems(items):
 
 
 @pytest.fixture
-def fake_config_file(tmp_path):
+def minimal_config_file(tmp_path):
     """Create a fake configuration file."""
     file_path = tmp_path / TEST_BASIC_FILESCLEANER_CONFIG_FILENAME
     with open(file_path, 'w') as fpt:
@@ -45,7 +45,7 @@ def fake_config_file(tmp_path):
 
 
 @pytest.fixture
-def fake_file_structure(tmp_path):
+def file_structure_with_some_old_files(tmp_path):
     """Create some fake files in a fake directory structure."""
     data_dir = tmp_path / "mydata" / "geo_out"
     data_dir.mkdir(parents=True)
