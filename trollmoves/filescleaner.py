@@ -62,7 +62,7 @@ class FilesCleaner():
                 LOGGER.warning("Couldn't lstat path=%s", str(filename))
                 continue
 
-            if dt.datetime.fromtimestamp(stat.__getattribute__(self.st_time), dt.timezone.utc) < ref_time:
+            if dt.datetime.fromtimestamp(getattr(stat,self.st_time), dt.timezone.utc) < ref_time:
                 was_removed = False
                 if not self.dry_run:
                     was_removed = self.remove_file(filename)
