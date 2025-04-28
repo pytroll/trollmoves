@@ -64,7 +64,7 @@ def file_structure_with_some_old_files(tmp_path):
     for fname in files:
         (data_subdir1 / fname).touch()
 
-    six_hours_ago = dt.datetime.now(dt.UTC) - dt.timedelta(hours=6)
+    six_hours_ago = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=6)
 
     oldfile = (data_subdir1 / 'b.nc')
     os.utime(oldfile, (six_hours_ago.timestamp(), six_hours_ago.timestamp()))
@@ -73,7 +73,7 @@ def file_structure_with_some_old_files(tmp_path):
     for fname in files:
         (data_subdir2 / fname).touch()
 
-    eight_hours_ago = dt.datetime.now(dt.UTC) - dt.timedelta(hours=8)
+    eight_hours_ago = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=8)
     oldfile = (data_subdir2 / 'b.png')
     os.utime(oldfile, (eight_hours_ago.timestamp(), eight_hours_ago.timestamp()))
 
