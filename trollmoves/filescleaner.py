@@ -111,7 +111,6 @@ class FilesCleaner():
         except FileNotFoundError:
             LOGGER.debug("File already removed.")
         except OSError as err:
-            LOGGER.warning("Can't remove %s: %s", filename,
-                           str(err))
+            LOGGER.warning("Can't remove %s: %s", filename, str(err))
             return False
         return True

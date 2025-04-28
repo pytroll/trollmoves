@@ -19,6 +19,8 @@
 """Unittests for the utilities used to removing files from the remove_it script."""
 
 
+import logging
+
 import pytest
 
 from trollmoves.filescleaner import FilesCleaner
@@ -63,7 +65,6 @@ def test_remove_files_default(file_structure_with_some_old_files):
     assert (sub_dir1 / "a.nc").exists()
     assert (sub_dir1 / "b.nc").exists()
     assert (sub_dir1 / "c.h5").exists()
-    assert (sub_dir2 / "a.png").exists()
     assert (sub_dir2 / "b.png").exists()
     assert (sub_dir2 / "c.tif").exists()
 
@@ -96,6 +97,13 @@ def test_remove_files_access_time(file_structure_with_some_old_files, hours, exp
     fcleaner = FilesCleaner(pub, section, info, dry_run=False)
     size, num_files = fcleaner.clean_section()
 
+    if hours < 6:
+        assert num_files == 2
+        assert size == 0
+    else:
+        assert num_files == 0
+        assert size == 0
+
     filepaths = [(sub_dir1 / "a.nc"),
                  (sub_dir1 / "b.nc"),
                  (sub_dir1 / "c.h5"),
@@ -112,3 +120,120 @@ def test_remove_files_access_time(file_structure_with_some_old_files, hours, exp
 
     for fpath in filepaths:
         assert fpath.exists()
+
+
+def test_remove_files_access_time_dryrun(file_structure_with_some_old_files, caplog):
+    """Test remove files."""
+    pub = FakePublisher()
+    dir_base, sub_dir1, sub_dir2 = file_structure_with_some_old_files
+
+    basedir = str(dir_base)
+    subdir1 = sub_dir1.name
+    subdir2 = sub_dir2.name
+
+    section = 'mytest_files1'
+    info = {'mailhost': 'localhost',
+            'to': 'some_users@xxx.yy',
+            'subject': 'Cleanup Error on {hostname}',
+            'base_dir': f'{basedir}',
+            'st_time': 'st_atime',
+            'templates': f'{subdir1}/*,{subdir2}/*.png',
+            'hours': '3'}
+
+    with caplog.at_level(logging.DEBUG):
+        fcleaner = FilesCleaner(pub, section, info, dry_run=True)
+        size, num_files = fcleaner.clean_section()
+
+    assert num_files == 0
+
+    log_output1 = f'Would remove {(sub_dir1 / "b.nc")}'
+    log_output2 = f'Would remove {(sub_dir2 / "b.png")}'
+    assert log_output1 in caplog.text
+    assert log_output2 in caplog.text
+
+
+def test_remove_files_path_missing(file_structure_with_some_old_files, caplog):
+    """Test remove files in file structure with an empty directory."""
+    pub = FakePublisher()
+    _, sub_dir1, sub_dir2 = file_structure_with_some_old_files
+
+    basedir = '/non/existing/directory'
+    subdir1 = sub_dir1.name
+    subdir2 = sub_dir2.name
+
+    section = 'mytest_files1'
+    info = {'mailhost': 'localhost',
+            'to': 'some_users@xxx.yy',
+            'subject': 'Cleanup Error on {hostname}',
+            'base_dir': basedir,
+            'st_time': 'st_atime',
+            'templates': f'{subdir1}/*.png,{subdir2}/*',
+            'hours': '6'}
+
+    with caplog.at_level(logging.WARNING):
+        fcleaner = FilesCleaner(pub, section, info, dry_run=True)
+        size, num_files = fcleaner.clean_section()
+
+    assert size == 0
+    assert num_files == 0
+
+    log_output = f'Path {basedir} missing, skipping section mytest_files1'
+    assert log_output in caplog.text
+
+
+def test_remove_files_empty_dir_mtime(file_structure_with_some_old_files_and_empty_dir, caplog):
+    """Test remove files."""
+    pub = FakePublisher()
+    dir_base, sub_dir1, sub_dir2 = file_structure_with_some_old_files_and_empty_dir
+
+    basedir = str(dir_base)
+    subdir1 = sub_dir1.name
+    subdir2 = sub_dir2.name
+
+    section = 'mytest_files1'
+    info = {'mailhost': 'localhost',
+            'to': 'some_users@xxx.yy',
+            'subject': 'Cleanup Error on {hostname}',
+            'base_dir': f'{basedir}',
+            'st_time': 'st_mtime',
+            'templates': f'{subdir1}/*.png,{subdir2}/*,{basedir}/*',
+            'hours': '3'}
+
+    with caplog.at_level(logging.DEBUG):
+        fcleaner = FilesCleaner(pub, section, info, dry_run=False)
+        size, num_files = fcleaner.clean_section()
+
+    log_output1 = f'Removed {(sub_dir1 / "b.png")}'
+    assert log_output1 in caplog.text
+    assert not (sub_dir1 / "b.png").exists()
+    assert num_files == 2
+    assert not sub_dir2.exists()
+
+
+def test_remove_files_empty_dir_atime(file_structure_with_some_old_files_and_empty_dir, caplog):
+    """Test remove files."""
+    pub = FakePublisher()
+    dir_base, sub_dir1, sub_dir2 = file_structure_with_some_old_files_and_empty_dir
+
+    basedir = str(dir_base)
+    subdir1 = sub_dir1.name
+    subdir2 = sub_dir2.name
+
+    section = 'mytest_files1'
+    info = {'mailhost': 'localhost',
+            'to': 'some_users@xxx.yy',
+            'subject': 'Cleanup Error on {hostname}',
+            'base_dir': f'{basedir}',
+            'st_time': 'st_atime',
+            'templates': f'{subdir1}/*.png,{subdir2}/*,{basedir}/*',
+            'hours': '3'}
+
+    with caplog.at_level(logging.DEBUG):
+        fcleaner = FilesCleaner(pub, section, info, dry_run=False)
+        size, num_files = fcleaner.clean_section()
+
+    log_output1 = f'Removed {(sub_dir1 / "b.png")}'
+    assert log_output1 in caplog.text
+    assert not (sub_dir1 / "b.png").exists()
+    assert num_files == 1
+    assert sub_dir2.exists()
