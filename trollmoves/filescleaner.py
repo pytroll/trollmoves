@@ -38,7 +38,7 @@ class FilesCleaner():
         self.section = section
         self.info = info
         self.dry_run = dry_run
-        self.stat_time_method = self.info.get('st_time', 'st_ctime')
+        self.stat_time_method = self.info.get('stat_time_method', 'st_ctime')
 
     def clean_dir(self, ref_time, pathname):
         """Clean up a directory."""

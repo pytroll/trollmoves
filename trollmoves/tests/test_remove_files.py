@@ -90,7 +90,7 @@ def test_remove_files_access_time(file_structure_with_some_old_files, hours, exp
             'to': 'some_users@xxx.yy',
             'subject': 'Cleanup Error on {hostname}',
             'base_dir': f'{basedir}',
-            'st_time': 'st_atime',
+            'stat_time_method': 'st_atime',
             'templates': f'{subdir1}/*,{subdir2}/*.png',
             'hours': f'{hours}'}
 
@@ -136,7 +136,7 @@ def test_remove_files_access_time_dryrun(file_structure_with_some_old_files, cap
             'to': 'some_users@xxx.yy',
             'subject': 'Cleanup Error on {hostname}',
             'base_dir': f'{basedir}',
-            'st_time': 'st_atime',
+            'stat_time_method': 'st_atime',
             'templates': f'{subdir1}/*,{subdir2}/*.png',
             'hours': '3'}
 
@@ -166,7 +166,7 @@ def test_remove_files_path_missing(file_structure_with_some_old_files, caplog):
             'to': 'some_users@xxx.yy',
             'subject': 'Cleanup Error on {hostname}',
             'base_dir': basedir,
-            'st_time': 'st_atime',
+            'stat_time_method': 'st_atime',
             'templates': f'{subdir1}/*.png,{subdir2}/*',
             'hours': '6'}
 
@@ -195,7 +195,7 @@ def test_remove_files_empty_dir_mtime(file_structure_with_some_old_files_and_emp
             'to': 'some_users@xxx.yy',
             'subject': 'Cleanup Error on {hostname}',
             'base_dir': f'{basedir}',
-            'st_time': 'st_mtime',
+            'stat_time_method': 'st_mtime',
             'templates': f'{subdir1}/*.png,{subdir2}/*,{basedir}/*',
             'hours': '3'}
 
@@ -224,7 +224,7 @@ def test_remove_files_empty_dir_atime(file_structure_with_some_old_files_and_emp
             'to': 'some_users@xxx.yy',
             'subject': 'Cleanup Error on {hostname}',
             'base_dir': f'{basedir}',
-            'st_time': 'st_atime',
+            'stat_time_method': 'st_atime',
             'templates': f'{subdir1}/*.png,{subdir2}/*,{basedir}/*',
             'hours': '3'}
 
