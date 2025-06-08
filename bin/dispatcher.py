@@ -20,11 +20,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-"""Dispatcher.
-
-The configuration file is watched with inotify. If needed, the reload of the
-configuration file can be triggered with a `kill -10 <dispatcher pid>`.
-"""
+"""Dispatcher."""
 
 import argparse
 import sys

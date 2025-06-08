@@ -175,6 +175,32 @@ class TestSSHMovers(unittest.TestCase):
         finally:
             logger.removeHandler(stream_handler)
 
+    @patch('paramiko.SSHClient', autospec=True)
+    def test_scp_open_connection_backup_targets(self, mock_sshclient):
+        """Check scp get_connection using backup targets."""
+        from trollmoves.movers import ScpMover
+        stream_handler = logging.StreamHandler(sys.stdout)
+        logger.addHandler(stream_handler)
+        logger.setLevel(logging.INFO)
+
+        mocked_client = MagicMock(side_effect=socket.timeout)
+        mock_sshclient.return_value.connect.side_effect = mocked_client
+
+        scp_mover = ScpMover(self.origin, self.destination_no_port,
+                             attrs={'ssh_connection_timeout': 1},
+                             backup_targets=['backup_host1',
+                                             'backup_host2'])
+        try:
+            with self.assertLogs(logger, level=logging.INFO) as lc, self.assertRaises(IOError):
+                scp_mover.open_connection()
+            assert "SSH connection timed out:" in lc.output[0]
+            assert "Changing destination to backup target: backup_host1" in lc.output[3]
+            assert "Changing destination to backup target: backup_host2" in lc.output[7]
+            mock_sshclient.return_value.connect.assert_called_with("backup_host2", username="user", port=22,
+                                                                    key_filename=None, timeout=1)
+        finally:
+            logger.removeHandler(stream_handler)
+
     @patch('paramiko.SSHClient.connect', autospec=True)
     def test_scp_open_connection_generic_exception(self, mock_sshclient_connect):
         """Check scp open_connection() failure when a generic exception happens."""
@@ -280,6 +306,24 @@ class TestSSHMovers(unittest.TestCase):
 
         mocked_scp_client.put.assert_called_once_with(self.origin, urlparse(self.destination_no_port).path)
 
+
+    @patch('paramiko.SSHClient.connect', autospec=True)
+    @patch('scp.SCPClient', autospec=True)
+    def test_move_it_destination_types(self, patch_scpclient, patch_connect):
+        """Test move_it handles destination string and urlparse types."""
+        import os
+        from trollmoves.movers import move_it
+
+        expected_destination = urlparse("scp://hostname/path/name")
+        pathname = os.path.join(self.dest_dir, "dest.ext")
+
+        destination = "scp://hostname/path/name"
+        ret_destination = move_it(pathname, destination)
+        assert ret_destination == expected_destination
+
+        urlparse_destination = urlparse("scp://hostname/path/name")
+        ret_destination = move_it(pathname, urlparse_destination)
+        assert ret_destination == expected_destination
 
 if __name__ == '__main__':
     unittest.main()

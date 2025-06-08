@@ -1,9 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2015 - 2023 Pytroll Developers
+# Copyright (c) 2015 - 2025 Pytroll Developers
 #
-
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
@@ -19,48 +18,46 @@
 
 """Remove files, and send messages about it."""
 
-from configparser import RawConfigParser, NoOptionError
-import time
 import argparse
+import getpass
 import logging
 import logging.handlers
-import getpass
 import socket
-from trollmoves.filescleaner import (get_config_items,
-                                     clean_section)
+import time
+from configparser import NoOptionError, RawConfigParser
+
+from trollmoves.filescleaner import FilesCleaner
 
 LOGGER = logging.getLogger(__name__)
 
 try:
-    from posttroll.publisher import Publish
     from posttroll.message import Message
+    from posttroll.publisher import Publish
 except ImportError:
 
     class Publish(object):
-        """Dummy publish class to handle the case when Posttroll is not being used or not available."""
+        """A fake publish in case posttroll isn't installed."""
 
         def __enter__(self):
-            """Enter the dummy publisher."""
+            """Fake enter."""
             return self
 
         def __exit__(self, etype, value, traceback):
-            """Exit the dummy publisher."""
-            pass
+            """Fake exit."""
 
         def send(self, msg):
-            """Fake send message - however here nothing is being sent."""
-            pass
+            """Fake send."""
 
     def Message(*args, **kwargs):
-        """Handle messaging in case posttroll is not avalable."""
+        """Fake message object in case posttroll isn't installed."""
         del args, kwargs
 
 
 class BufferingSMTPHandler(logging.handlers.BufferingHandler):
-    """Handle buffering of logging info for the SMTP log-handler."""
+    """A logging handler for emails."""
 
     def __init__(self, mailhost, fromaddr, toaddrs, subject, capacity):
-        """Set up buffer log-handling."""
+        """Set up the handler."""
         logging.handlers.BufferingHandler.__init__(self, capacity)
         self.mailhost = mailhost
         self.mailport = None
@@ -71,7 +68,7 @@ class BufferingSMTPHandler(logging.handlers.BufferingHandler):
             logging.Formatter("[%(asctime)s %(levelname)-5s] %(message)s"))
 
     def flush(self):
-        """Flush the buffer."""
+        """Flush the messages."""
         if len(self.buffer) > 0:
             try:
                 import smtplib
@@ -92,7 +89,7 @@ class BufferingSMTPHandler(logging.handlers.BufferingHandler):
 
 
 def parse_args():
-    """Parse command line arguments."""
+    """Parse the command line arguments."""
     parser = argparse.ArgumentParser()
     parser.add_argument("configuration_file",
                         help="the configuration file to use")
@@ -141,7 +138,7 @@ def setup_logger(args):
 
 
 def setup_mailing(args, conf, info):
-    """Set up log-handler to deal with sending messages/logs as mails."""
+    """Set up the mailing handler."""
     if args.mail:
         try:
             mailhandler = BufferingSMTPHandler(
@@ -157,9 +154,27 @@ def setup_mailing(args, conf, info):
             LOGGER.addHandler(mailhandler)
 
 
+def get_config_items(args, conf):
+    """Get the configuration items."""
+    config_items = []
+
+    if args.config_item:
+        for config_item in args.config_item:
+            if config_item not in conf.sections():
+                LOGGER.error("No section named %s in %s",
+                             config_item, args.configuration_file)
+            else:
+                config_items.append(config_item)
+    else:
+        config_items = conf.sections()
+
+    return config_items
+
+
 def run(args, conf):
-    """Perform files cleaning and publish accordingly - called from main()."""
+    """Run the remove_it tool."""
     config_items = get_config_items(args, conf)
+
     LOGGER.debug("Setting up posttroll connection...")
     with Publish("remover") as pub:
         time.sleep(3)
@@ -167,8 +182,9 @@ def run(args, conf):
         tot_size = 0
         tot_files = 0
         for section in config_items:
-            size, num_files = clean_section(pub, section, conf,
-                                            is_dry_run=args.dry_run)
+            info = dict(conf.items(section))
+            fcleaner = FilesCleaner(pub, section, info, dry_run=args.dry_run)
+            size, num_files = fcleaner.clean_section()
             tot_size += size
             tot_files += num_files
 
@@ -177,7 +193,7 @@ def run(args, conf):
 
 
 def main():
-    """Take command line arguments and do the files cleaning."""
+    """Parse args and run the remove_it tool."""
     conf = RawConfigParser()
 
     args = parse_args()

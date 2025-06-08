@@ -23,38 +23,39 @@
 """Test the trollmoves client."""
 
 import copy
-from unittest.mock import MagicMock, patch, call
-from tempfile import NamedTemporaryFile
 import os
 import time
-from threading import Thread
 from collections import deque
+from tempfile import NamedTemporaryFile
+from threading import Thread
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 from posttroll.message import Message
+from posttroll.testing import patched_publisher
+
 from trollmoves.client import MoveItClient, parse_args
 
-
 MSG_FILE = Message('/topic', 'file', {'uid': 'file1.png',
-                                      'uri': '/tmp/file1.png'})
+                                      'uri': '/data_dir/file1.png'})
 MSG_FILE_TAR = Message('/topic', 'file', {'uid': 'file1.tar',
-                                          'uri': '/tmp/file1.tar'})
+                                          'uri': '/data_dir/file1.tar'})
 MSG_FILE_BZ2 = Message('/topic', 'file', {'uid': 'file1.png.bz2',
-                                          'uri': '/tmp/file1.png.bz2'})
+                                          'uri': '/data_dir/file1.png.bz2'})
 MSG_FILE_XRIT = Message('/topic', 'file', {'uid': 'file1-C_',
-                                           'uri': '/tmp/file1-C_'})
+                                           'uri': '/data_dir/file1-C_'})
 MSG_DATASET_TAR = Message('/topic', 'dataset',
                           {'dataset': [{'uid': 'file1.tgz',
-                                        'uri': '/tmp/file1.tgz'},
+                                        'uri': '/data_dir/file1.tgz'},
                                        {'uid': 'file2.tar.gz',
-                                        'uri': '/tmp/file2.tar.gz'}]})
+                                        'uri': '/data_dir/file2.tar.gz'}]})
 MSG_COLLECTION_TAR = Message('/topic', 'collection',
                              {'collection':
                               [{'dataset': [{'uid': 'file1.tar.bz2',
-                                             'uri': '/tmp/file1.tar.bz2'}]}]})
+                                             'uri': '/data_dir/file1.tar.bz2'}]}]})
 MSG_MIRROR = Message('/topic', 'file', {'fname': 'file1', 'uri':
-                                        'scp://user@host/tmp/bar/file1.txt', 'uid':
-                                        'file1.txt', 'destination': 'scp://targethost.domain/tmp/bar/',
+                                        'scp://user@host/data_dir/bar/file1.txt', 'uid':
+                                        'file1.txt', 'destination': 'scp://targethost.domain/data_dir/bar/',
                                         'origin': 'sourcehost.domain:9201'})
 COMPRESSION_CONFIG = """
 [DEFAULT]
@@ -85,7 +86,7 @@ CLIENT_CONFIG_1_ITEM = """
 # Example acting as a hot spare
 [eumetcast_hrit_0deg_scp_hot_spare]
 providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
-destination = scp:///tmp/foo
+destination = scp:///data_dir/foo
 login = user
 topic = /1b/hrit-segment/0deg
 publish_port = 0
@@ -96,7 +97,7 @@ CLIENT_CONFIG_1_ITEM_NON_PUB_PROVIDER_ITEM_MODIFIED = """
 # Example acting as a hot spare
 [eumetcast_hrit_0deg_scp_hot_spare]
 providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
-destination = scp:///tmp/bar
+destination = scp:///data_dir/bar
 login = user
 topic = /1b/hrit-segment/0deg
 publish_port = 0
@@ -107,7 +108,7 @@ CLIENT_CONFIG_1_PUB_ITEM_MODIFIED = """
 # Example acting as a hot spare
 [eumetcast_hrit_0deg_scp_hot_spare]
 providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
-destination = scp:///tmp/foo
+destination = scp:///data_dir/foo
 login = user
 topic = /1b/hrit-segment/0deg
 publish_port = 12345
@@ -118,7 +119,7 @@ CLIENT_CONFIG_1_ITEM_TWO_PROVIDERS = """
 # Example acting as a hot spare
 [eumetcast_hrit_0deg_scp_hot_spare]
 providers = satmottag2:9010 satmottag:9010
-destination = scp:///tmp/foo
+destination = scp:///data_dir/foo
 login = user
 topic = /1b/hrit-segment/0deg
 publish_port = 0
@@ -129,7 +130,7 @@ CLIENT_CONFIG_1_ITEM_TOPIC_CHANGED = """
 # Example acting as a hot spare
 [eumetcast_hrit_0deg_scp_hot_spare]
 providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
-destination = scp:///tmp/foo
+destination = scp:///data_dir/foo
 login = user
 topic = /1b/hrit-segment/zero_degrees
 publish_port = 0
@@ -140,7 +141,7 @@ CLIENT_CONFIG_1_ITEM_NAMESERVERS_IS_FALSE = """
 # Example acting as a hot spare
 [eumetcast_hrit_0deg_scp_hot_spare]
 providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
-destination = scp:///tmp/foo
+destination = scp:///data_dir/foo
 login = user
 topic = /1b/hrit-segment/0deg
 publish_port = 0
@@ -152,7 +153,7 @@ CLIENT_CONFIG_2_ITEMS = """
 # Example acting as a hot spare
 [eumetcast_hrit_0deg_scp_hot_spare]
 providers = satmottag2:9010 satmottag:9010 explorer:9010 primary_client
-destination = scp:///tmp/foo
+destination = scp:///data_dir/foo
 login = user
 topic = /1b/hrit-segment/0deg
 publish_port = 0
@@ -160,11 +161,22 @@ processing_delay = 0.02
 
 [foo]
 providers = bar
-destination = scp:///tmp/foo
+destination = scp:///data_dir/foo
 login = user
 topic = /1b/hrit-segment/0deg
 publish_port = 0
 nameservers = ns1 ns2
+"""
+
+CLIENT_CONFIG_BACKUP_TARGETS = """
+[foo]
+providers = bar
+destination = scp://primary_host/data_dir/foo
+login = user
+topic = /1b/hrit-segment/0deg
+publish_port = 0
+nameservers = ns1
+backup_targets=backup_host1 backup_host2
 """
 
 LOCAL_DIR = "/local"
@@ -206,8 +218,8 @@ def _write_named_temporary_config(data):
 
 
 def _write_to_tar(file_to_add, remove_in_file=False, filename=None):
-    from tempfile import gettempdir
     import tarfile
+    from tempfile import gettempdir
 
     mode = 'a'
     if filename is None:
@@ -266,6 +278,12 @@ def client_config_2_items():
 
 
 @pytest.fixture
+def client_config_backup_targets():
+    """Create a fixture for a client config."""
+    yield _write_named_temporary_config(CLIENT_CONFIG_BACKUP_TARGETS)
+
+
+@pytest.fixture
 def compression_config():
     """Create a fixture for compression config."""
     yield _write_named_temporary_config(COMPRESSION_CONFIG)
@@ -309,55 +327,59 @@ def chain_config_with_one_item_nameservers_is_false(client_config_1_item_nameser
     yield conf
 
 
-@patch('os.remove')
 @patch('trollmoves.client.check_output')
-def test_unpack_xrit(check_output, remove):
-    """Test unpacking of Eumetsat SEVIRI XRIT/HRIT segments."""
+def test_unpack_xrit_decompressed_no_config(check_output):
+    """Test unpacking of already decompressed xrit segments without config."""
     from trollmoves.client import unpack_xrit
 
     # No configured options
     kwargs = {}
 
     # File already decompressed
-    fname_in = "/tmp/H-000-MSG4__-MSG4________-_________-PRO______-201909031245-__"
+    fname_in = "/data_dir/H-000-MSG4__-MSG4________-_________-PRO______-201909031245-__"
 
     res = unpack_xrit(fname_in, **kwargs)
     assert res == fname_in
     check_output.assert_not_called()
-    remove.assert_not_called()
+
+
+@patch('trollmoves.client.check_output')
+def test_unpack_xrit_compressed_no_config(check_output):
+    """Test unpacking of xrit segments without config."""
+    from trollmoves.client import unpack_xrit
+
+    # No configured options
+    kwargs = {}
 
     # Compressed segment
-    fname_in = "/tmp/H-000-MSG4__-MSG4________-IR_134___-000003___-201909031245-C_"
+    fname_in = "/data_dir/H-000-MSG4__-MSG4________-IR_134___-000003___-201909031245-C_"
 
     try:
-        res = unpack_xrit(fname_in, **kwargs)
+        _ = unpack_xrit(fname_in, **kwargs)
         # Should raise OSError as xritdecompressor hasn't been defined
         raise AssertionError
     except OSError:
         pass
-    remove.assert_not_called()
 
-    # Define xritdecompressor path
+
+@patch('trollmoves.client.check_output')
+def test_unpack_xrit_compressed_xritdecompressor(check_output):
+    """Test unpacking of xrit segments when xritdecompressor is defined."""
+    from trollmoves.client import unpack_xrit
+
     kwargs = {'xritdecompressor': '/path/to/xRITDecompress'}
-    res = unpack_xrit(fname_in, **kwargs)
-    assert check_output.called_once_with(
-        ['/path/to/xRITDecompress', fname_in], cwd=('/tmp'))
-    remove.assert_not_called()
-
-    # Define also delete
-    kwargs = {'delete': True, 'xritdecompressor': '/path/to/xRITDecompress'}
-
-    res = unpack_xrit(fname_in, **kwargs)
-    assert check_output.called_once_with(
-        ['/path/to/xRITDecompress', fname_in], cwd=('/tmp'))
-    assert remove.called_once_with(fname_in)
+    fname_in = "/data_dir/H-000-MSG4__-MSG4________-IR_134___-000003___-201909031245-C_"
+    _ = unpack_xrit(fname_in, **kwargs)
+    check_output.assert_called_once_with(
+        ['/path/to/xRITDecompress', fname_in], cwd=('/data_dir'))
 
 
 def test_unpack_bzip():
     """Test unpacking of bzip2 files."""
-    from trollmoves.client import unpack_bzip
-    from tempfile import gettempdir
     import bz2
+    from tempfile import gettempdir
+
+    from trollmoves.client import unpack_bzip
 
     try:
         # Write a bz2 file
@@ -524,7 +546,7 @@ def test_unpack_and_create_local_message_xrit_compression_with_delete(unpackers)
     unpackers['xrit'].return_value = 'new_file1.png'
     with patch('os.remove') as remove:
         _ = unp(copy.copy(MSG_FILE_XRIT), LOCAL_DIR, **kwargs)
-    assert remove.called_once_with(os.path.join(LOCAL_DIR, MSG_FILE_XRIT.data['uid']))
+    remove.assert_called_once_with(os.path.join(LOCAL_DIR, MSG_FILE_XRIT.data['uid']))
     del kwargs['delete']
 
 
@@ -597,8 +619,8 @@ def test_unpack_and_create_local_message_config_no_compression(compression_confi
 
     Case with using a configuration file without compression
     """
-    from trollmoves.client import unpack_and_create_local_message as unp
     from trollmoves.client import read_config
+    from trollmoves.client import unpack_and_create_local_message as unp
 
     try:
         config = read_config(compression_config)
@@ -619,8 +641,8 @@ def test_unpack_and_create_local_message_config_xrit_compression(unpackers, comp
 
     Case with using a configuration file with xrit compression
     """
-    from trollmoves.client import unpack_and_create_local_message as unp
     from trollmoves.client import read_config
+    from trollmoves.client import unpack_and_create_local_message as unp
 
     try:
         config = read_config(compression_config)
@@ -895,8 +917,9 @@ def test_add_to_file_cache_two_files(lock, file_cache):
 @patch('trollmoves.client.send_ack')
 def test_request_push_single_call(send_ack, send_request, clean_ongoing_transfer, file_cache, ongoing_transfers):
     """Test trollmoves.client.request_push() with a single file."""
-    from trollmoves.client import request_push
     from tempfile import gettempdir
+
+    from trollmoves.client import request_push
 
     clean_ongoing_transfer.return_value = [MSG_FILE2]
     send_request.return_value = [MSG_FILE2, 'localhost']
@@ -922,10 +945,43 @@ def test_request_push_single_call(send_ack, send_request, clean_ongoing_transfer
 @patch('trollmoves.client.clean_ongoing_transfer')
 @patch('trollmoves.client.send_request')
 @patch('trollmoves.client.send_ack')
+def test_request_push_backup_targets(send_ack, send_request, clean_ongoing_transfer, file_cache, ongoing_transfers):
+    """Test trollmoves.client.request_push() with a single file."""
+    from tempfile import gettempdir
+
+    from trollmoves.client import request_push
+
+    msg_file_backup_targets = MSG_FILE2
+    msg_file_backup_targets.data['backup_targets'] = ['backup_host1', 'backup_host2']
+    clean_ongoing_transfer.return_value = [msg_file_backup_targets]
+    send_request.return_value = [msg_file_backup_targets, 'localhost']
+    publisher = MagicMock()
+    kwargs = {'transfer_req_timeout': 1.0, 'req_timeout': 1.0}
+
+    request_push(msg_file_backup_targets, gettempdir(), 'login', publisher=publisher,
+                 **kwargs)
+
+    send_request.assert_called_once()
+    send_ack.assert_called_once()
+    # The file should be added to ongoing transfers
+    assert UID_FILE2 in ongoing_transfers
+    # And removed
+    clean_ongoing_transfer.assert_called_once_with(UID_FILE2)
+    # The transferred file should be in the cache
+    assert MSG_FILE2.data['uid'] in file_cache
+    assert len(file_cache) == 1
+
+
+@patch('trollmoves.client.ongoing_transfers', new_callable=dict)
+@patch('trollmoves.client.file_cache', new_callable=deque)
+@patch('trollmoves.client.clean_ongoing_transfer')
+@patch('trollmoves.client.send_request')
+@patch('trollmoves.client.send_ack')
 def test_request_push_duplicate_call(send_ack, send_request, clean_ongoing_transfer, file_cache, ongoing_transfers):
     """Test trollmoves.client.request_push() with duplicate files."""
-    from trollmoves.client import request_push
     from tempfile import gettempdir
+
+    from trollmoves.client import request_push
 
     clean_ongoing_transfer.return_value = [MSG_FILE2]
     send_request.return_value = [MSG_FILE2, 'localhost']
@@ -1213,7 +1269,8 @@ def test_reload_config_chain_not_recreated(Chain, request_push, client_config_1_
 @patch('trollmoves.client.CTimer')
 def test_add_request_push_timer(CTimer, hot_spare_timer_lock):
     """Test adding timer."""
-    from trollmoves.client import add_request_push_timer, ongoing_hot_spare_timers, request_push
+    from trollmoves.client import (add_request_push_timer,
+                                   ongoing_hot_spare_timers, request_push)
 
     # Mock timer
     timer = MagicMock()
@@ -1234,7 +1291,7 @@ def test_add_request_push_timer(CTimer, hot_spare_timer_lock):
 @patch('trollmoves.client.ongoing_transfers_lock')
 def test_iterate_messages(lock):
     """Test iterate_messages()."""
-    from trollmoves.client import ongoing_transfers, iterate_messages
+    from trollmoves.client import iterate_messages, ongoing_transfers
     values = ["bar", "baz"]
     ongoing_transfers["foo"] = values.copy()
     res = iterate_messages("foo")
@@ -1298,8 +1355,8 @@ def test_chain_listeners(Listener, create_publisher_from_dict_config, request_pu
 def test_chain_restart_dead_listeners(Listener, create_publisher_from_dict_config, request_push, caplog,
                                       chain_config_with_one_item):
     """Test the Chain object."""
-    from trollmoves.client import Chain
     import trollmoves.client
+    from trollmoves.client import Chain
 
     _mock_listener_for_chain_tests(Listener)
 
@@ -1332,8 +1389,8 @@ def test_chain_restart_dead_listeners(Listener, create_publisher_from_dict_confi
 def test_chain_listener_crashing_once(Listener, create_publisher_from_dict_config, request_push, caplog,
                                       chain_config_with_one_item):
     """Test the Chain object."""
-    from trollmoves.client import Chain
     import trollmoves.client
+    from trollmoves.client import Chain
 
     _mock_listener_for_chain_tests(Listener)
 
@@ -1363,8 +1420,8 @@ def test_chain_listener_crashing_once(Listener, create_publisher_from_dict_confi
 def test_chain_listener_crashing_all_the_time(Listener, create_publisher_from_dict_config, request_push,
                                               caplog, chain_config_with_one_item):
     """Test the Chain object."""
-    from trollmoves.client import Chain
     import trollmoves.client
+    from trollmoves.client import Chain
 
     def restart():
         return Listener
@@ -1447,7 +1504,7 @@ def test_chain_publisher_needs_restarting_non_publisher_value_added(Listener, cr
 
     config = CHAIN_BASIC_CONFIG.copy()
     chain = Chain("foo", config.copy())
-    config["destination"] = "file:///tmp/"
+    config["destination"] = "file:///data_dir/"
     assert chain.publisher_needs_restarting(config.copy()) is False
 
 
@@ -1509,6 +1566,17 @@ nameservers = localhost 192.168.0.10 192.168.0.11
 heartbeat_alarm_scale = 10
 """
 
+config_without_nameservers = b"""
+[eumetcast_hrit_0deg_ftp]
+providers = satmottag2:9010 satmottag:9010 explorer:9010
+destination = ftp:///data/geo_in/0deg/
+login = user:pass
+topic = /1b/hrit-segment/0deg
+publish_port = 2023
+nameservers = False
+heartbeat_alarm_scale = 10
+"""
+
 
 class TestMoveItClient:
     """Test the move it client."""
@@ -1554,11 +1622,34 @@ class TestMoveItClient:
             client.signal_reload_cfg_file()
             mock_reload_config.assert_called_once()
 
+    def test_reloads_config_on_newly_written_config_file(self, tmp_path):
+        """Test that config can be reloaded with basic example."""
+        config_filename = tmp_path / "my_config_file.ini"
+        with open(config_filename, "wb") as fd:
+            fd.write(config_without_nameservers)
+        cmd_args = parse_args([os.fspath(config_filename)])
+        with patched_publisher():
+            client = MoveItClient(cmd_args)
+            from threading import Thread
+            thr = Thread(target=client.run)
+            thr.start()
+            time.sleep(0.1)
+            try:
+                assert len(client.chains.keys()) == 0
+                with open(config_filename, "a"):
+                    pass
+                time.sleep(.1)
+                assert len(client.chains.keys()) == 1
+            finally:
+                client.chains_stop()
+                thr.join()
+
 
 def test_create_local_dir():
     """Test creation of local directory."""
-    from tempfile import mkdtemp
     import shutil
+    from tempfile import mkdtemp
+
     from trollmoves.client import create_local_dir
 
     destination = "ftp://server.foo/public_path/subdir/"
@@ -1620,8 +1711,9 @@ def test_make_uris_remote_destination_with_login():
 
 def test_make_uris_local_destination_with_ftp():
     """Test that the published messages are formulated correctly for local destinations provided with scheme."""
-    from trollmoves.client import make_uris
     import socket
+
+    from trollmoves.client import make_uris
 
     local_directory = "/san1/polar_in/regional/osisaf"
     destination = "ftp://" + socket.gethostname() + local_directory
@@ -1632,8 +1724,9 @@ def test_make_uris_local_destination_with_ftp():
 
 def test_make_uris_local_destination_with_ftp_and_login():
     """Test published messages for local destinations provided with scheme and login."""
-    from trollmoves.client import make_uris
     import socket
+
+    from trollmoves.client import make_uris
 
     user = "user1"
     password = "1234bleh"
@@ -1679,6 +1772,17 @@ def test_read_config_nameservers_are_a_list_or_tuple(client_config_2_items):
     assert isinstance(conf['foo']['nameservers'], (list, tuple))
 
 
+def test_read_config_backup_targets(client_config_backup_targets):
+    """Test that backup targets are given as a list."""
+    from trollmoves.client import read_config
+
+    try:
+        conf = read_config(client_config_backup_targets)
+    finally:
+        os.remove(client_config_backup_targets)
+    assert isinstance(conf['foo']['backup_targets'], list)
+
+
 @patch('trollmoves.client.ongoing_transfers', new_callable=dict)
 @patch('trollmoves.client.file_cache', new_callable=deque)
 @patch('trollmoves.client.clean_ongoing_transfer')
@@ -1686,6 +1790,32 @@ def test_read_config_nameservers_are_a_list_or_tuple(client_config_2_items):
 @patch('trollmoves.client.send_ack')
 def test_request_push_ftp(send_ack, send_request, clean_ongoing_transfer, file_cache, ongoing_transfers, tmp_path):
     """Test trollmoves.client.request_push() with a single file."""
+    from trollmoves.client import request_push
+
+    clean_ongoing_transfer.return_value = [MSG_FILE_FTP]
+    send_request.return_value = [MSG_FILE_FTP, 'localhost']
+    publisher = MagicMock()
+    kwargs = {'transfer_req_timeout': 1.0, 'req_timeout': 1.0}
+
+    destination = f"ftp://{os.fspath(tmp_path)}/some/dir"
+
+    request_push(MSG_FILE_FTP, destination, 'someuser:somepass', publisher=publisher,
+                 **kwargs)
+
+    file_msg = Message(rawstr=publisher.send.mock_calls[-1][1][0])
+    assert "someuser" not in file_msg.data["uri"]
+    assert "somepass" not in file_msg.data["uri"]
+    assert "/some/dir" in file_msg.data["uri"]
+    assert not file_msg.data["uri"].startswith("ftp://")
+
+
+@patch('trollmoves.client.ongoing_transfers', new_callable=dict)
+@patch('trollmoves.client.file_cache', new_callable=deque)
+@patch('trollmoves.client.clean_ongoing_transfer')
+@patch('trollmoves.client.send_request')
+@patch('trollmoves.client.send_ack')
+def test_request_push_scp(send_ack, send_request, clean_ongoing_transfer, file_cache, ongoing_transfers, tmp_path):
+    """Test trollmoves.client.request_push() using scp with a single file."""
     from trollmoves.client import request_push
 
     clean_ongoing_transfer.return_value = [MSG_FILE_FTP]

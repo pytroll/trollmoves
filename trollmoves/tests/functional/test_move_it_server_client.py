@@ -1,19 +1,20 @@
 """Acceptance tests for move it server/client."""
 
-from pytest_bdd import scenario, given, when, then
+import datetime as dt
+import os
+import socket
+import time
+from pathlib import Path
+from threading import Thread
+
 import pytest
-from trollmoves.server import MoveItServer
-from trollmoves.server import parse_args as parse_args_server
+from posttroll.subscriber import Subscriber
+from pytest_bdd import given, scenario, then, when
+
 from trollmoves.client import MoveItClient
 from trollmoves.client import parse_args as parse_args_client
-from pathlib import Path
-from datetime import datetime
-import time
-import socket
-from threading import Thread
-from posttroll.subscriber import Subscriber
-
-import os
+from trollmoves.server import MoveItServer
+from trollmoves.server import parse_args as parse_args_server
 
 
 @pytest.fixture
@@ -131,7 +132,7 @@ def start_move_it_client(client):
 def create_new_file(source_dir):
     """Create a new file in source_dir."""
     pattern = "H-000-%Y%m%d%H%M-__"
-    filename = datetime.utcnow().strftime(pattern)
+    filename = dt.datetime.now(dt.timezone.utc).strftime(pattern)
     path = Path(source_dir / filename)
     path.write_bytes(b"Very Important Satellite Data")
     return filename
@@ -183,7 +184,7 @@ def start_move_it_server_without_request_port(server_without_request_port):
 @pytest.fixture
 def subscriber(free_port):
     """Create a subscriber."""
-    sub = Subscriber([f"tcp://localhost:{free_port}"], "")
+    sub = Subscriber([f"tcp://localhost:{free_port}"], "/1b/hrit-segment/0deg")
     yield sub(timeout=2)
     sub.close()
 
@@ -243,14 +244,14 @@ def server_without_request_port_and_untarring(source_dir, tmp_path, free_port, r
 @given("Move it server with no request port is started with untarring option activated")
 def start_move_it_server_with_untarring(server_without_request_port_and_untarring):
     """Start a move_it_server instance without a request port."""
-    return server_without_request_port
+    return server_without_request_port_and_untarring
 
 
 @when("A new tar file arrives matching the pattern", target_fixture="moved_filename")
 def create_new_tar_file(source_dir):
     """Create a new file in source_dir."""
     pattern = "H-000-%Y%m%d%H%M-__"
-    filename = datetime.utcnow().strftime(pattern)
+    filename = dt.datetime.now(dt.timezone.utc).strftime(pattern)
     path = source_dir / filename
     path.write_bytes(b"Very Important Satellite Data")
     tarfilename = source_dir / (filename + ".tar")
@@ -265,7 +266,7 @@ def check_message_for_filesystem_info_and_untarring(subscriber, tmp_path, moved_
     """Check the posttroll message for filesystem info and untarring."""
     msg = next(subscriber)
     host = socket.gethostname()
-    expected_filesystem = {"cls": "fsspec.implementations.tar.TarFileSystem",
+    expected_filesystem = {"cls": "fsspec.implementations.tar:TarFileSystem",
                            "protocol": "tar",
                            "args": [],
                            "target_options": {"host": host},

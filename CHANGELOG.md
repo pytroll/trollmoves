@@ -1,3 +1,130 @@
+## Version 0.16.0 (2025/04/23)
+
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 216](https://github.com/pytroll/trollmoves/pull/216) - Sanitize connection settings when using S3Mover
+
+#### Features added
+
+* [PR 214](https://github.com/pytroll/trollmoves/pull/214) - Refactor fetcher
+
+In this release 2 pull requests were closed.
+
+
+## Version 0.15.2 (2024/06/17)
+
+
+### Pull Requests Merged
+
+#### Features added
+
+* [PR 201](https://github.com/pytroll/trollmoves/pull/201) - Add logging to fetcher
+
+In this release 1 pull request was closed.
+
+
+## Version 0.15.1 (2024/06/17)
+
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 204](https://github.com/pytroll/trollmoves/pull/204) - Fix tests for newer fsspec
+* [PR 202](https://github.com/pytroll/trollmoves/pull/202) - Fix removal topic
+* [PR 200](https://github.com/pytroll/trollmoves/pull/200) - Fix naive timestamp
+
+In this release 3 pull requests were closed.
+
+
+## Version 0.15.0 (2024/05/27)
+
+### Issues Closed
+
+* [Issue 194](https://github.com/pytroll/trollmoves/issues/194) - move it server fails to start when config uses listen instead of origin ([PR 195](https://github.com/pytroll/trollmoves/pull/195) by [@mraspaud](https://github.com/mraspaud))
+
+In this release 1 issue was closed.
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 195](https://github.com/pytroll/trollmoves/pull/195) - Fix posttroll-based notifier for move it server ([194](https://github.com/pytroll/trollmoves/issues/194))
+
+#### Features added
+
+* [PR 199](https://github.com/pytroll/trollmoves/pull/199) - Replace utcnow (and fix style along the way)
+* [PR 198](https://github.com/pytroll/trollmoves/pull/198) - Add the fetcher functionality and documentation on rtd
+
+In this release 3 pull requests were closed.
+
+
+## Version 0.14.0 (2024/02/28)
+
+### Issues Closed
+
+* [Issue 192](https://github.com/pytroll/trollmoves/issues/192) - Migrate away from `pyinotify` ([PR 185](https://github.com/pytroll/trollmoves/pull/185) by [@mraspaud](https://github.com/mraspaud))
+* [Issue 189](https://github.com/pytroll/trollmoves/issues/189) - S3 mover passes all config items to `S3FileSystem()` ([PR 190](https://github.com/pytroll/trollmoves/pull/190) by [@pnuu](https://github.com/pnuu))
+
+In this release 2 issues were closed.
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 190](https://github.com/pytroll/trollmoves/pull/190) - Fix connection parameter handling ([189](https://github.com/pytroll/trollmoves/issues/189))
+* [PR 184](https://github.com/pytroll/trollmoves/pull/184) - Make sure unpack takes `delete` as a boolean
+* [PR 183](https://github.com/pytroll/trollmoves/pull/183) - Update versioneer
+
+#### Features added
+
+* [PR 193](https://github.com/pytroll/trollmoves/pull/193) - Use log file in tmp_path instead of 'somefile'
+* [PR 191](https://github.com/pytroll/trollmoves/pull/191) - Update python CI versions to cover 3.10 - 3.12
+* [PR 190](https://github.com/pytroll/trollmoves/pull/190) - Fix connection parameter handling ([189](https://github.com/pytroll/trollmoves/issues/189))
+* [PR 185](https://github.com/pytroll/trollmoves/pull/185) - Replace pyinotify with watchdog ([192](https://github.com/pytroll/trollmoves/issues/192))
+
+In this release 7 pull requests were closed.
+
+
+## Version 0.13.1 (2023/09/04)
+
+### Issues Closed
+
+* [Issue 175](https://github.com/pytroll/trollmoves/issues/175) - urlparse in move_it function fails to parse destination parameter when destination parameter already is a urllib.parse.ParseResult ([PR 176](https://github.com/pytroll/trollmoves/pull/176) by [@TAlonglong](https://github.com/TAlonglong))
+
+In this release 1 issue was closed.
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 176](https://github.com/pytroll/trollmoves/pull/176) - Handle destination as urlparse type. Add test. ([175](https://github.com/pytroll/trollmoves/issues/175))
+* [PR 174](https://github.com/pytroll/trollmoves/pull/174) - Fix ftp mover using destination filename when provided
+
+In this release 2 pull requests were closed.
+
+
+###############################################################################
+## Version 0.13.0 (2023/06/05)
+
+### Issues Closed
+
+* [Issue 171](https://github.com/pytroll/trollmoves/issues/171) - Publisher need to call start method as of version 1.10.0 of posttroll
+* [Issue 169](https://github.com/pytroll/trollmoves/issues/169) - In the server add backup target host for scp ([PR 170](https://github.com/pytroll/trollmoves/pull/170) by [@TAlonglong](https://github.com/TAlonglong))
+
+In this release 2 issues were closed.
+
+### Pull Requests Merged
+
+#### Features added
+
+* [PR 170](https://github.com/pytroll/trollmoves/pull/170) - adding backup targets ([169](https://github.com/pytroll/trollmoves/issues/169))
+
+In this release 1 pull request was closed.
+
 ###############################################################################
 ## Version 0.12.0 (2023/04/27)
 

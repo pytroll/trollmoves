@@ -22,20 +22,20 @@
 """Setup file."""
 
 from setuptools import setup
-import versioneer
 
+import versioneer
 
 extras_require = {
     's3': [
         's3fs',
     ],
     'server': [
-        'inotify',
         'paramiko',
         'scp',
-        'watchdog',
     ],
-    "remote_fs": ["pytroll-collectors>=0.13.0"],
+    "remote_fs": ["pytroll-collectors>=0.16.0", "fsspec"],
+    "docs": [],
+    "fetcher": ["pytroll-watchers>=0.6.0"],
 }
 
 all_extras = []
@@ -65,6 +65,12 @@ setup(name="trollmoves",
                'bin/dispatcher.py',
                'bin/s3downloader.py',
                ],
+      entry_points={
+          'console_scripts': [
+              'pytroll-fetcher = trollmoves.fetcher:cli',
+          ],
+      },
+
       data_files=[],
       packages=['trollmoves'],
       zip_safe=False,
@@ -72,7 +78,7 @@ setup(name="trollmoves",
           'posttroll>=1.5.1',
           'trollsift',
           'netifaces',
-          'pyinotify',
+          'watchdog!=4.0.0',
           'pyyaml',
           'pyzmq',
       ],

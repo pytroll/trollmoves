@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2012-2020
+# Copyright (c) 2012-2023
 #
 # Author(s):
 #
@@ -27,10 +27,10 @@ import logging
 import netrc
 import os
 import shutil
+import socket
 import sys
 import time
 import traceback
-import socket
 from ftplib import FTP, all_errors, error_perm
 from threading import Event, Lock, Thread, current_thread
 from urllib.parse import urlparse
@@ -42,17 +42,27 @@ except ImportError:
 
 from trollmoves.utils import clean_url
 
+S3_ALLOWED_SETTINGS = ["anon", "endpoint_url", "key", "secret",
+                       "token", "use_ssl", "s3_additional_kwargs", "client_kwargs",
+                       "requester_pays", "default_block_size", "default_fill_cache",
+                       "default_cache_type", "version_aware", "cache_regions",
+                       "asynchronous", "config_kwargs", "kwargs", "session",
+                       "max_concurrency", "fixed_upload_size"]
+
 LOGGER = logging.getLogger(__name__)
 
 
-def move_it(pathname, destination, attrs=None, hook=None, rel_path=None):
+def move_it(pathname, destination, attrs=None, hook=None, rel_path=None, backup_targets=None):
     """Check if the file pointed by *pathname* is in the filelist, and move it if it is.
 
     The *destination* provided is used, and if *rel_path* is provided, it will
     be appended to the destination path.
 
     """
-    dest_url = urlparse(destination)
+    try:
+        dest_url = urlparse(destination)
+    except AttributeError:
+        dest_url = destination
     if rel_path is not None:
         new_path = os.path.join(dest_url.path, rel_path)
     else:
@@ -71,7 +81,12 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None):
         raise
 
     try:
-        mover(pathname, new_dest, attrs=attrs).copy()
+        m = mover(pathname, new_dest, attrs=attrs, backup_targets=backup_targets)
+        m.copy()
+        last_dest = m.destination
+        if last_dest != new_dest:
+            new_dest = last_dest
+            fake_dest = clean_url(new_dest)
         if hook:
             hook(pathname, new_dest)
     except Exception as err:
@@ -83,12 +98,13 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None):
     else:
         LOGGER.info("Successfully copied %s to %s",
                     pathname, str(fake_dest))
+    return m.destination
 
 
-class Mover(object):
+class Mover:
     """Base mover object. Doesn't do anything as it has to be subclassed."""
 
-    def __init__(self, origin, destination, attrs=None):
+    def __init__(self, origin, destination, attrs=None, backup_targets=None):
         """Initialize the Mover."""
         LOGGER.debug("destination = %s", str(destination))
         try:
@@ -102,6 +118,7 @@ class Mover(object):
         LOGGER.debug("Destination: %s", str(destination))
         self.origin = origin
         self.attrs = attrs or {}
+        self.backup_targets = backup_targets
 
     def copy(self):
         """Copy the file."""
@@ -133,7 +150,7 @@ class Mover(object):
             timer = CTimer(int(self.attrs.get('connection_uptime', 30)),
                            self.delete_connection, (connection,))
             timer.start()
-            self.active_connections[(hostname, port, username)] = connection, timer
+            self.active_connections[(self.destination.hostname, port, username)] = connection, timer
 
             return connection
 
@@ -150,9 +167,10 @@ class Mover(object):
             try:
                 self.close_connection(connection)
             finally:
-                for key, val in self.active_connections.items():
-                    if val[0] == connection:
+                for key, (current_connection, current_timer) in self.active_connections.items():
+                    if current_connection == connection:
                         del self.active_connections[key]
+                        current_timer.cancel()
                         break
 
 
@@ -284,9 +302,12 @@ class FtpMover(Mover):
                     connection.cwd(current_dir)
 
         LOGGER.debug('cd to %s', os.path.dirname(self.destination.path))
-        cd_tree(os.path.dirname(self.destination.path))
+        destination_dirname, destination_filename = os.path.split(self.destination.path)
+        cd_tree(destination_dirname)
+        if not destination_filename:
+            destination_filename = os.path.basename(self.origin)
         with open(self.origin, 'rb') as file_obj:
-            connection.storbinary('STOR ' + os.path.basename(self.origin),
+            connection.storbinary('STOR ' + destination_filename,
                                   file_obj)
 
 
@@ -298,11 +319,21 @@ class ScpMover(Mover):
 
     def open_connection(self):
         """Open a connection."""
-        from paramiko import SSHClient, SSHException
+        import copy
 
+        from paramiko import SSHClient, SSHException
         retries = 3
         ssh_key_filename = self.attrs.get("ssh_key_filename", None)
-        timeout = self.attrs.get("ssh_connection_timeout", None)
+        try:
+            timeout = float(self.attrs.get("ssh_connection_timeout", None))
+        except TypeError:
+            timeout = None
+        backup_targets = copy.deepcopy(self.backup_targets)
+        backup_targets_message = ""
+        try:
+            num_backup_targets = len(backup_targets)
+        except TypeError:
+            num_backup_targets = None
         while retries > 0:
             retries -= 1
             try:
@@ -329,7 +360,13 @@ class ScpMover(Mover):
             ssh_connection.close()
             time.sleep(2)
             LOGGER.debug("Retrying ssh connect ...")
-        raise IOError("Failed to ssh connect after 3 attempts")
+            if retries == 0 and backup_targets:
+                backup_target = backup_targets.pop(0)
+                self.destination = self.destination._replace(netloc=f"{self.destination.username}@{backup_target}")
+                LOGGER.info("Changing destination to backup target: %s", self.destination.hostname)
+                retries = 3
+                backup_targets_message = f" to primary and {num_backup_targets} backup host(s)"
+        raise IOError(f"Failed to ssh connect after 3 attempts{backup_targets_message}.")
 
     @staticmethod
     def is_connected(connection):
@@ -363,7 +400,6 @@ class ScpMover(Mover):
         ssh_connection = self.get_connection(self.destination.hostname,
                                              self.destination.port or 22,
                                              self._dest_username)
-
         try:
             scp = SCPClient(ssh_connection.get_transport())
         except Exception as err:
@@ -455,7 +491,33 @@ class S3Mover(Mover):
     changing the filename. The new destination filename will be the last part
     of the provided destination following the last slash ('/').
 
+    In the Trollmoves Server config, which is in .ini format, the connection parameters
+    and other dictionary-like items can be defined with douple underscore format::
+
+        connection_parameters__secret = secret
+        connection_parameters__client_kwargs__endpoint_url = https://endpoint.url
+        connection_parameters__client_kwargs__verify = false
+
+    will result in a nested dictionary item::
+
+        {
+            'connection_parameters': {
+                'secret': 'secret',
+                'client_kwargs': {
+                    'endpoint_url': 'https://endpoint.url',
+                    'verify': False
+                }
+            }
+        }
+
+    Note that boolean values are converted. Numeric values are handled where they are used.
+
     """
+
+    def __init__(self, origin, destination, attrs=None, backup_targets=None):
+        """Initialize the S3Mover."""
+        super().__init__(origin, destination, attrs, backup_targets)
+        self._sanitize_attrs()
 
     def copy(self):
         """Copy the file to a bucket."""
@@ -468,6 +530,12 @@ class S3Mover(Mover):
         LOGGER.debug('Before call to put: destination_file_path = %s', destination_file_path)
         LOGGER.debug('self.origin = %s', self.origin)
         s3.put(self.origin, destination_file_path)
+
+    def _sanitize_attrs(self):
+        keys = list(self.attrs.keys())
+        for key in keys:
+            if key not in S3_ALLOWED_SETTINGS:
+                del self.attrs[key]
 
     def _get_destination(self):
         bucket_parts = []

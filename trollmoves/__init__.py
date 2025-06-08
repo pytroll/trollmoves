@@ -1,5 +1,5 @@
 """The Trollmoves package."""
 
-from .version import get_versions
-__version__ = get_versions()['version']
-del get_versions
+
+from . import version
+__version__ = version.get_versions()['version']

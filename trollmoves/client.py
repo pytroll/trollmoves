@@ -90,6 +90,7 @@ def read_config(filename):
         _set_config_defaults(res[section])
         _parse_boolean_config_items(res[section], cp_[section])
         _parse_nameservers(res[section], cp_[section])
+        _parse_backup_targets(res[section], cp_[section])
         if not _check_provider_config(res, section):
             continue
         if not _check_destination(res, section):
@@ -110,6 +111,7 @@ def _set_config_defaults(conf):
     conf.setdefault("transfer_req_timeout", 10 * DEFAULT_REQ_TIMEOUT)
     conf.setdefault("nameservers", None)
     conf.setdefault("create_target_directory", True)
+    conf.setdefault("backup_targets", None)
 
 
 def _parse_boolean_config_items(conf, raw_conf):
@@ -130,6 +132,13 @@ def _parse_nameservers(conf, raw_conf):
     if isinstance(val, str):
         val = val.split()
     conf["nameservers"] = val
+
+
+def _parse_backup_targets(conf, raw_conf):
+    val = raw_conf.get("backup_targets")
+    if isinstance(val, str):
+        val = val.split()
+    conf["backup_targets"] = val
 
 
 def _check_provider_config(conf, section):
@@ -268,6 +277,10 @@ class Listener(Thread):
 
     def _process_message(self, msg):
         delay = self.ckwargs.get("processing_delay", False)
+        backup_targets = self.ckwargs.get('backup_targets', None)
+        if backup_targets:
+            LOGGER.debug("Adding backup_targets %s to the message.", str(backup_targets))
+            msg.data['backup_targets'] = backup_targets
         if delay:
             # If this is a hot spare client, wait for a while
             # for a public "push" message which will update
@@ -521,7 +534,7 @@ def replace_mda(msg, kwargs):
             try:
                 replacement = dict(item.split(':') for item in kwargs[key].split('|'))
                 replacement = replacement[msg.data[key]]
-            except ValueError:
+            except (ValueError, AttributeError):
                 replacement = kwargs[key]
             msg.data[key] = replacement
     return msg
@@ -720,7 +733,6 @@ class Chain(Thread):
         self._config = config
         self._name = name
         self.publisher = None
-        self._pub_starter = None
         self.listeners = {}
         self.listener_died_event = Event()
         self.running = True
@@ -736,8 +748,8 @@ class Chain(Thread):
                     "port": self._config["publish_port"],
                     "nameservers": nameservers,
                 }
-                self._pub_starter = create_publisher_from_dict_config(pub_settings)
-                self.publisher = self._pub_starter.start()
+                self.publisher = create_publisher_from_dict_config(pub_settings)
+                self.publisher.start()
 
     def setup_listeners(self, keep_providers=None):
         """Set up the listeners."""
@@ -872,8 +884,7 @@ class Chain(Thread):
 
     def _stop_publisher(self):
         if self.publisher:
-            self._pub_starter.stop()
-            self._pub_starter = None
+            self.publisher.stop()
             self.publisher = None
 
     def restart(self):
