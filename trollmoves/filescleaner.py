@@ -23,10 +23,28 @@ import datetime as dt
 import logging
 import os
 from glob import glob
+from pathlib import Path
 
 from posttroll.message import Message
 
 LOGGER = logging.getLogger(__name__)
+
+
+def get_config_items(args, conf):
+    """Get items from ini configuration."""
+    config_items = []
+
+    if args.config_item:
+        for config_item in args.config_item:
+            if config_item not in conf.sections():
+                LOGGER.error("No section named %s in %s",
+                             config_item, args.configuration_file)
+            else:
+                config_items.append(config_item)
+    else:
+        config_items = conf.sections()
+
+    return config_items
 
 
 class FilesCleaner():
@@ -38,30 +56,61 @@ class FilesCleaner():
         self.section = section
         self.info = info
         self.dry_run = dry_run
+        self.recursive = self.info.get('recursive', False)
         self.stat_time_method = self.info.get('stat_time_method', 'st_ctime')
 
-    def clean_dir(self, ref_time, pathname):
-        """Clean up a directory."""
+    def clean_dir(self, ref_time, pathname_template, **kwargs):
+        """Clean directory of files given a path name and a time threshold.
+
+        Only files older than a given time threshold are removed/cleaned.
+        """
+        LOGGER.info("Cleaning under %s", pathname_template)
+
+        if not self.recursive:
+            filepaths = glob(pathname_template)
+            return self.clean_files_and_dirs(filepaths, ref_time)
+
         section_files = 0
         section_size = 0
-        LOGGER.info("Cleaning %s", pathname)
-        flist = glob(pathname)
+        for pathname in glob(pathname_template):
+            for dirpath, _dirnames, _ in os.walk(Path(pathname).parent):
+                files_in_dir = glob(os.path.join(dirpath, Path(pathname_template).name))
 
-        for filename in flist:
-            if not os.path.exists(filename):
+                if len(files_in_dir) == 0:
+                    if self.dry_run:
+                        LOGGER.info("Would remove empty directory: %s", dirpath)
+                    else:
+                        try:
+                            os.rmdir(dirpath)
+                        except OSError:
+                            LOGGER.debug("Was trying to remove empty directory, but failed. Should not have come here!")
+
+                s_size, s_files = self.clean_files_and_dirs(files_in_dir, ref_time)
+                section_files += s_files
+                section_size += s_size
+
+        return (section_size, section_files)
+
+    def clean_files_and_dirs(self, filepaths, ref_time):
+        """From a list of file paths and a reference time clean files and directories."""
+        section_files = 0
+        section_size = 0
+        for filepath in filepaths:
+            if not os.path.exists(filepath):
                 continue
             try:
-                stat = os.lstat(filename)
+                stat = os.lstat(filepath)
             except OSError:
-                LOGGER.warning("Couldn't lstat path=%s", str(filename))
+                LOGGER.warning("Couldn't lstat path=%s", str(filepath))
                 continue
 
-            if dt.datetime.fromtimestamp(getattr(stat, self.stat_time_method), dt.timezone.utc) < ref_time:
+            if dt.datetime.fromtimestamp(getattr(stat, self.stat_time_method), tz=dt.timezone.utc) < ref_time:
                 was_removed = False
                 if not self.dry_run:
-                    was_removed = self.remove_file(filename)
+                    was_removed = self.remove_file(filepath)
                 else:
-                    LOGGER.debug("Would remove %s", filename)
+                    LOGGER.info(f'Would remove {str(filepath)}')
+
                 if was_removed:
                     section_files += 1
                     section_size += stat.st_size
@@ -69,24 +118,34 @@ class FilesCleaner():
         return (section_size, section_files)
 
     def clean_section(self):
-        """Clean up according to the configuration section."""
+        """Do the files cleaning given a list of directory paths and time thresholds.
+
+        This calls the clean_dir function in this module.
+        """
         section_files = 0
         section_size = 0
-        base_dir = self.info.get("base_dir", "")
+        info = self.info
+        recursive = self.recursive
+        if recursive and recursive == 'true':
+            recursive = True
+        else:
+            recursive = False
+
+        base_dir = info.get("base_dir", "")
         if not os.path.exists(base_dir):
-            LOGGER.warning("Path %s missing, skipping section %s",
-                           base_dir, self.section)
+            LOGGER.warning("Path %s missing, skipping section %s", base_dir, self.section)
             return (section_size, section_files)
         LOGGER.info("Cleaning in %s", base_dir)
-        templates = (item.strip() for item in self.info["templates"].split(","))
+
+        templates = (item.strip() for item in info["templates"].split(","))
         kws = {}
         for key in ["days", "hours", "minutes", "seconds"]:
             try:
-                kws[key] = int(self.info[key])
+                kws[key] = int(info[key])
             except KeyError:
                 pass
-        ref_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(**kws)
 
+        ref_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(**kws)
         for template in templates:
             pathname = os.path.join(base_dir, template)
             size, num_files = self.clean_dir(ref_time, pathname)
@@ -96,7 +155,10 @@ class FilesCleaner():
         return (section_size, section_files)
 
     def remove_file(self, filename):
-        """Remove one file or directory."""
+        """Remove a file given its filename, and publish when removed.
+
+        Removing an empty directory is not published.
+        """
         try:
             if os.path.isdir(filename):
                 if not os.listdir(filename):
