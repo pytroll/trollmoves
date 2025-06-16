@@ -132,9 +132,9 @@ def setup_logger(args):
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG, handlers=[handler], format=msgformat)
     elif args.quiet:
-        logging.basicConfig(level=logging.DEBUG, handlers=[handler], format=msgformat)
+        logging.basicConfig(level=logging.ERROR, handlers=[handler], format=msgformat)
     else:
-        logging.basicConfig(level=logging.DEBUG, handlers=[handler], format=msgformat)
+        logging.basicConfig(level=logging.WARNING, handlers=[handler], format=msgformat)
 
 
 def setup_mailing(args, conf, info):

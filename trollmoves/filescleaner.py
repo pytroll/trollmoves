@@ -77,13 +77,7 @@ class FilesCleaner():
                 files_in_dir = glob(os.path.join(dirpath, Path(pathname_template).name))
 
                 if len(files_in_dir) == 0:
-                    if self.dry_run:
-                        LOGGER.info("Would remove empty directory: %s", dirpath)
-                    else:
-                        try:
-                            os.rmdir(dirpath)
-                        except OSError:
-                            LOGGER.debug("Was trying to remove empty directory, but failed. Should not have come here!")
+                    self._remove_empty_directory(dirpath)
 
                 s_size, s_files = self.clean_files_and_dirs(files_in_dir, ref_time)
                 section_files += s_files
@@ -92,7 +86,7 @@ class FilesCleaner():
         return (section_size, section_files)
 
     def clean_files_and_dirs(self, filepaths, ref_time):
-        """From a list of file paths and a reference time clean files and directories."""
+        """Clean files and directories defined by a list of file paths and a reference time."""
         section_files = 0
         section_size = 0
         for filepath in filepaths:
@@ -105,15 +99,12 @@ class FilesCleaner():
                 continue
 
             if dt.datetime.fromtimestamp(getattr(stat, self.stat_time_method), tz=dt.timezone.utc) < ref_time:
-                was_removed = False
                 if not self.dry_run:
-                    was_removed = self.remove_file(filepath)
-                else:
-                    LOGGER.info(f'Would remove {str(filepath)}')
-
-                if was_removed:
+                    _ = self.remove_file(filepath)
                     section_files += 1
                     section_size += stat.st_size
+                else:
+                    LOGGER.info(f'Would remove {str(filepath)}')
 
         return (section_size, section_files)
 
@@ -124,28 +115,16 @@ class FilesCleaner():
         """
         section_files = 0
         section_size = 0
-        info = self.info
-        recursive = self.recursive
-        if recursive and recursive == 'true':
-            recursive = True
-        else:
-            recursive = False
-
-        base_dir = info.get("base_dir", "")
+        base_dir = self.info.get("base_dir", "")
         if not os.path.exists(base_dir):
             LOGGER.warning("Path %s missing, skipping section %s", base_dir, self.section)
             return (section_size, section_files)
         LOGGER.info("Cleaning in %s", base_dir)
 
-        templates = (item.strip() for item in info["templates"].split(","))
-        kws = {}
-        for key in ["days", "hours", "minutes", "seconds"]:
-            try:
-                kws[key] = int(info[key])
-            except KeyError:
-                pass
+        templates = (item.strip() for item in self.info["templates"].split(","))
 
-        ref_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(**kws)
+        ref_time = self._get_reference_time()
+
         for template in templates:
             pathname = os.path.join(base_dir, template)
             size, num_files = self.clean_dir(ref_time, pathname)
@@ -176,3 +155,24 @@ class FilesCleaner():
             LOGGER.warning("Can't remove %s: %s", filename, str(err))
             return False
         return True
+
+    def _remove_empty_directory(self, dirpath):
+        """Remove empty directory."""
+        if self.dry_run:
+            LOGGER.info("Would remove empty directory: %s", dirpath)
+        else:
+            try:
+                os.rmdir(dirpath)
+            except OSError:
+                LOGGER.warning("Was trying to remove empty directory, but failed. Should not have come here!")
+
+    def _get_reference_time(self):
+        """Get the reference time from the configuration parameters."""
+        kws = {}
+        for key in ["days", "hours", "minutes", "seconds"]:
+            try:
+                kws[key] = int(self.info[key])
+            except KeyError:
+                pass
+
+        return dt.datetime.now(dt.timezone.utc) - dt.timedelta(**kws)

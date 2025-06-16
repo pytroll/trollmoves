@@ -253,7 +253,7 @@ def test_remove_files_empty_dir_atime(file_structure_with_some_old_files_and_emp
 
 
 @pytest.fixture(params=[OLD_FILES_TIME])
-def fake_tree_of_some_files(request, tmp_path_factory) -> list[str]:
+def dummy_tree_of_some_files(request, tmp_path_factory) -> list[str]:
     """Create a directory tree of dummy (empty) files."""
     filepaths = []
     basedir = tmp_path_factory.mktemp("data")
@@ -277,18 +277,33 @@ def fake_tree_of_some_files(request, tmp_path_factory) -> list[str]:
     os.utime(fn.parent, times=(atime, mtime))
     filepaths.append(fn)
 
+    # Make some additional content below the last sub-directory:
+    fn = basedir / "another_subdir" / "subsubdir1"
+    fn.mkdir()
+    fn = fn / "dummy4.txt"
+    fn.write_text(DUMMY_CONTENT)
+    os.utime(fn, times=(atime, mtime))
+    os.utime(fn.parent, times=(atime, mtime))
+    filepaths.append(fn)
+    fn = basedir / "another_subdir" / "subsubdir2"
+    fn.mkdir()
+    fn = fn / "dummy5.dat"
+    fn.write_text(DUMMY_CONTENT)
+    os.utime(fn, times=(atime, mtime))
+    os.utime(fn.parent, times=(atime, mtime))
+    filepaths.append(fn)
+
     yield filepaths
 
 
-def test_clean_dir_non_recursive(fake_tree_of_some_files, tmp_path, caplog):
-    """Test cleaning a directory for files of a certain age."""
+def test_clean_dir_non_recursive(dummy_tree_of_some_files, tmp_path, caplog):
+    """Test cleaning directory for files of a certain age."""
     pub = FakePublisher()
 
-    list_of_files_to_clean = fake_tree_of_some_files
+    list_of_files_to_clean = dummy_tree_of_some_files
 
     basedir = list_of_files_to_clean[0].parent
-    subdir1 = list_of_files_to_clean[1].parent
-    subdir2 = list_of_files_to_clean[2].parent
+    subdir1 = list_of_files_to_clean[1].parent.name
 
     section = 'mytest_files1'
     info = {'mailhost': 'localhost',
@@ -297,32 +312,29 @@ def test_clean_dir_non_recursive(fake_tree_of_some_files, tmp_path, caplog):
             'base_dir': f'{basedir}',
             'stat_time_method': 'st_ctime',
             'recursive': False,
-            'templates': f'{subdir1}/*,{subdir2}/*.txt',
+            'templates': f'{subdir1}/*.txt',
             'hours': '1'}
 
     fcleaner = FilesCleaner(pub, section, info, dry_run=False)
 
-    ref_time = OLD_FILES_TIME + dt.timedelta(hours=1)
-    pathname = str(tmp_path.parent / '*')
-
     with FakePublisher() as pub, caplog.at_level(logging.INFO):
-        _ = fcleaner.clean_dir(ref_time, pathname)
+        _ = fcleaner.clean_section()
 
-    assert f"Cleaning under {pathname}" in caplog.text
+    assert f"Cleaning in {basedir}" in caplog.text
 
     assert list_of_files_to_clean[0].exists()
     assert list_of_files_to_clean[1].exists()
     assert list_of_files_to_clean[2].exists()
 
 
-def test_clean_dir_recursive_mtime_real(fake_tree_of_some_files, caplog):
-    """Test cleaning a directory tree for files of a certain age.
+def test_clean_dir_recursive_mtime_real(dummy_tree_of_some_files, caplog):
+    """Test cleaning a directory tree for files which were created before the given time.
 
-    Here we test using the modification time to determine when the file has been 'created'.
+    Here we test using the modification time (st_mtime) to determine when the file has been 'created'.
     """
     pub = FakePublisher()
 
-    list_of_files_to_clean = fake_tree_of_some_files
+    list_of_files_to_clean = dummy_tree_of_some_files
 
     basedir = list_of_files_to_clean[0].parent
     subdir1 = list_of_files_to_clean[2].parent.name
@@ -344,25 +356,28 @@ def test_clean_dir_recursive_mtime_real(fake_tree_of_some_files, caplog):
 
     section_size, section_files = res
 
-    assert section_size == 18
-    assert section_files == 1
+    assert section_size == 36
+    assert section_files == 2
 
     assert list_of_files_to_clean[0].exists()
     assert list_of_files_to_clean[1].exists()
+    assert not list_of_files_to_clean[2].exists()
+    assert not list_of_files_to_clean[3].exists()
+    assert list_of_files_to_clean[4].exists()
 
     removed_file = list_of_files_to_clean[2]
     assert f"Removed {removed_file}" in caplog.text
     assert not removed_file.exists()
 
 
-def test_clean_dir_recursive_mtime_dryrun(fake_tree_of_some_files, tmp_path, caplog):
+def test_clean_dir_recursive_mtime_dryrun(dummy_tree_of_some_files, tmp_path, caplog):
     """Test cleaning a directory tree for files of a certain age.
 
     Here we test using the modification time to determine when the file has been 'created'.
     """
     pub = FakePublisher()
 
-    list_of_files_to_clean = fake_tree_of_some_files
+    list_of_files_to_clean = dummy_tree_of_some_files
 
     basedir = list_of_files_to_clean[0].parent
     subdir1 = list_of_files_to_clean[1].parent.name
