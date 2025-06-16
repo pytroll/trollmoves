@@ -28,7 +28,7 @@ from configparser import NoOptionError, RawConfigParser
 
 from trollmoves.filescleaner import FilesCleaner
 
-LOGGER = logging.getLogger("remove_it")
+LOGGER = logging.getLogger(__name__)
 
 try:
     from posttroll.message import Message
@@ -116,27 +116,25 @@ def parse_args():
 
 
 def setup_logger(args):
-    """Set up a logger."""
-    global LOGGER
-    LOGGER = logging.getLogger("remove_it")
-
-    if args.verbose:
-        LOGGER.setLevel(logging.DEBUG)
-    elif args.quiet:
-        LOGGER.setLevel(logging.ERROR)
-    else:
-        LOGGER.setLevel(logging.INFO)
+    """Set up logging."""
+    msgformat = '[%(asctime)-15s %(levelname)-8s] %(message)s'
 
     if args.logfile:
         handler = logging.handlers.RotatingFileHandler(
             args.logfile, maxBytes=1000000, backupCount=10)
     else:
         handler = logging.StreamHandler()
+
     handler.setLevel(logging.DEBUG)
     handler.setFormatter(
         logging.Formatter('[%(asctime)-15s %(levelname)-8s] %(message)s'))
 
-    LOGGER.addHandler(handler)
+    if args.verbose:
+        logging.basicConfig(level=logging.DEBUG, handlers=[handler], format=msgformat)
+    elif args.quiet:
+        logging.basicConfig(level=logging.ERROR, handlers=[handler], format=msgformat)
+    else:
+        logging.basicConfig(level=logging.WARNING, handlers=[handler], format=msgformat)
 
 
 def setup_mailing(args, conf, info):
