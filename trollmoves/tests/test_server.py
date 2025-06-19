@@ -125,7 +125,13 @@ def test_create_posttroll_notifier():
     chain = Chain("some_chain", config)
     function_to_run = MagicMock()
     # assert no crash
-    chain.create_notifier(notifier_builder=None, use_polling=True, function_to_run_on_matching_files=function_to_run)
+    from posttroll.testing import patched_subscriber_recv
+    with patched_subscriber_recv(["hello"]):
+        chain.create_notifier(notifier_builder=None,
+                              use_polling=True,
+                              function_to_run_on_matching_files=function_to_run)
+        chain.start()
+        chain.stop()
 
 
 def test_handler_does_not_dispatch_files_not_matching_pattern():
