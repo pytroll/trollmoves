@@ -731,7 +731,6 @@ class Chain:
             notifier_builder = _get_notifier_builder(use_polling, self.config)
 
         self.function_to_run = partial(function_to_run_on_matching_files, chain_config=self.config)
-
         self.notifier = notifier_builder(self.function_to_run)
 
     def start(self):
@@ -887,7 +886,7 @@ def create_posttroll_notifier(function_to_run, config):
     """Create a notifier listening to posttroll messages from *attrs*."""
     listener = Listener(function_to_run, config)
 
-    return listener, None
+    return listener
 
 
 def _disable_removed_chains(chains, new_chains):
