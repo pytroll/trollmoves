@@ -21,6 +21,9 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """Test the ssh server."""
 
+import os
+import sys
+import logging
 import shutil
 from unittest.mock import Mock, MagicMock, patch
 import unittest
@@ -30,13 +33,23 @@ from urllib.parse import urlparse
 
 from paramiko import SSHException
 import pytest
-import logging
 import socket
-import sys
 
 import trollmoves
 
 logger = logging.getLogger()
+
+
+class MockChannel:
+    def __init__(self, content=None):
+        self.content = [] if not content else [content]
+
+    def __str__(self) -> str:
+        return str(self.content)
+
+    def readlines(self):
+        return self.content
+
 
 class TestSSHMovers(unittest.TestCase):
     """Tests for SSH Mover."""
@@ -305,6 +318,78 @@ class TestSSHMovers(unittest.TestCase):
         scp_mover.move()
 
         mocked_scp_client.put.assert_called_once_with(self.origin, urlparse(self.destination_no_port).path)
+
+    @patch('trollmoves.movers.ScpMover.get_connection')
+    @patch('paramiko.SSHClient.connect')
+    @patch('scp.SCPClient', autospec=True)
+    def test_scp_copy_via_remote_tmp2(self, mock_scp_client, mock_sshconnect, mock_sshexec):
+        """Check scp copy using remote temporary file."""
+        from trollmoves.movers import ScpMover
+
+        mocked_scp_client = MagicMock()
+        mock_scp_client.return_value = mocked_scp_client
+        mock_sshexec.return_value.exec_command.return_value = [(None), (MockChannel()), (MockChannel())]
+        scp_mover = ScpMover(self.origin, self.destination_no_port, attrs={'remote_tmp': True})
+        scp_mover.copy()
+
+        tmp_bn = os.path.join(urlparse(self.destination_no_port).path,
+                              "." + os.path.basename(self.origin))
+        mocked_scp_client.put.assert_called_once_with(self.origin, tmp_bn)
+        final_remote = os.path.join(urlparse(self.destination_no_port).path,
+                                    os.path.basename(self.origin))
+        _cmd = f"mv {tmp_bn} {final_remote}"
+        mock_sshexec.return_value.exec_command.assert_called_once_with(_cmd, timeout=None)
+
+    @patch('trollmoves.movers.ScpMover.get_connection')
+    @patch('paramiko.SSHClient.connect')
+    @patch('scp.SCPClient', autospec=True)
+    def test_scp_copy_via_remote_tmp_return_values(self, mock_scp_client, mock_sshconnect, mock_sshexec):
+        """Check scp copy using remote temporary file."""
+        from trollmoves.movers import ScpMover
+        stream_handler = logging.StreamHandler(sys.stdout)
+        logger.addHandler(stream_handler)
+        logger.setLevel(logging.INFO)
+
+        mocked_scp_client = MagicMock()
+        mock_scp_client.return_value = mocked_scp_client
+        mock_sshexec.return_value.exec_command.return_value = [(None), (MockChannel("stdout")), (MockChannel("stderr"))]
+        try:
+            with self.assertLogs(logger, level=logging.DEBUG) as lc:
+                scp_mover = ScpMover(self.origin, self.destination_no_port, attrs={'remote_tmp': True})
+                scp_mover.copy()
+            self.assertIn("Remote rename stdout: stdout", "".join(lc.output))
+            self.assertIn("Remote rename stderr: stderr", "".join(lc.output))
+        finally:
+            logger.removeHandler(stream_handler)
+
+        tmp_bn = os.path.join(urlparse(self.destination_no_port).path,
+                              "." + os.path.basename(self.origin))
+        mocked_scp_client.put.assert_called_once_with(self.origin, tmp_bn)
+        final_remote = os.path.join(urlparse(self.destination_no_port).path,
+                                    os.path.basename(self.origin))
+        _cmd = f"mv {tmp_bn} {final_remote}"
+        mock_sshexec.return_value.exec_command.assert_called_once_with(_cmd, timeout=None)
+
+    @patch('trollmoves.movers.ScpMover.get_connection')
+    @patch('paramiko.SSHClient.connect')
+    @patch('scp.SCPClient', autospec=True)
+    def test_scp_copy_via_remote_tmp_exception(self, mock_scp_client, mock_sshconnect, mock_sshexec):
+        """Check scp copy using remote temporary file."""
+        from trollmoves.movers import ScpMover
+        stream_handler = logging.StreamHandler(sys.stdout)
+        logger.addHandler(stream_handler)
+        logger.setLevel(logging.INFO)
+
+        mocked_scp_client = MagicMock()
+        mock_scp_client.return_value = mocked_scp_client
+        mock_sshexec.return_value.exec_command.side_effect = MagicMock(side_effect=SSHException)
+        try:
+            with self.assertLogs(logger, level=logging.DEBUG) as lc:
+                scp_mover = ScpMover(self.origin, self.destination_no_port, attrs={'remote_tmp': True})
+                scp_mover.copy()
+            self.assertIn("Failed to rename from tmp name:", "".join(lc.output))
+        finally:
+            logger.removeHandler(stream_handler)
 
 
     @patch('paramiko.SSHClient.connect', autospec=True)
