@@ -1,12 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2012-2023
-#
-# Author(s):
-#
-#   Martin Raspaud <martin.raspaud@smhi.se>
-#   Panu Lahtinen <panu.lahtinen@fmi.fi>
+# Copyright (c) 2012-2025
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -47,7 +42,8 @@ S3_ALLOWED_SETTINGS = ["anon", "endpoint_url", "key", "secret",
                        "requester_pays", "default_block_size", "default_fill_cache",
                        "default_cache_type", "version_aware", "cache_regions",
                        "asynchronous", "config_kwargs", "kwargs", "session",
-                       "max_concurrency", "fixed_upload_size"]
+                       "max_concurrency", "fixed_upload_size",
+                       "profile"]
 
 LOGGER = logging.getLogger(__name__)
 
@@ -535,6 +531,7 @@ class S3Mover(Mover):
         keys = list(self.attrs.keys())
         for key in keys:
             if key not in S3_ALLOWED_SETTINGS:
+                LOGGER.debug("S3 Keyword {str(key)} not allowed - remove from attributes.")
                 del self.attrs[key]
 
     def _get_destination(self):
