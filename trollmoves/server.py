@@ -1,12 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2012-2023
+# Copyright (c) 2012-2025
 #
-# Author(s):
-#
-#   Martin Raspaud <martin.raspaud@smhi.se>
-#   Panu Lahtinen <panu.lahtinen@fmi.fi>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -810,7 +806,7 @@ def process_notification(notification, publisher, chain_config):
 def process_message(chain_config, msg, publisher):
     """Modify and publish a message."""
     LOGGER.debug('We have a match: %s', str(msg))
-    info = _collect_message_info(msg)
+    info = _collect_message_info(msg, chain_config)
     msg = Message(chain_config["topic"], msg.type, info)
     publisher.send(str(msg))
     _add_files_to_cache(msg, chain_config)
