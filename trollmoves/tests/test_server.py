@@ -1,11 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2018 Trollmoves developers
+# Copyright (c) 2018-2025 Trollmoves developers
 #
-# Author(s):
-#
-#   Panu Lahtinen <panu.lahtinen@fmi.fi>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -165,6 +162,43 @@ def _run_process_notify(process_notify, publisher):
         process_notify(pathname, publisher, kwargs)
 
     return pathname, fname, kwargs
+
+
+def _run_process_notify_with_message(process_notify, publisher):
+    """Run process notification with a message."""
+    from posttroll.message import Message
+    fname = "20200428_1000_foo.tif"
+    fname_pattern = "{start_time:%Y%m%d_%H%M}_{product}.tif"
+
+    with TemporaryDirectory() as tmpdir:
+        matching_pattern = os.path.join(tmpdir, fname_pattern)
+        pathname = os.path.join(tmpdir, fname)
+        kwargs = {"origin": matching_pattern,
+                  "request_address": "localhost",
+                  "request_port": "9001",
+                  "topic": "/topic"}
+
+        with open(os.path.join(pathname), "w") as fid:
+            fid.write('foo')
+
+        # Make message from filepath:
+        msg_string = ('pytroll://topic file s@lx.serv.com 2018-10-25T01:15:54.752065 v1.01 application/json '
+                      '{"sensor": "viirs", "format": "SDR", "variant": "DR", "uid": '
+                      f'"{os.path.basename(pathname)}", "uri": '
+                      f'"{pathname}"'
+                      '}')
+        message = Message(rawstr=msg_string)
+        process_notify(message, publisher, kwargs)
+
+    return pathname, fname, kwargs
+
+
+@patch("trollmoves.server.file_cache", new_callable=deque)
+def test_process_notify_matching_file_as_message(file_cache):
+    """Test process_notify() with a file matching the configured pattern."""
+    from trollmoves.server import process_notification
+    publisher = MagicMock()
+    pathname, fname, kwargs = _run_process_notify_with_message(process_notification, publisher)
 
 
 @patch("trollmoves.server.file_cache", new_callable=deque)
