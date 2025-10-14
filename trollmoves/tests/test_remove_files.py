@@ -1,21 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-# Copyright (c) 2025 Pytroll Developers
-
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 """Testing the functions for cleaning files in and below a directory structure."""
 
 import datetime as dt
@@ -61,13 +43,13 @@ def test_remove_files_default(file_structure_with_some_old_files):
     subdir1 = sub_dir1.name
     subdir2 = sub_dir2.name
 
-    section = 'mytest_files1'
-    info = {'mailhost': 'localhost',
-            'to': 'some_users@xxx.yy',
-            'subject': 'Cleanup Error on {hostname}',
-            'base_dir': f'{basedir}',
-            'templates': f'{subdir1}/*,{subdir2}/*.png',
-            'hours': '3'}
+    section = "mytest_files1"
+    info = {"mailhost": "localhost",
+            "to": "some_users@xxx.yy",
+            "subject": "Cleanup Error on {hostname}",
+            "base_dir": f"{basedir}",
+            "templates": f"{subdir1}/*,{subdir2}/*.png",
+            "hours": "3"}
 
     fcleaner = FilesCleaner(pub, section, info, dry_run=False)
     size, num_files = fcleaner.clean_section()
@@ -98,14 +80,14 @@ def test_remove_files_access_time(file_structure_with_some_old_files, hours, exp
     subdir1 = sub_dir1.name
     subdir2 = sub_dir2.name
 
-    section = 'mytest_files1'
-    info = {'mailhost': 'localhost',
-            'to': 'some_users@xxx.yy',
-            'subject': 'Cleanup Error on {hostname}',
-            'base_dir': f'{basedir}',
-            'stat_time_method': 'st_atime',
-            'templates': f'{subdir1}/*,{subdir2}/*.png',
-            'hours': f'{hours}'}
+    section = "mytest_files1"
+    info = {"mailhost": "localhost",
+            "to": "some_users@xxx.yy",
+            "subject": "Cleanup Error on {hostname}",
+            "base_dir": f"{basedir}",
+            "stat_time_method": "st_atime",
+            "templates": f"{subdir1}/*,{subdir2}/*.png",
+            "hours": f"{hours}"}
 
     fcleaner = FilesCleaner(pub, section, info, dry_run=False)
     size, num_files = fcleaner.clean_section()
@@ -144,14 +126,14 @@ def test_remove_files_access_time_dryrun(file_structure_with_some_old_files, cap
     subdir1 = sub_dir1.name
     subdir2 = sub_dir2.name
 
-    section = 'mytest_files1'
-    info = {'mailhost': 'localhost',
-            'to': 'some_users@xxx.yy',
-            'subject': 'Cleanup Error on {hostname}',
-            'base_dir': f'{basedir}',
-            'stat_time_method': 'st_atime',
-            'templates': f'{subdir1}/*,{subdir2}/*.png',
-            'hours': '3'}
+    section = "mytest_files1"
+    info = {"mailhost": "localhost",
+            "to": "some_users@xxx.yy",
+            "subject": "Cleanup Error on {hostname}",
+            "base_dir": f"{basedir}",
+            "stat_time_method": "st_atime",
+            "templates": f"{subdir1}/*,{subdir2}/*.png",
+            "hours": "3"}
 
     with caplog.at_level(logging.DEBUG):
         fcleaner = FilesCleaner(pub, section, info, dry_run=True)
@@ -170,18 +152,18 @@ def test_remove_files_path_missing(file_structure_with_some_old_files, caplog):
     pub = FakePublisher()
     _, sub_dir1, sub_dir2 = file_structure_with_some_old_files
 
-    basedir = '/non/existing/directory'
+    basedir = "/non/existing/directory"
     subdir1 = sub_dir1.name
     subdir2 = sub_dir2.name
 
-    section = 'mytest_files1'
-    info = {'mailhost': 'localhost',
-            'to': 'some_users@xxx.yy',
-            'subject': 'Cleanup Error on {hostname}',
-            'base_dir': basedir,
-            'stat_time_method': 'st_atime',
-            'templates': f'{subdir1}/*.png,{subdir2}/*',
-            'hours': '6'}
+    section = "mytest_files1"
+    info = {"mailhost": "localhost",
+            "to": "some_users@xxx.yy",
+            "subject": "Cleanup Error on {hostname}",
+            "base_dir": basedir,
+            "stat_time_method": "st_atime",
+            "templates": f"{subdir1}/*.png,{subdir2}/*",
+            "hours": "6"}
 
     with caplog.at_level(logging.WARNING):
         fcleaner = FilesCleaner(pub, section, info, dry_run=True)
@@ -190,7 +172,7 @@ def test_remove_files_path_missing(file_structure_with_some_old_files, caplog):
     assert size == 0
     assert num_files == 0
 
-    log_output = f'Path {basedir} missing, skipping section mytest_files1'
+    log_output = f"Path {basedir} missing, skipping section mytest_files1"
     assert log_output in caplog.text
 
 
@@ -203,14 +185,14 @@ def test_remove_files_empty_dir_mtime(file_structure_with_some_old_files_and_emp
     subdir1 = sub_dir1.name
     subdir2 = sub_dir2.name
 
-    section = 'mytest_files1'
-    info = {'mailhost': 'localhost',
-            'to': 'some_users@xxx.yy',
-            'subject': 'Cleanup Error on {hostname}',
-            'base_dir': f'{basedir}',
-            'stat_time_method': 'st_mtime',
-            'templates': f'{subdir1}/*.png,{subdir2}/*,{basedir}/*',
-            'hours': '3'}
+    section = "mytest_files1"
+    info = {"mailhost": "localhost",
+            "to": "some_users@xxx.yy",
+            "subject": "Cleanup Error on {hostname}",
+            "base_dir": f"{basedir}",
+            "stat_time_method": "st_mtime",
+            "templates": f"{subdir1}/*.png,{subdir2}/*,{basedir}/*",
+            "hours": "3"}
 
     with caplog.at_level(logging.DEBUG):
         fcleaner = FilesCleaner(pub, section, info, dry_run=False)
@@ -232,14 +214,14 @@ def test_remove_files_empty_dir_atime(file_structure_with_some_old_files_and_emp
     subdir1 = sub_dir1.name
     subdir2 = sub_dir2.name
 
-    section = 'mytest_files1'
-    info = {'mailhost': 'localhost',
-            'to': 'some_users@xxx.yy',
-            'subject': 'Cleanup Error on {hostname}',
-            'base_dir': f'{basedir}',
-            'stat_time_method': 'st_atime',
-            'templates': f'{subdir1}/*.png,{subdir2}/*,{basedir}/*',
-            'hours': '3'}
+    section = "mytest_files1"
+    info = {"mailhost": "localhost",
+            "to": "some_users@xxx.yy",
+            "subject": "Cleanup Error on {hostname}",
+            "base_dir": f"{basedir}",
+            "stat_time_method": "st_atime",
+            "templates": f"{subdir1}/*.png,{subdir2}/*,{basedir}/*",
+            "hours": "3"}
 
     with caplog.at_level(logging.DEBUG):
         fcleaner = FilesCleaner(pub, section, info, dry_run=False)
@@ -293,7 +275,7 @@ def dummy_tree_of_some_files(request, tmp_path_factory) -> list[str]:
     os.utime(fn.parent, times=(atime, mtime))
     filepaths.append(fn)
 
-    yield filepaths
+    return filepaths
 
 
 def test_clean_dir_non_recursive(dummy_tree_of_some_files, tmp_path, caplog):
@@ -305,15 +287,15 @@ def test_clean_dir_non_recursive(dummy_tree_of_some_files, tmp_path, caplog):
     basedir = list_of_files_to_clean[0].parent
     subdir1 = list_of_files_to_clean[1].parent.name
 
-    section = 'mytest_files1'
-    info = {'mailhost': 'localhost',
-            'to': 'some_users@xxx.yy',
-            'subject': 'Cleanup Error on {hostname}',
-            'base_dir': f'{basedir}',
-            'stat_time_method': 'st_ctime',
-            'recursive': False,
-            'templates': f'{subdir1}/*.txt',
-            'hours': '1'}
+    section = "mytest_files1"
+    info = {"mailhost": "localhost",
+            "to": "some_users@xxx.yy",
+            "subject": "Cleanup Error on {hostname}",
+            "base_dir": f"{basedir}",
+            "stat_time_method": "st_ctime",
+            "recursive": False,
+            "templates": f"{subdir1}/*.txt",
+            "hours": "1"}
 
     fcleaner = FilesCleaner(pub, section, info, dry_run=False)
 
@@ -339,15 +321,15 @@ def test_clean_dir_recursive_mtime_real(dummy_tree_of_some_files, caplog):
     basedir = list_of_files_to_clean[0].parent
     subdir1 = list_of_files_to_clean[2].parent.name
 
-    section = 'mytest_files1'
-    info = {'mailhost': 'localhost',
-            'to': 'some_users@xxx.yy',
-            'subject': 'Cleanup Error on {hostname}',
-            'base_dir': f'{basedir}',
-            'stat_time_method': 'st_mtime',
-            'recursive': True,
-            'templates': f'*.txt,{subdir1}/*.txt',
-            'hours': '1'}
+    section = "mytest_files1"
+    info = {"mailhost": "localhost",
+            "to": "some_users@xxx.yy",
+            "subject": "Cleanup Error on {hostname}",
+            "base_dir": f"{basedir}",
+            "stat_time_method": "st_mtime",
+            "recursive": True,
+            "templates": f"*.txt,{subdir1}/*.txt",
+            "hours": "1"}
 
     fcleaner = FilesCleaner(pub, section, info, dry_run=False)
 
@@ -383,15 +365,15 @@ def test_clean_dir_recursive_mtime_dryrun(dummy_tree_of_some_files, tmp_path, ca
     subdir1 = list_of_files_to_clean[1].parent.name
     subdir2 = list_of_files_to_clean[2].parent.name
 
-    section = 'mytest_files1'
-    info = {'mailhost': 'localhost',
-            'to': 'some_users@xxx.yy',
-            'subject': 'Cleanup Error on {hostname}',
-            'base_dir': f'{basedir}',
-            'templates': f'{subdir1}/*.txt,{subdir2}/*.txt',
-            'stat_time_method': 'st_mtime',
-            'recursive': True,
-            'hours': '1'}
+    section = "mytest_files1"
+    info = {"mailhost": "localhost",
+            "to": "some_users@xxx.yy",
+            "subject": "Cleanup Error on {hostname}",
+            "base_dir": f"{basedir}",
+            "templates": f"{subdir1}/*.txt,{subdir2}/*.txt",
+            "stat_time_method": "st_mtime",
+            "recursive": True,
+            "hours": "1"}
 
     fcleaner = FilesCleaner(pub, section, info, dry_run=True)
 

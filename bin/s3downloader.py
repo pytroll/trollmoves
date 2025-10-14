@@ -1,21 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-#
-# Copyright (c) 2022-2023 Pytroll Developers
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 """s3 downloader to be used together with s3stalker from pytroll-collectors.
 S3downloader listens to messages from the s3stalker, and download files to
 configured destination. If the download is successful(ie. file exists on local disk
@@ -39,11 +21,10 @@ download_destination: './'
 
 """
 
-import sys
 import logging
+import sys
 
-from trollmoves.s3downloader import parse_args
-from trollmoves.s3downloader import S3Downloader
+from trollmoves.s3downloader import S3Downloader, parse_args
 
 LOGGER = logging.getLogger(__name__)
 

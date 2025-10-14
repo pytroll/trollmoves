@@ -1,13 +1,15 @@
-exclude: '^$'
+exclude: "^$"
 fail_fast: false
 repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Ruff version.
+    rev: "v0.14.0"
+    hooks:
+      - id: ruff
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v2.2.3
+    rev: v6.0.0
     hooks:
-    - id: flake8
-      additional_dependencies: [flake8-docstrings, flake8-debugger, flake8-bugbear, flake8-rst-docstrings]
-  - repo: https://github.com/pycqa/isort
-    rev: 5.12.0
-    hooks:
-      - id: isort
-        language_version: python3
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: no-commit-to-branch
+      # additional_dependencies: [flake8-docstrings, flake8-debugger, flake8-bugbear, flake8-rst-docstrings]

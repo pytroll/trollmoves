@@ -38,10 +38,10 @@ def pytest_collection_modifyitems(items):
 def minimal_config_file(tmp_path):
     """Create a fake configuration file."""
     file_path = tmp_path / TEST_BASIC_FILESCLEANER_CONFIG_FILENAME
-    with open(file_path, 'w') as fpt:
+    with open(file_path, "w") as fpt:
         fpt.write(TEST_BASIC_FILESCLEANER_CONFIG)
 
-    yield file_path
+    return file_path
 
 
 @pytest.fixture
@@ -66,7 +66,7 @@ def file_structure_with_some_old_files(tmp_path):
 
     six_hours_ago = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=6)
 
-    oldfile = (data_subdir1 / 'b.nc')
+    oldfile = (data_subdir1 / "b.nc")
     os.utime(oldfile, (six_hours_ago.timestamp(), six_hours_ago.timestamp()))
 
     files = ["a.png", "b.png", "c.tif"]
@@ -74,7 +74,7 @@ def file_structure_with_some_old_files(tmp_path):
         (data_subdir2 / fname).touch()
 
     eight_hours_ago = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=8)
-    oldfile = (data_subdir2 / 'b.png')
+    oldfile = (data_subdir2 / "b.png")
     os.utime(oldfile, (eight_hours_ago.timestamp(), eight_hours_ago.timestamp()))
 
     return data_dir, data_subdir1, data_subdir2
@@ -96,7 +96,7 @@ def file_structure_with_some_old_files_and_empty_dir(tmp_path):
         (data_subdir1 / fname).touch()
 
     eight_hours_ago = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=8)
-    oldfile = (data_subdir1 / 'b.png')
+    oldfile = (data_subdir1 / "b.png")
     os.utime(oldfile, (eight_hours_ago.timestamp(), eight_hours_ago.timestamp()))
     # Force the directory to be old as well:
     os.utime(data_subdir2, (eight_hours_ago.timestamp(), eight_hours_ago.timestamp()))

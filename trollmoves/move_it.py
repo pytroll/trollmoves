@@ -7,8 +7,7 @@ from urllib.parse import urlparse
 
 from trollmoves.move_it_base import create_publisher
 from trollmoves.movers import MOVERS
-from trollmoves.server import (AbstractMoveItServer,
-                               create_message_with_request_info, unpack)
+from trollmoves.server import AbstractMoveItServer, create_message_with_request_info, unpack
 
 LOGGER = logging.getLogger(__name__)
 
