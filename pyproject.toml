@@ -20,7 +20,7 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
-    "netifaces",
+    "netifaces-plus",
     "posttroll>=1.5.1",
     "pyyaml",
     "pyzmq",
