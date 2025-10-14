@@ -1,25 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-#
-# Copyright (c) 2020 Pytroll
-#
-# Author(s):
-#
-#   Adam.Dybbroe <adam.dybbroe@smhi.se>
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-#
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 """Test the movers."""
 
 import os
@@ -32,9 +10,9 @@ import yaml
 
 ORIGIN_FILENAME = "filename.ext"
 
-ORIGIN = '/path/to/mydata/' + ORIGIN_FILENAME
-USERNAME = 'username'
-PASSWORD = 'passwd'
+ORIGIN = "/path/to/mydata/" + ORIGIN_FILENAME
+USERNAME = "username"
+PASSWORD = "passwd"
 ACCOUNT = None
 
 test_yaml_s3_connection_params = """
@@ -70,7 +48,7 @@ target-s3-example1:
 def _get_ftp(destination, origin=ORIGIN):
     from trollmoves.movers import FtpMover
 
-    with patch('trollmoves.movers.FTP') as ftp:
+    with patch("trollmoves.movers.FTP") as ftp:
         ftp_mover = FtpMover(origin, destination)
         connection = ftp_mover.open_connection()
 
@@ -88,30 +66,30 @@ def file_to_move(tmp_path):
     return filename
 
 
-@patch('netrc.netrc')
+@patch("netrc.netrc")
 def test_open_ftp_connection_with_netrc_no_netrc(netrc):
     """Check getting ftp connection when .netrc is missing."""
-    netrc.side_effect = FileNotFoundError('Failed retrieve authentification details from netrc file')
+    netrc.side_effect = FileNotFoundError("Failed retrieve authentification details from netrc file")
 
-    with _get_ftp('ftp://localhost.smhi.se/data/satellite/archive/') as (ftp, _):
+    with _get_ftp("ftp://localhost.smhi.se/data/satellite/archive/") as (ftp, _):
         ftp.return_value.login.assert_called_once_with()
 
 
-@patch('netrc.netrc')
+@patch("netrc.netrc")
 def test_open_ftp_connection_with_netrc(netrc):
     """Check getting the netrc authentication for ftp connection."""
-    netrc.return_value.hosts = {'localhost.smhi.se': (USERNAME, ACCOUNT, PASSWORD)}
+    netrc.return_value.hosts = {"localhost.smhi.se": (USERNAME, ACCOUNT, PASSWORD)}
     netrc.return_value.authenticators.return_value = (USERNAME, ACCOUNT, PASSWORD)
     netrc.side_effect = None
 
-    with _get_ftp('ftp://localhost.smhi.se/data/satellite/archive/') as (ftp, _):
+    with _get_ftp("ftp://localhost.smhi.se/data/satellite/archive/") as (ftp, _):
         ftp.return_value.login.assert_called_once_with(USERNAME, PASSWORD)
 
 
 def test_open_ftp_connection_credentials_in_url():
     """Check getting ftp connection with credentials in the URL."""
-    with _get_ftp('ftp://auser:apasswd@localhost.smhi.se/data/satellite/archive/') as (ftp, _):
-        ftp.return_value.login.assert_called_once_with('auser', 'apasswd')
+    with _get_ftp("ftp://auser:apasswd@localhost.smhi.se/data/satellite/archive/") as (ftp, _):
+        ftp.return_value.login.assert_called_once_with("auser", "apasswd")
 
 
 @pytest.mark.parametrize("destination,expected_filename",
@@ -131,7 +109,7 @@ def _get_s3_mover(origin, destination, **attrs):
     return S3Mover(origin, destination, attrs=attrs)
 
 
-@patch('trollmoves.movers.S3FileSystem')
+@patch("trollmoves.movers.S3FileSystem")
 def test_s3_copy_file_to_base(S3FileSystem):
     """Test copying to base of S3 bucket."""
     s3_mover = _get_s3_mover(ORIGIN, "s3://data-bucket/")
@@ -140,7 +118,7 @@ def test_s3_copy_file_to_base(S3FileSystem):
     S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/" + ORIGIN_FILENAME)
 
 
-@patch('trollmoves.movers.S3FileSystem')
+@patch("trollmoves.movers.S3FileSystem")
 def test_s3_attrs_are_sanitized(S3FileSystem):
     """Test that only accepted attrs are passed to S3Filesystem."""
     attrs = {"ssh_key_filename": "should_be_removed", "endpoint_url": "should_be_included"}
@@ -151,7 +129,7 @@ def test_s3_attrs_are_sanitized(S3FileSystem):
     S3FileSystem.assert_called_once_with(**expected_attrs)
 
 
-@patch('trollmoves.movers.S3FileSystem')
+@patch("trollmoves.movers.S3FileSystem")
 def test_s3_copy_file_to_prefix_with_trailing_slash(S3FileSystem):
     """Test that when destination ends in a slash, the original file basename is added to it."""
     s3_mover = _get_s3_mover(ORIGIN, "s3://data-bucket/upload/")
@@ -160,7 +138,7 @@ def test_s3_copy_file_to_prefix_with_trailing_slash(S3FileSystem):
     S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/upload/" + ORIGIN_FILENAME)
 
 
-@patch('trollmoves.movers.S3FileSystem')
+@patch("trollmoves.movers.S3FileSystem")
 def test_s3_copy_file_to_prefix_no_trailing_slash(S3FileSystem):
     """Test giving destination without trailing slash to see it is used as object name."""
     s3_mover = _get_s3_mover(ORIGIN, "s3://data-bucket/upload")
@@ -169,7 +147,7 @@ def test_s3_copy_file_to_prefix_no_trailing_slash(S3FileSystem):
     S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/upload")
 
 
-@patch('trollmoves.movers.S3FileSystem')
+@patch("trollmoves.movers.S3FileSystem")
 def test_s3_copy_file_to_prefix_urlparse(S3FileSystem):
     """Test that giving urlparse() result as destination works."""
     s3_mover = _get_s3_mover(ORIGIN, urlparse("s3://data-bucket/upload/my_satellite_data.h5"))
@@ -178,26 +156,26 @@ def test_s3_copy_file_to_prefix_urlparse(S3FileSystem):
     S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/upload/my_satellite_data.h5")
 
 
-@patch('trollmoves.movers.S3FileSystem')
+@patch("trollmoves.movers.S3FileSystem")
 def test_s3_copy_file_to_base_using_connection_parameters(S3FileSystem):
     """Test copying to base of S3 bucket."""
     # Get the connection parameters:
     config = yaml.safe_load(test_yaml_s3_connection_params)
-    attrs = config['target-s3-example1']['connection_parameters']
+    attrs = config["target-s3-example1"]["connection_parameters"]
 
     s3_mover = _get_s3_mover(ORIGIN, "s3://data-bucket/", **attrs)
-    assert s3_mover.attrs['client_kwargs'] == {
-        'endpoint_url': 'https://minio-server.mydomain.se:9000', 'verify': False}
-    assert s3_mover.attrs['secret'] == 'my-super-secret-key'
-    assert s3_mover.attrs['key'] == 'my-access-key'
-    assert s3_mover.attrs['use_ssl'] is True
+    assert s3_mover.attrs["client_kwargs"] == {
+        "endpoint_url": "https://minio-server.mydomain.se:9000", "verify": False}
+    assert s3_mover.attrs["secret"] == "my-super-secret-key"
+    assert s3_mover.attrs["key"] == "my-access-key"
+    assert s3_mover.attrs["use_ssl"] is True
 
     s3_mover.copy()
 
     S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/" + ORIGIN_FILENAME)
 
 
-@patch('trollmoves.movers.S3FileSystem')
+@patch("trollmoves.movers.S3FileSystem")
 def test_s3_copy_file_to_sub_directory(S3FileSystem):
     """Test copying to sub directory of a S3 bucket."""
     # The target directory doesn't exist
@@ -209,7 +187,7 @@ def test_s3_copy_file_to_sub_directory(S3FileSystem):
     S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/target/directory/" + ORIGIN_FILENAME)
 
 
-@patch('trollmoves.movers.S3FileSystem')
+@patch("trollmoves.movers.S3FileSystem")
 def test_s3_move(S3FileSystem):
     """Test moving a file."""
     import os
@@ -258,4 +236,4 @@ def tmp_file(tmp_path):
     path = tmp_path / "file.ext"
     with open(path, mode="w") as fd:
         fd.write("dummy file")
-    yield path
+    return path

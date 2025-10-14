@@ -45,7 +45,7 @@ def free_port():
     return portnum
 
 
-@scenario('move_it_server_client.feature', 'Simple file transfer')
+@scenario("move_it_server_client.feature", "Simple file transfer")
 def test_simple_transfer():
     """Stub for this scenario."""
 
@@ -146,7 +146,7 @@ def file_moved(target_dir, moved_filename):
     assert path.exists()
 
 
-@scenario('move_it_server_client.feature', 'Simple file publishing')
+@scenario("move_it_server_client.feature", "Simple file publishing")
 def test_simple_publishing():
     """Stub for this scenario."""
 
@@ -202,7 +202,7 @@ def check_message_for_filesystem_info(subscriber, tmp_path, source_dir, moved_fi
     host = socket.gethostname()
     expected_filesystem = {"cls": "fsspec.implementations.sftp.SFTPFileSystem", "protocol": "ssh", "args": [],
                            "host": host}
-    expected_uri = f'ssh://{host}{source_dir}/{moved_filename}'
+    expected_uri = f"ssh://{host}{source_dir}/{moved_filename}"
 
     assert msg.data["filesystem"] == expected_filesystem
     assert msg.data["uri"] == expected_uri
@@ -211,7 +211,7 @@ def check_message_for_filesystem_info(subscriber, tmp_path, source_dir, moved_fi
     assert "nominal_time" in msg.data
 
 
-@scenario('move_it_server_client.feature', 'Simple file publishing with untarring')
+@scenario("move_it_server_client.feature", "Simple file publishing with untarring")
 def test_simple_publishing_with_untarring():
     """Stub for this scenario."""
 
@@ -273,7 +273,7 @@ def check_message_for_filesystem_info_and_untarring(subscriber, tmp_path, moved_
                            "target_protocol": "ssh",
                            "fo": os.fspath(moved_filename)}
 
-    expected_uri = f'tar:/{str(moved_filename)[:-4]}::ssh://{host}{moved_filename}'
+    expected_uri = f"tar:/{str(moved_filename)[:-4]}::ssh://{host}{moved_filename}"
 
     assert len(msg.data["dataset"]) == 1
     assert msg.data["dataset"][0]["filesystem"] == expected_filesystem
