@@ -49,6 +49,15 @@ _DEFAULT_TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 _DEFAULT_LOG_FORMAT = "[%(levelname)s: %(asctime)s : %(name)s] %(message)s"
 
 
+def main():
+    cmd_args = parse_args(sys.argv[1:])
+
+    s3dl = S3Downloader(cmd_args)
+    s3dl.read_config()
+    s3dl.setup_logging()
+    s3dl.start()
+
+
 class Listener(Thread):
 
     def __init__(self, queue, config, subscribe_nameserver):

@@ -130,11 +130,13 @@ metadata::
 The comparison operators that can be used are the ones that can be used in
 python: `==`, `!=`, `<`, `>`, `<=`, `>=`.
 """
+import argparse
 import contextlib
 import logging
 import os
 import signal
 import socket
+import sys
 from datetime import datetime
 from queue import Empty
 from urllib.parse import urlparse, urlsplit, urlunsplit
@@ -145,6 +147,7 @@ from posttroll.message import Message
 from posttroll.publisher import NoisyPublisher, create_publisher_from_dict_config
 from trollsift import compose
 
+from trollmoves.logging import add_logging_options_to_parser, setup_logging
 from trollmoves.movers import move_it
 from trollmoves.utils import clean_url, is_file_local
 
@@ -536,3 +539,41 @@ def dispatch(source, destinations):
         logger.info("Dispatched all files.")
 
     return success
+
+
+def parse_args():
+    """Parse commandline arguments."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config_file",
+                        help="The configuration file to run on.")
+    parser.add_argument(
+        "-p", "--publish-port", type=int, dest="pub_port", nargs="?",
+        const=0, default=None,
+        help="Publish messages for dispatched files on this port. "
+        "Default: no publishing.")
+    parser.add_argument("-n", "--publish-nameserver", nargs="*",
+                        dest="pub_nameservers",
+                        help="Nameserver for publisher to connect to")
+    add_logging_options_to_parser(parser, legacy=True)
+    return parser.parse_args()
+
+
+def main():
+    """Start and run the dispatcher."""
+    cmd_args = parse_args()
+    logger = setup_logging("dispatcher", cmd_args)
+    logger.info("Starting up.")
+
+    try:
+        dispatcher = Dispatcher(cmd_args.config_file,
+                                publish_port=cmd_args.pub_port,
+                                publish_nameservers=cmd_args.pub_nameservers)
+    except Exception as err:
+        logger.error("Dispatcher crashed: %s", str(err))
+        sys.exit(1)
+    try:
+        dispatcher.run()
+    except KeyboardInterrupt:
+        logger.debug("Interrupting")
+    finally:
+        dispatcher.close()

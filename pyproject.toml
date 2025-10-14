@@ -55,6 +55,14 @@ server = [
 
 [project.scripts]
 pytroll-fetcher = "trollmoves.fetcher:cli"
+"dispatcher.py" = "trollmoves.dispatcher:main"
+"move_it.py" = "trollmoves.move_it:main"
+"move_it_client.py" = "trollmoves.move_it_client:main"
+"move_it_mirror.py" = "trollmoves.move_it_mirror:main"
+"move_it_req.py" = "trollmoves.move_it_req:main"
+"move_it_server.py" = "trollmoves.move_it_server:main"
+"remove_it.py" = "trollmoves.remove_it:main"
+"s3downloader.py" = "trollmoves.s3downloader:main"
 
 [project.urls]
 Homepage = "https://github.com/pytroll/trollmoves"
