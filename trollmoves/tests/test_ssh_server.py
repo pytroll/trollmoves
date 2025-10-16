@@ -1,38 +1,17 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-#
-# Copyright (c) 2019
-#
-# Author(s):
-#
-#   Trygve Aspenes <trygveas@met.no>
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """Test the ssh server."""
 
-import shutil
-from unittest.mock import Mock, MagicMock, patch
-import unittest
-from tempfile import NamedTemporaryFile, mkdtemp
 import errno
-from urllib.parse import urlparse
-
-from paramiko import SSHException
-import pytest
 import logging
+import shutil
 import socket
 import sys
+import unittest
+from tempfile import NamedTemporaryFile, mkdtemp
+from unittest.mock import MagicMock, Mock, patch
+from urllib.parse import urlparse
+
+import pytest
+from paramiko import SSHException
 
 import trollmoves
 
@@ -44,22 +23,22 @@ class TestSSHMovers(unittest.TestCase):
     def setUp(self):
         """Create temporary directories and setup configurations."""
         self.origin_dir = mkdtemp()
-        with NamedTemporaryFile('w', delete=False, dir=self.origin_dir) as temporary_file:
+        with NamedTemporaryFile("w", delete=False, dir=self.origin_dir) as temporary_file:
             self.origin = temporary_file.name
 
         self.dest_dir = mkdtemp()
 
-        self.hostname = 'localhost'
-        self.login = 'user'
+        self.hostname = "localhost"
+        self.login = "user"
         self.port = 22
 
-        self.destination_no_login = 'scp://' + self.hostname + ':' + str(self.port) + '/' + self.dest_dir
+        self.destination_no_login = "scp://" + self.hostname + ":" + str(self.port) + "/" + self.dest_dir
         self.destination_with_login = 'scp://' + self.login + '@' + self.hostname + ':' + str(self.port) + '/' + self.dest_dir  # noqa
-        self.destination_no_port = 'scp://' + self.login + '@' + self.hostname + '/' + self.dest_dir
-        self.destination_no_login_no_port = 'scp://' + self.hostname + ':' + str(self.port) + '/' + self.dest_dir
+        self.destination_no_port = "scp://" + self.login + "@" + self.hostname + "/" + self.dest_dir
+        self.destination_no_login_no_port = "scp://" + self.hostname + ":" + str(self.port) + "/" + self.dest_dir
 
         self._attrs_empty = {}
-        self._attrs_connection_uptime = {'connection_uptime': 0}
+        self._attrs_connection_uptime = {"connection_uptime": 0}
 
     def tearDown(self):
         """Remove temporary directories."""
@@ -71,9 +50,9 @@ class TestSSHMovers(unittest.TestCase):
 
     def test_scp(self):
         """Check ScpMover init."""
-        with patch('trollmoves.movers.ScpMover') as sm:
+        with patch("trollmoves.movers.ScpMover") as sm:
             sm_instanse = sm.return_value
-            sm_instanse.run.return_value = {u'dataObjectID': u'test1'}
+            sm_instanse.run.return_value = {u"dataObjectID": u"test1"}
 
             trollmoves.movers.ScpMover(self.origin, self.destination_no_login, attrs=self._attrs_empty)
 
@@ -81,24 +60,24 @@ class TestSSHMovers(unittest.TestCase):
 
     def test_scp_open_connection(self):
         """Check scp open_connection."""
-        with patch('trollmoves.movers.ScpMover') as smgc:
-            smgc.return_value.open_connection.return_value = 'testing'
+        with patch("trollmoves.movers.ScpMover") as smgc:
+            smgc.return_value.open_connection.return_value = "testing"
 
             scp_mover = trollmoves.movers.ScpMover(self.origin, self.destination_no_login, attrs=self._attrs_empty)
 
-            self.assertEqual(scp_mover.open_connection(), 'testing')
+            self.assertEqual(scp_mover.open_connection(), "testing")
 
     def test_scp_get_connection(self):
         """Check scp get_connection."""
-        with patch('trollmoves.movers.ScpMover') as smgc:
-            smgc.return_value.get_connection.return_value = 'testing'
+        with patch("trollmoves.movers.ScpMover") as smgc:
+            smgc.return_value.get_connection.return_value = "testing"
 
             scp_mover = trollmoves.movers.ScpMover(self.origin, self.destination_no_login_no_port,
                                                    attrs=self._attrs_empty)
 
-            self.assertEqual(scp_mover.get_connection(self.hostname, self.port, self.login), 'testing')
+            self.assertEqual(scp_mover.get_connection(self.hostname, self.port, self.login), "testing")
 
-    @patch('paramiko.SSHClient', autospec=True)
+    @patch("paramiko.SSHClient", autospec=True)
     def test_scp_open_connection_login_name(self, mock_sshclient):
         """Check scp open_connection() with login name."""
         from trollmoves.movers import ScpMover
@@ -118,7 +97,7 @@ class TestSSHMovers(unittest.TestCase):
             key_filename=None,
             timeout=None)
 
-    @patch('paramiko.SSHClient', autospec=True)
+    @patch("paramiko.SSHClient", autospec=True)
     def test_scp_open_connection_without_ssh_port(self, mock_sshclient):
         """Check scp open_connection() without ssh port in destination.
 
@@ -141,7 +120,7 @@ class TestSSHMovers(unittest.TestCase):
             key_filename=None,
             timeout=None)
 
-    @patch('paramiko.SSHClient.connect', autospec=True)
+    @patch("paramiko.SSHClient.connect", autospec=True)
     def test_scp_open_connection_ssh_exception(self, mock_sshclient_connect):
         """Check scp get_connection failing for SSHException."""
         from trollmoves.movers import ScpMover
@@ -152,10 +131,10 @@ class TestSSHMovers(unittest.TestCase):
         scp_mover = ScpMover(self.origin, self.destination_no_port,
                              attrs=self._attrs_connection_uptime)
 
-        with pytest.raises(IOError, match='Failed to ssh connect after 3 attempts'):
+        with pytest.raises(IOError, match="Failed to ssh connect after 3 attempts"):
             scp_mover.open_connection()
 
-    @patch('paramiko.SSHClient.connect', autospec=True)
+    @patch("paramiko.SSHClient.connect", autospec=True)
     def test_scp_open_connection_socket_timeout_exception(self, mock_sshclient_connect):
         """Check scp get_connection failing with socket timeout."""
         from trollmoves.movers import ScpMover
@@ -167,7 +146,7 @@ class TestSSHMovers(unittest.TestCase):
         mock_sshclient_connect.side_effect = mocked_client
 
         scp_mover = ScpMover(self.origin, self.destination_no_port,
-                             attrs={'ssh_connection_timeout': 1})
+                             attrs={"ssh_connection_timeout": 1})
         try:
             with self.assertLogs(logger, level=logging.INFO) as lc, self.assertRaises(IOError):
                 scp_mover.open_connection()
@@ -175,7 +154,7 @@ class TestSSHMovers(unittest.TestCase):
         finally:
             logger.removeHandler(stream_handler)
 
-    @patch('paramiko.SSHClient', autospec=True)
+    @patch("paramiko.SSHClient", autospec=True)
     def test_scp_open_connection_backup_targets(self, mock_sshclient):
         """Check scp get_connection using backup targets."""
         from trollmoves.movers import ScpMover
@@ -187,9 +166,9 @@ class TestSSHMovers(unittest.TestCase):
         mock_sshclient.return_value.connect.side_effect = mocked_client
 
         scp_mover = ScpMover(self.origin, self.destination_no_port,
-                             attrs={'ssh_connection_timeout': 1},
-                             backup_targets=['backup_host1',
-                                             'backup_host2'])
+                             attrs={"ssh_connection_timeout": 1},
+                             backup_targets=["backup_host1",
+                                             "backup_host2"])
         try:
             with self.assertLogs(logger, level=logging.INFO) as lc, self.assertRaises(IOError):
                 scp_mover.open_connection()
@@ -201,7 +180,7 @@ class TestSSHMovers(unittest.TestCase):
         finally:
             logger.removeHandler(stream_handler)
 
-    @patch('paramiko.SSHClient.connect', autospec=True)
+    @patch("paramiko.SSHClient.connect", autospec=True)
     def test_scp_open_connection_generic_exception(self, mock_sshclient_connect):
         """Check scp open_connection() failure when a generic exception happens."""
         from trollmoves.movers import ScpMover
@@ -212,10 +191,10 @@ class TestSSHMovers(unittest.TestCase):
         scp_mover = ScpMover(self.origin, self.destination_no_port,
                              attrs=self._attrs_connection_uptime)
 
-        with pytest.raises(IOError, match='Failed to ssh connect after 3 attempts'):
+        with pytest.raises(IOError, match="Failed to ssh connect after 3 attempts"):
             scp_mover.open_connection()
 
-    @patch('paramiko.SSHClient.connect', autospec=True)
+    @patch("paramiko.SSHClient.connect", autospec=True)
     def test_scp_is_connected_exception(self, mock_sshclient_connect):
         """Check scp is_connected() exception resulting in no connection."""
         from trollmoves.movers import ScpMover
@@ -232,8 +211,8 @@ class TestSSHMovers(unittest.TestCase):
 
         assert result is False
 
-    @patch('paramiko.SSHClient', autospec=True)
-    @patch('scp.SCPClient', autospec=True)
+    @patch("paramiko.SSHClient", autospec=True)
+    @patch("scp.SCPClient", autospec=True)
     def test_scp_copy(self, mock_scp_client, mock_sshclient):
         """Check scp copy."""
         from trollmoves.movers import ScpMover
@@ -246,8 +225,8 @@ class TestSSHMovers(unittest.TestCase):
 
         mocked_scp_client.put.assert_called_once_with(self.origin, urlparse(self.destination_no_port).path)
 
-    @patch('paramiko.SSHClient', autospec=True)
-    @patch('scp.SCPClient', autospec=True)
+    @patch("paramiko.SSHClient", autospec=True)
+    @patch("scp.SCPClient", autospec=True)
     def test_scp_copy_generic_exception(self, mock_scp_client, mock_sshclient):
         """Check scp copy for generic exception."""
         from trollmoves.movers import ScpMover
@@ -258,7 +237,7 @@ class TestSSHMovers(unittest.TestCase):
         with pytest.raises(Exception):
             scp_mover.copy()
 
-    @patch('scp.SCPClient', autospec=True)
+    @patch("scp.SCPClient", autospec=True)
     def test_scp_copy_oserror_exception(self, mock_scp_client):
         """Check scp copy for OSError."""
         from trollmoves.movers import ScpMover
@@ -269,31 +248,31 @@ class TestSSHMovers(unittest.TestCase):
         with pytest.raises(OSError):
             scp_mover.copy()
 
-    @patch('scp.SCPClient', autospec=True)
+    @patch("scp.SCPClient", autospec=True)
     def test_scp_copy_oserror_exception_errno_2(self, mock_scp_client):
         """Check scp copy OSError errno 2."""
         from trollmoves.movers import ScpMover
 
         scp_mover = ScpMover(self.origin, self.destination_no_port, attrs=self._attrs_empty)
-        mock_scp_client.return_value.put.side_effect = OSError(errno.ENOENT, 'message')
+        mock_scp_client.return_value.put.side_effect = OSError(errno.ENOENT, "message")
 
         result = scp_mover.copy()
 
         assert result is None
 
-    @patch('scp.SCPClient', autospec=True)
+    @patch("scp.SCPClient", autospec=True)
     def test_scp_copy_put_exception(self, mock_scp_client):
         """Check scp client.put() raising Exception."""
         from trollmoves.movers import ScpMover
 
         scp_mover = ScpMover(self.origin, self.destination_no_port, attrs=self._attrs_empty)
-        mock_scp_client.return_value.put.side_effect = Exception('Test message')
+        mock_scp_client.return_value.put.side_effect = Exception("Test message")
 
         with pytest.raises(Exception):
             scp_mover.copy()
 
-    @patch('paramiko.SSHClient', autospec=True)
-    @patch('scp.SCPClient', autospec=True)
+    @patch("paramiko.SSHClient", autospec=True)
+    @patch("scp.SCPClient", autospec=True)
     def test_scp_move(self, mock_scp_client, mock_sshclient):
         """Check scp move."""
         from trollmoves.movers import ScpMover
@@ -307,11 +286,12 @@ class TestSSHMovers(unittest.TestCase):
         mocked_scp_client.put.assert_called_once_with(self.origin, urlparse(self.destination_no_port).path)
 
 
-    @patch('paramiko.SSHClient.connect', autospec=True)
-    @patch('scp.SCPClient', autospec=True)
+    @patch("paramiko.SSHClient.connect", autospec=True)
+    @patch("scp.SCPClient", autospec=True)
     def test_move_it_destination_types(self, patch_scpclient, patch_connect):
         """Test move_it handles destination string and urlparse types."""
         import os
+
         from trollmoves.movers import move_it
 
         expected_destination = urlparse("scp://hostname/path/name")
@@ -325,5 +305,5 @@ class TestSSHMovers(unittest.TestCase):
         ret_destination = move_it(pathname, urlparse_destination)
         assert ret_destination == expected_destination
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

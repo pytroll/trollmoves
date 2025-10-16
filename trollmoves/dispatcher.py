@@ -1,26 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-#
-# Copyright (c) 2012-2020
-#
-# Author(s):
-#
-#   Martin Raspaud <martin.raspaud@smhi.se>
-#   Panu Lahtinen <panu.lahtinen@fmi.fi>
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 """Dispatcher dispatches(!) files to some destination.
 
 It listens to posttroll messages to find out what to dispatch.
@@ -153,14 +130,16 @@ metadata::
 The comparison operators that can be used are the ones that can be used in
 python: `==`, `!=`, `<`, `>`, `<=`, `>=`.
 """
+import argparse
 import contextlib
 import logging
 import os
 import signal
 import socket
+import sys
 from datetime import datetime
 from queue import Empty
-from urllib.parse import urlsplit, urlunsplit, urlparse
+from urllib.parse import urlparse, urlsplit, urlunsplit
 
 import yaml
 from posttroll.listener import ListenerContainer
@@ -168,16 +147,17 @@ from posttroll.message import Message
 from posttroll.publisher import NoisyPublisher, create_publisher_from_dict_config
 from trollsift import compose
 
+from trollmoves.logging import add_logging_options_to_parser, setup_logging
 from trollmoves.movers import move_it
-from trollmoves.utils import (clean_url, is_file_local)
+from trollmoves.utils import clean_url, is_file_local
 
 logger = logging.getLogger(__name__)
 
 
 def read_config(filename):
     """Read the configuration from file."""
-    logger.info('Reading config from %s', filename)
-    with open(filename, 'r') as fd:
+    logger.info("Reading config from %s", filename)
+    with open(filename, "r") as fd:
         return yaml.safe_load(fd.read())
 
 
@@ -218,7 +198,7 @@ class Dispatcher:
 
     def close(self, *args, **kwargs):
         """Shut down the dispatcher."""
-        logger.info('Terminating dispatcher.')
+        logger.info("Terminating dispatcher.")
         with contextlib.suppress(AttributeError):
             self.messages.stop()
         if self.publisher:
@@ -233,9 +213,9 @@ class Dispatcher:
             self.messages = PosttrollMessageIterator(self.config)
 
         for msg in self.messages:
-            if msg.type == 'file':
+            if msg.type == "file":
                 self.dispatch_from_message(msg)
-            elif msg.type == 'dataset':
+            elif msg.type == "dataset":
                 # Loop through files in the dataset and publish a message for each one of them
                 file_messages = self._get_file_messages_from_dataset_message(msg)
                 for fmsg in file_messages:
@@ -248,7 +228,7 @@ class Dispatcher:
         destinations = self.get_destinations(msg)
         if destinations:
             # Check if the url are on another host:
-            url = urlparse(msg.data['uri'])
+            url = urlparse(msg.data["uri"])
             _check_file_locality(url, self.host)
             success = dispatch(url.path, destinations)
             if self.publisher:
@@ -258,7 +238,7 @@ class Dispatcher:
         """Get the destinations for this message."""
         destinations = []
         for client, config in self.config.items():
-            for dispatch_config in config['dispatch_configs']:
+            for dispatch_config in config["dispatch_configs"]:
                 destination = self._get_destination(dispatch_config, msg, client)
                 if destination is None:
                     continue
@@ -277,15 +257,15 @@ class Dispatcher:
         config = self.config[client].copy()
         _verify_filepattern(config, msg)
         config.update(conf)
-        connection_parameters = config.get('connection_parameters')
+        connection_parameters = config.get("connection_parameters")
 
-        host = config['host']
+        host = config["host"]
 
         metadata = _get_metadata_with_aliases(msg, config)
 
         path = compose(
-            os.path.join(config['directory'],
-                         config['filepattern']),
+            os.path.join(config["directory"],
+                         config["filepattern"]),
             metadata)
         parts = urlsplit(host)
         host_path = urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment))
@@ -294,13 +274,13 @@ class Dispatcher:
     def _get_file_messages_from_dataset_message(self, msg):
         """From a dataset type message create individual messages for each file in the dataset."""
         basic_msg_data = msg.data.copy()
-        dataset_part = basic_msg_data.pop('dataset')
+        dataset_part = basic_msg_data.pop("dataset")
         file_msgs = []
         for item in dataset_part:
             content = {}
             content.update(basic_msg_data)
-            content['uid'] = item['uid']
-            content['uri'] = item['uri']
+            content["uid"] = item["uid"]
+            content["uri"] = item["uri"]
             file_msgs.append(Message(msg.subject, "file", data=content))
 
         return file_msgs
@@ -342,7 +322,7 @@ class PublisherReporter:
             except ValueError as err:
                 logger.error(str(err))
                 continue
-            logger.debug('Publishing %s', str(msg))
+            logger.debug("Publishing %s", str(msg))
             self.publisher.send(str(msg))
 
     def _get_new_message(self, msg, url, client):
@@ -350,7 +330,7 @@ class PublisherReporter:
         topic = self._get_topic(client, info)
         if topic is None:
             return None
-        return Message(topic, 'file', info)
+        return Message(topic, "file", info)
 
     def _get_message_info(self, msg, url):
         info = msg.data.copy()
@@ -395,13 +375,13 @@ class PosttrollMessageIterator:
 def posttroll_listener(new_config):
     """Create a posttroll listener."""
     subscriber_config = new_config.pop("posttroll_subscriber", {})
-    addresses = subscriber_config.pop('subscribe_addresses', None)
-    nameserver = subscriber_config.pop('nameserver', 'localhost')
-    services = subscriber_config.pop('subscribe_services', '')
+    addresses = subscriber_config.pop("subscribe_addresses", None)
+    nameserver = subscriber_config.pop("nameserver", "localhost")
+    services = subscriber_config.pop("subscribe_services", "")
 
     topics = set()
     for _client, client_config in new_config.items():
-        topics |= set(sum([item['topics'] for item in client_config['dispatch_configs']], []))
+        topics |= set(sum([item["topics"] for item in client_config["dispatch_configs"]], []))
 
     listener = ListenerContainer(topics=topics,
                                  addresses=addresses,
@@ -421,22 +401,22 @@ def _check_file_locality(url, host):
 
 
 def _has_correct_topic(dispatch_config, msg):
-    for topic in dispatch_config['topics']:
+    for topic in dispatch_config["topics"]:
         if msg.subject.startswith(topic):
             return True
     return False
 
 
 def _verify_filepattern(defaults, msg):
-    if 'filepattern' not in defaults:
-        source_filename = os.path.basename(urlsplit(msg.data['uri']).path)
-        defaults['filepattern'] = source_filename
+    if "filepattern" not in defaults:
+        source_filename = os.path.basename(urlsplit(msg.data["uri"]).path)
+        defaults["filepattern"] = source_filename
 
 
 def _get_metadata_with_aliases(msg, defaults):
     metadata = msg.data.copy()
     metadata["file_creation_time"] = get_uri_creation_time(msg)
-    for key, aliases in defaults.get('aliases', {}).items():
+    for key, aliases in defaults.get("aliases", {}).items():
         if isinstance(aliases, dict):
             aliases = [aliases]
 
@@ -473,9 +453,9 @@ def check_conditions(msg, item):
     'green_snow' from NOAA-15. 'true_color' from MODIS will not be dispatched.
 
     """
-    if 'conditions' not in item:
+    if "conditions" not in item:
         return True
-    for condition_set in item['conditions']:
+    for condition_set in item["conditions"]:
         if _check_condition_set(msg, condition_set):
             return True
     return False
@@ -500,13 +480,13 @@ def _check_condition_set(msg, condition_set, negate=False):
     """
     for key, value in condition_set.items():
         try:
-            if key == 'except':
+            if key == "except":
                 if not _check_condition_set(msg, value, negate=True):
                     return negate
             elif not _check_condition(msg, key, value):
                 return negate
         except KeyError as err:
-            logger.warning('Missing metadata info to check condition: %s', err)
+            logger.warning("Missing metadata info to check condition: %s", err)
             return False
     return not negate
 
@@ -524,7 +504,7 @@ def _check_condition(msg, key, value):
         if msg.data[key] not in value:
             return False
     else:
-        if isinstance(value, str) and value[0] in ['<', '>', '=', '!']:
+        if isinstance(value, str) and value[0] in ["<", ">", "=", "!"]:
             return eval(str(float(msg.data[key])) + value)
         elif msg.data[key] != value:
             return False
@@ -559,3 +539,41 @@ def dispatch(source, destinations):
         logger.info("Dispatched all files.")
 
     return success
+
+
+def parse_args():
+    """Parse commandline arguments."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config_file",
+                        help="The configuration file to run on.")
+    parser.add_argument(
+        "-p", "--publish-port", type=int, dest="pub_port", nargs="?",
+        const=0, default=None,
+        help="Publish messages for dispatched files on this port. "
+        "Default: no publishing.")
+    parser.add_argument("-n", "--publish-nameserver", nargs="*",
+                        dest="pub_nameservers",
+                        help="Nameserver for publisher to connect to")
+    add_logging_options_to_parser(parser, legacy=True)
+    return parser.parse_args()
+
+
+def main():
+    """Start and run the dispatcher."""
+    cmd_args = parse_args()
+    logger = setup_logging("dispatcher", cmd_args)
+    logger.info("Starting up.")
+
+    try:
+        dispatcher = Dispatcher(cmd_args.config_file,
+                                publish_port=cmd_args.pub_port,
+                                publish_nameservers=cmd_args.pub_nameservers)
+    except Exception as err:
+        logger.error("Dispatcher crashed: %s", str(err))
+        sys.exit(1)
+    try:
+        dispatcher.run()
+    except KeyboardInterrupt:
+        logger.debug("Interrupting")
+    finally:
+        dispatcher.close()

@@ -1,21 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-#
-# Copyright (c) 2015 - 2025 Pytroll Developers
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 """Remove files, and send messages about it."""
 
 import argparse
@@ -117,7 +99,7 @@ def parse_args():
 
 def setup_logger(args):
     """Set up logging."""
-    msgformat = '[%(asctime)-15s %(levelname)-8s] %(message)s'
+    msgformat = "[%(asctime)-15s %(levelname)-8s] %(message)s"
 
     if args.logfile:
         handler = logging.handlers.RotatingFileHandler(
@@ -127,7 +109,7 @@ def setup_logger(args):
 
     handler.setLevel(logging.DEBUG)
     handler.setFormatter(
-        logging.Formatter('[%(asctime)-15s %(levelname)-8s] %(message)s'))
+        logging.Formatter("[%(asctime)-15s %(levelname)-8s] %(message)s"))
 
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG, handlers=[handler], format=msgformat)
@@ -206,12 +188,12 @@ def main():
     setup_logger(args)
     setup_mailing(args, conf, info)
 
-    LOGGER.info("Starting cleanup as %s on %s", info['user'], info['hostname'])
+    LOGGER.info("Starting cleanup as %s on %s", info["user"], info["hostname"])
     run(args, conf)
 
     LOGGER.info("Thanks for using pytroll/remove_it. See you soon on "
                 "pytroll.org!")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

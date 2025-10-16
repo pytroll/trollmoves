@@ -1,21 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-# Copyright (c) 2025 Pytroll Developers
-
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 """Utility functions for cleaning files and directories."""
 
 
@@ -56,8 +38,8 @@ class FilesCleaner():
         self.section = section
         self.info = info
         self.dry_run = dry_run
-        self.recursive = self.info.get('recursive', False)
-        self.stat_time_method = self.info.get('stat_time_method', 'st_ctime')
+        self.recursive = self.info.get("recursive", False)
+        self.stat_time_method = self.info.get("stat_time_method", "st_ctime")
 
     def clean_dir(self, ref_time, pathname_template, **kwargs):
         """Clean directory of files given a path name and a time threshold.
@@ -104,7 +86,7 @@ class FilesCleaner():
                     section_files += 1
                     section_size += stat.st_size
                 else:
-                    LOGGER.info(f'Would remove {str(filepath)}')
+                    LOGGER.info(f"Would remove {str(filepath)}")
 
         return (section_size, section_files)
 

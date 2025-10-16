@@ -1,26 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-#
-# Copyright (c) 2012-2023
-#
-# Author(s):
-#
-#   Martin Raspaud <martin.raspaud@smhi.se>
-#   Panu Lahtinen <panu.lahtinen@fmi.fi>
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 """Movers for the move_it scripts."""
 
 import logging
@@ -47,7 +24,8 @@ S3_ALLOWED_SETTINGS = ["anon", "endpoint_url", "key", "secret",
                        "requester_pays", "default_block_size", "default_fill_cache",
                        "default_cache_type", "version_aware", "cache_regions",
                        "asynchronous", "config_kwargs", "kwargs", "session",
-                       "max_concurrency", "fixed_upload_size"]
+                       "max_concurrency", "fixed_upload_size",
+                       "profile"]
 
 LOGGER = logging.getLogger(__name__)
 
@@ -135,19 +113,19 @@ class Mover:
         with self.active_connection_lock:
             LOGGER.debug("Destination username and passwd: %s %s",
                          self._dest_username, self._dest_password)
-            LOGGER.debug('Getting connection to %s@%s:%s',
+            LOGGER.debug("Getting connection to %s@%s:%s",
                          username, hostname, port)
             try:
                 connection, timer = self.active_connections[(hostname, port, username)]
                 if not self.is_connected(connection):
                     del self.active_connections[(hostname, port, username)]
-                    LOGGER.debug('Resetting connection')
+                    LOGGER.debug("Resetting connection")
                     connection = self.open_connection()
                 timer.cancel()
             except KeyError:
                 connection = self.open_connection()
 
-            timer = CTimer(int(self.attrs.get('connection_uptime', 30)),
+            timer = CTimer(int(self.attrs.get("connection_uptime", 30)),
                            self.delete_connection, (connection,))
             timer.start()
             self.active_connections[(self.destination.hostname, port, username)] = connection, timer
@@ -157,7 +135,7 @@ class Mover:
     def delete_connection(self, connection):
         """Delete active connection *connection*."""
         with self.active_connection_lock:
-            LOGGER.debug('Closing connection to %s@%s:%s',
+            LOGGER.debug("Closing connection to %s@%s:%s",
                          self._dest_username, self.destination.hostname, self.destination.port)
             try:
                 if current_thread().finished.is_set():
@@ -235,7 +213,7 @@ class FtpMover(Mover):
         try:
             secrets = netrc.netrc()
         except (netrc.NetrcParseError, FileNotFoundError) as e__:
-            LOGGER.warning('Failed retrieve authentification details from netrc file! Exception: %s', str(e__))
+            LOGGER.warning("Failed retrieve authentification details from netrc file! Exception: %s", str(e__))
             return
 
         LOGGER.debug("Destination hostname: %s", self.destination.hostname)
@@ -243,7 +221,7 @@ class FtpMover(Mover):
         LOGGER.debug("Check if hostname matches any listed in the netrc file")
         if self.destination.hostname in list(secrets.hosts.keys()):
             self._dest_username, account, self._dest_password = secrets.authenticators(self.destination.hostname)
-            LOGGER.debug('Got username and password from netrc file!')
+            LOGGER.debug("Got username and password from netrc file!")
 
     def open_connection(self):
         """Open the connection and login."""
@@ -301,13 +279,13 @@ class FtpMover(Mover):
                     connection.mkd(current_dir)
                     connection.cwd(current_dir)
 
-        LOGGER.debug('cd to %s', os.path.dirname(self.destination.path))
+        LOGGER.debug("cd to %s", os.path.dirname(self.destination.path))
         destination_dirname, destination_filename = os.path.split(self.destination.path)
         cd_tree(destination_dirname)
         if not destination_filename:
             destination_filename = os.path.basename(self.origin)
-        with open(self.origin, 'rb') as file_obj:
-            connection.storbinary('STOR ' + destination_filename,
+        with open(self.origin, "rb") as file_obj:
+            connection.storbinary("STOR " + destination_filename,
                                   file_obj)
 
 
@@ -525,28 +503,29 @@ class S3Mover(Mover):
             raise ImportError("S3Mover requires 's3fs' to be installed.")
         s3 = S3FileSystem(**self.attrs)
         destination_file_path = self._get_destination()
-        LOGGER.debug('destination_file_path = %s', destination_file_path)
+        LOGGER.debug("destination_file_path = %s", destination_file_path)
         _create_s3_destination_path(s3, destination_file_path)
-        LOGGER.debug('Before call to put: destination_file_path = %s', destination_file_path)
-        LOGGER.debug('self.origin = %s', self.origin)
+        LOGGER.debug("Before call to put: destination_file_path = %s", destination_file_path)
+        LOGGER.debug("self.origin = %s", self.origin)
         s3.put(self.origin, destination_file_path)
 
     def _sanitize_attrs(self):
         keys = list(self.attrs.keys())
         for key in keys:
             if key not in S3_ALLOWED_SETTINGS:
+                LOGGER.debug("S3 Keyword {str(key)} not allowed - remove from attributes.")
                 del self.attrs[key]
 
     def _get_destination(self):
         bucket_parts = []
         bucket_parts.append(self.destination.netloc)
 
-        if self.destination.path != '/':
-            bucket_parts.append(self.destination.path.strip('/'))
-        if self.destination.path.endswith('/'):
+        if self.destination.path != "/":
+            bucket_parts.append(self.destination.path.strip("/"))
+        if self.destination.path.endswith("/"):
             bucket_parts.append(os.path.basename(self.origin))
 
-        return '/'.join(bucket_parts)
+        return "/".join(bucket_parts)
 
     def move(self):
         """Move the file."""
@@ -560,10 +539,10 @@ def _create_s3_destination_path(s3, destination_file_path):
         s3.mkdirs(destination_path)
 
 
-MOVERS = {'ftp': FtpMover,
-          'file': FileMover,
-          '': FileMover,
-          'scp': ScpMover,
-          'sftp': SftpMover,
-          's3': S3Mover,
+MOVERS = {"ftp": FtpMover,
+          "file": FileMover,
+          "": FileMover,
+          "scp": ScpMover,
+          "sftp": SftpMover,
+          "s3": S3Mover,
           }

@@ -7,9 +7,9 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'Trollmoves'
-copyright = '2024, Pytroll devs'
-author = 'Pytroll devs'
+project = "Trollmoves"
+copyright = "2024, Pytroll devs"
+author = "Pytroll devs"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -17,15 +17,15 @@ author = 'Pytroll devs'
 extensions = ["sphinx.ext.napoleon", "sphinx.ext.autodoc", "sphinx.ext.intersphinx"]
 autodoc_mock_imports = ["fsspec"]
 
-templates_path = ['_templates']
+templates_path = ["_templates"]
 exclude_patterns = []
 
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = 'alabaster'
-html_static_path = ['_static']
+html_theme = "alabaster"
+html_static_path = ["_static"]
 
 # intersphinx
 intersphinx_mapping = {

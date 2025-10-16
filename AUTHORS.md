@@ -1,4 +1,4 @@
-# Project Contributors
+# Trollmoves developpers
 
 The following people have made contributions to this project:
 

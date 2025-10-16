@@ -1,21 +1,3 @@
-# Copyright (c) 2022
-#
-# Author(s):
-#
-#   Martin Raspaud <martin.raspaud@smhi.se>
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """Logging utilities."""
 import argparse
 import logging
@@ -71,16 +53,16 @@ def setup_legacy_logger(cmd_args):
     """Set up the legacy logger."""
     log_file = cmd_args.log
     log_level = logging.DEBUG
-    log_dict = {'version': 1,
-                'handlers': {'time_handler': {'class': 'logging.handlers.TimedRotatingFileHandler',
-                                              'filename': os.fspath(log_file),
-                                              'when': 'midnight',
-                                              'backupCount': 7,
-                                              'level': log_level}},
-                'loggers': {'simple_example': {'level': log_level,
-                                               'handlers': ['time_handler'],
-                                               'propagate': False}},
-                'root': {'level': log_level, 'handlers': ['time_handler']}}
+    log_dict = {"version": 1,
+                "handlers": {"time_handler": {"class": "logging.handlers.TimedRotatingFileHandler",
+                                              "filename": os.fspath(log_file),
+                                              "when": "midnight",
+                                              "backupCount": 7,
+                                              "level": log_level}},
+                "loggers": {"simple_example": {"level": log_level,
+                                               "handlers": ["time_handler"],
+                                               "propagate": False}},
+                "root": {"level": log_level, "handlers": ["time_handler"]}}
     logging.config.dictConfig(log_dict)
 
 

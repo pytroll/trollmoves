@@ -1,22 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-#
-# Copyright (c) 2018-2025 Trollmoves developers
-#
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 """Test Trollmoves server."""
 
 import datetime as dt
@@ -24,13 +5,15 @@ import os
 import time
 import unittest
 from collections import deque
-from tempfile import NamedTemporaryFile, TemporaryDirectory
+from tempfile import NamedTemporaryFile, TemporaryDirectory, gettempdir
 from unittest.mock import MagicMock, patch
 
 import pytest
 from trollsift import globify
 
 from trollmoves.server import MoveItServer, parse_args
+
+tmp_dir = gettempdir()
 
 
 def test_file_detected_with_inotify_is_published(tmp_path):
@@ -89,7 +72,7 @@ def test_create_watchdog_notifier(tmp_path):
     observer.start()
 
     with open(os.path.join(file_path), "w") as fid:
-        fid.write('')
+        fid.write("")
 
     # Wait for a while for the watchdog to register the event
     time.sleep(.2)
@@ -101,9 +84,9 @@ def test_create_watchdog_notifier(tmp_path):
 
 
 @pytest.mark.parametrize("config,expected_timeout",
-                         [({"origin": "/tmp"}, 1.0),
-                          ({"origin": "/tmp", "watchdog_timeout": 2.0}, 2.0),
-                          ({"origin": "/tmp", "watchdog_timeout": "3.0"}, 3.0),
+                         [({"origin": tmp_dir}, 1.0),
+                          ({"origin": tmp_dir, "watchdog_timeout": 2.0}, 2.0),
+                          ({"origin": tmp_dir, "watchdog_timeout": "3.0"}, 3.0),
                           ])
 @patch("trollmoves.server.PollingObserver")
 def test_create_watchdog_notifier_timeout_default(PollingObserver, config, expected_timeout):
@@ -157,7 +140,7 @@ def _run_process_notify(process_notify, publisher):
                   "topic": "/topic"}
 
         with open(os.path.join(pathname), "w") as fid:
-            fid.write('foo')
+            fid.write("foo")
 
         process_notify(pathname, publisher, kwargs)
 
@@ -213,11 +196,11 @@ def test_process_notify_matching_file(file_cache):
     pathname, fname, kwargs = _run_process_notify(process_notification, publisher)
 
     # Check that the message was formed correctly
-    message_info = {'start_time': dt.datetime(2020, 4, 28, 10, 0),
-                    'product': 'foo',
-                    'uri': pathname,
-                    'uid': fname,
-                    'request_address': 'localhost:9001'}
+    message_info = {"start_time": dt.datetime(2020, 4, 28, 10, 0),
+                    "product": "foo",
+                    "uri": pathname,
+                    "uid": fname,
+                    "request_address": "localhost:9001"}
 
     message = Message(rawstr=publisher.send.mock_calls[0][1][0])
     assert message.subject == kwargs["topic"]
@@ -234,7 +217,7 @@ class TestDeleter(unittest.TestCase):
     def test_empty_init_arguments_does_not_crash_add(self):
         """Test that empty init arguments still work."""
         from trollmoves.server import Deleter
-        Deleter(dict()).add('bla')
+        Deleter(dict()).add("bla")
 
 
 CONFIG_INI = b"""
@@ -351,14 +334,14 @@ def test_requestmanager_run_valid_pytroll_message(patch_process_request,
 
     from trollmoves.server import RequestManager
     payload = (_MAGICK +
-               r'/test/1/2/3 info ras@hawaii 2008-04-11T22:13:22.123000 v1.01' +
+               r"/test/1/2/3 info ras@hawaii 2008-04-11T22:13:22.123000 v1.01" +
                r' text/ascii "what' + r"'" + r's up doc"')
-    address = b'tcp://192.168.10.8:37325'
+    address = b"tcp://192.168.10.8:37325"
     patch_get_address_and_payload.return_value = address, payload
     port = 9876
-    patch_poller.return_value = {'POLLIN': POLLIN}
+    patch_poller.return_value = {"POLLIN": POLLIN}
     req_man = RequestManager(port)
-    req_man.out_socket = 'POLLIN'
+    req_man.out_socket = "POLLIN"
     req_man._run_loop()
     patch_process_request.assert_called_once()
 
@@ -384,9 +367,9 @@ def test_requestmanager_run_MessageError_exception(patch_validate_file_pattern,
     from trollmoves.server import RequestManager
     patch_get_address_and_payload.return_value = "address", "fake_payload"
     port = 9876
-    patch_poller.return_value = {'POLLIN': POLLIN}
+    patch_poller.return_value = {"POLLIN": POLLIN}
     req_man = RequestManager(port)
-    req_man.out_socket = 'POLLIN'
+    req_man.out_socket = "POLLIN"
     with caplog.at_level(logging.DEBUG):
         req_man._run_loop()
     assert "Failed to create message from payload: fake_payload with address address" in caplog.text
@@ -406,7 +389,7 @@ def test_requestmanager_is_delete_set_True(patch_validate_file_pattern):
     """Test setting delete to True."""
     from trollmoves.server import RequestManager
     port = 9876
-    req_man = RequestManager(port, attrs={'delete': True})
+    req_man = RequestManager(port, attrs={"delete": True})
     assert req_man._is_delete_set() is True
 
 
@@ -414,7 +397,7 @@ def test_unpack_with_delete(tmp_path):
     """Test unpacking with deletion."""
     import bz2
     zipped_file = tmp_path / "my_file.txt.bz2"
-    with open(zipped_file, 'wb') as fd_:
+    with open(zipped_file, "wb") as fd_:
         fd_.write(bz2.compress(b"hello world", 5))
 
     from trollmoves.server import unpack

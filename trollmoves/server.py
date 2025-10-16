@@ -1,22 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-#
-# Copyright (c) 2012-2025
-#
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 """Classes and functions for Trollmoves server."""
 import argparse
 import bz2
@@ -49,11 +30,9 @@ from zmq import NOBLOCK, POLLIN, PULL, PUSH, ROUTER, Poller, ZMQError
 
 from trollmoves.client import DEFAULT_REQ_TIMEOUT
 from trollmoves.logging import add_logging_options_to_parser
-from trollmoves.move_it_base import (MoveItBase, WatchdogChangeHandler,
-                                     WatchdogCreationHandler, create_publisher)
+from trollmoves.move_it_base import MoveItBase, WatchdogChangeHandler, WatchdogCreationHandler, create_publisher
 from trollmoves.movers import move_it
-from trollmoves.utils import (clean_url, gen_dict_contains, gen_dict_extract,
-                              is_file_local)
+from trollmoves.utils import clean_url, gen_dict_contains, gen_dict_extract, is_file_local
 
 LOGGER = logging.getLogger(__name__)
 
@@ -112,9 +91,9 @@ class RequestManager(Thread):
         try:
             _ = globify(self._attrs["origin"])
         except ValueError as err:
-            raise ConfigError('Invalid file pattern: ' + str(err))
+            raise ConfigError("Invalid file pattern: " + str(err))
         except KeyError:
-            if 'listen' not in self._attrs:
+            if "listen" not in self._attrs:
                 raise
 
     def start(self):
@@ -129,20 +108,20 @@ class RequestManager(Thread):
     def push(self, message):
         """Reply to push request."""
         new_msg = self._move_files(message)
-        if new_msg and new_msg.type != 'err':
-            _destination = clean_url(new_msg.data['destination'])
+        if new_msg and new_msg.type != "err":
+            _destination = clean_url(new_msg.data["destination"])
             new_msg = Message(message.subject,
                               _get_push_message_type(message),
                               data=message.data.copy())
-            new_msg.data['destination'] = _destination
+            new_msg.data["destination"] = _destination
 
         return new_msg
 
     def _move_files(self, message):
         return_message = None
-        for data in gen_dict_contains(message.data, 'uri'):
-            pathname = urlparse(data['uri']).path
-            rel_path = data.get('path', None)
+        for data in gen_dict_contains(message.data, "uri"):
+            pathname = urlparse(data["uri"]).path
+            rel_path = data.get("path", None)
             return_message = self._validate_requested_file(pathname, message)
             if return_message is not None:
                 break
@@ -154,21 +133,21 @@ class RequestManager(Thread):
 
     def _validate_requested_file(self, pathname, message):
         # FIXME: check against file_cache
-        if 'origin' in self._attrs and not fnmatch.fnmatch(
+        if "origin" in self._attrs and not fnmatch.fnmatch(
                 os.path.basename(pathname),
                 os.path.basename(globify(self._attrs["origin"]))):
-            LOGGER.warning('Client trying to get invalid file: %s', pathname)
+            LOGGER.warning("Client trying to get invalid file: %s", pathname)
             return Message(message.subject, "err", data="{0:s} not reachable".format(pathname))
         return None
 
     def _move_file(self, pathname, message, rel_path):
         return_message = None
         try:
-            destination = move_it(pathname, message.data['destination'],
+            destination = move_it(pathname, message.data["destination"],
                                   self._attrs["connection_parameters"],
                                   rel_path=rel_path,
-                                  backup_targets=message.data.get('backup_targets', None))
-            message.data['destination'] = destination
+                                  backup_targets=message.data.get("backup_targets", None))
+            message.data["destination"] = destination
         except Exception as err:
             return_message = Message(message.subject, "err", data=str(err))
         else:
@@ -177,16 +156,16 @@ class RequestManager(Thread):
         return return_message
 
     def _add_to_deleter(self, pathname):
-        if self._attrs.get('compression') or self._is_delete_set():
+        if self._attrs.get("compression") or self._is_delete_set():
             self._deleter.add(pathname)
 
     def _is_delete_set(self):
-        return self._attrs.get('delete', False)
+        return self._attrs.get("delete", False)
 
     def ack(self, message):
         """Reply with ack to a publication."""
         new_msg = None
-        for url in gen_dict_extract(message.data, 'uri'):
+        for url in gen_dict_extract(message.data, "uri"):
             pathname = urlparse(url).path
             new_msg = self._validate_requested_file(pathname, message)
             if new_msg is not None:
@@ -225,9 +204,9 @@ class RequestManager(Thread):
         in_socket = get_context().socket(PUSH)
         in_socket.connect("inproc://replies" + str(self.port))
         try:
-            in_socket.send_multipart([address, b'', str(reply)])
+            in_socket.send_multipart([address, b"", str(reply)])
         except TypeError:
-            in_socket.send_multipart([address, b'', bytes(str(reply), 'utf-8')])
+            in_socket.send_multipart([address, b"", bytes(str(reply), "utf-8")])
 
     def run(self):
         """Run request manager."""
@@ -273,7 +252,7 @@ class RequestManager(Thread):
             except (TypeError, IndexError):
                 LOGGER.warning("Address unknown, not sending an error message back.")
             else:
-                message = Message('error', 'error', "Invalid message received")
+                message = Message("error", "error", "Invalid message received")
                 Thread(target=self.reply_and_send, args=(self.unknown, address, message)).start()
                 LOGGER.warning("Sent error message back.")
         return address, payload
@@ -382,8 +361,8 @@ class Deleter(Thread):
 
     def add(self, filename):
         """Schedule file for deletion."""
-        remove_delay = int(self._attrs.get('remove_delay', 30))
-        LOGGER.debug('Scheduling %s for removal in %ds', filename, remove_delay)
+        remove_delay = int(self._attrs.get("remove_delay", 30))
+        LOGGER.debug("Scheduling %s for removal in %ds", filename, remove_delay)
         self.queue.put((filename, time.time() + remove_delay))
 
     def run(self):
@@ -400,9 +379,9 @@ class Deleter(Thread):
                         self.delete(filename)
                     except Exception:
                         LOGGER.exception(
-                            'Something went wrong when deleting %s', filename)
+                            "Something went wrong when deleting %s", filename)
                     else:
-                        LOGGER.debug('Removed %s.', filename)
+                        LOGGER.debug("Removed %s.", filename)
                     break
 
     @staticmethod
@@ -427,20 +406,20 @@ class Deleter(Thread):
 
 def _get_push_message_type(message):
     message_type = message.type
-    if 'uri' in message.data:
-        message_type = 'file'
-    elif 'dataset' in message.data:
-        message_type = 'dataset'
-    elif 'collection' in message.data:
-        message_type = 'collection'
+    if "uri" in message.data:
+        message_type = "file"
+    elif "dataset" in message.data:
+        message_type = "dataset"
+    elif "collection" in message.data:
+        message_type = "collection"
     return message_type
 
 
 def _get_cleaned_ack_message(message):
     new_msg = Message(message.subject, "ack", data=message.data.copy())
     try:
-        new_msg.data['destination'] = clean_url(new_msg.data[
-            'destination'])
+        new_msg.data["destination"] = clean_url(new_msg.data[
+            "destination"])
     except KeyError:
         pass
 
@@ -466,11 +445,11 @@ def _collect_cached_files(message):
 def _sanitize_message_destination(message):
     sanitized_message = Message(rawstr=str(message))
     try:
-        _ = urlparse(message.data['destination'])
+        _ = urlparse(message.data["destination"])
     except (KeyError, TypeError):
         pass
     else:
-        sanitized_message.data['destination'] = clean_url(message.data['destination'])
+        sanitized_message.data["destination"] = clean_url(message.data["destination"])
     return sanitized_message
 
 
@@ -487,13 +466,13 @@ class Listener(Thread):
     def run(self):
         """Start listening to messages."""
         with Subscribe(
-            services=self.attrs.get('services', ''),
-            topics=self.attrs.get('topics', self.attrs['listen']),
-            addr_listener=bool(self.attrs.get('addr_listener', True)),
-            addresses=self.attrs.get('addresses'),
-            timeout=int(self.attrs.get('timeout', 10)),
-            translate=bool(self.attrs.get('translate', False)),
-            nameserver=self.attrs.get('nameserver'),
+            services=self.attrs.get("services", ""),
+            topics=self.attrs.get("topics", self.attrs["listen"]),
+            addr_listener=bool(self.attrs.get("addr_listener", True)),
+            addresses=self.attrs.get("addresses"),
+            timeout=int(self.attrs.get("timeout", 10)),
+            translate=bool(self.attrs.get("translate", False)),
+            nameserver=self.attrs.get("nameserver"),
         ) as sub:
             self._run(sub)
 
@@ -513,7 +492,7 @@ class Listener(Thread):
 
 
 def _files_in_message_are_local(msg):
-    for uri in gen_dict_extract(msg.data, 'uri'):
+    for uri in gen_dict_extract(msg.data, "uri"):
         urlobj = urlparse(uri)
         if not is_file_local(urlobj):
             return False
@@ -523,7 +502,7 @@ def _files_in_message_are_local(msg):
 def _collect_attribute_info(attrs):
     info = attrs.get("info", {})
     if info:
-        info = dict((elt.strip().split('=') for elt in info.split(";")))
+        info = dict((elt.strip().split("=") for elt in info.split(";")))
         for infokey, infoval in info.items():
             if "," in infoval:
                 info[infokey] = infoval.split(",")
@@ -633,7 +612,7 @@ def _form_connection_parameters_dict(original):
 
 
 def _check_origin_and_listen(res, section):
-    if ("origin" not in res[section]) and ('listen' not in res[section]):
+    if ("origin" not in res[section]) and ("listen" not in res[section]):
         LOGGER.warning("Incomplete section %s: add an 'origin' or 'listen' item.", section)
         LOGGER.info("Ignoring section %s: incomplete.", section)
         del res[section]
@@ -675,7 +654,7 @@ def _update_chains(chains, new_chain_configs, manager, use_polling, notifier_bui
         chain.create_notifier(notifier_builder, use_polling, function_to_run_on_matching_files)
         chain.start()
 
-        if 'origin' in chain_config:
+        if "origin" in chain_config:
             old_glob.append((globify(chain_config["origin"]), chain.function_to_run, chain_config))
 
         if chain_updated:
@@ -715,10 +694,10 @@ class Chain:
             self.request_manager = manager(int(self.config["request_port"]), self.config)
             LOGGER.debug("Created request manager on port %s", self.config["request_port"])
         except (KeyError, NameError):
-            LOGGER.exception('In reading config')
+            LOGGER.exception("In reading config")
         except ConfigError as err:
-            LOGGER.error('Invalid config parameters in %s: %s', self.name, str(err))
-            LOGGER.warning('Remove and skip %s', self.name)
+            LOGGER.error("Invalid config parameters in %s: %s", self.name, str(err))
+            LOGGER.warning("Remove and skip %s", self.name)
             raise
 
     def create_notifier(self, notifier_builder, use_polling, function_to_run_on_matching_files):
@@ -742,7 +721,7 @@ class Chain:
             self.notifier.join()
         if self.request_manager is not None:
             self.request_manager.stop()
-            LOGGER.debug('Stopped the request manager')
+            LOGGER.debug("Stopped the request manager")
 
 
 def _add_chain(chains, chain_name, chain_config, manager):
@@ -754,7 +733,7 @@ def _add_chain(chains, chain_name, chain_config, manager):
 
 
 def _get_notifier_builder(use_polling, chain_config):
-    if 'origin' in chain_config:
+    if "origin" in chain_config:
         pattern = globify(chain_config["origin"])
         timeout = float(chain_config.get("watchdog_timeout", 1.))
         LOGGER.debug("Watchdog timeout: %.1f", timeout)
@@ -764,7 +743,7 @@ def _get_notifier_builder(use_polling, chain_config):
         else:
             LOGGER.info("Using os-based notifier")
             notifier_builder = partial(create_watchdog_os_notifier, pattern, timeout=timeout)
-    elif 'listen' in chain_config:
+    elif "listen" in chain_config:
         notifier_builder = partial(create_posttroll_notifier, config=chain_config)
 
     return notifier_builder
@@ -816,15 +795,15 @@ def process_message(chain_config, msg, publisher):
 def _collect_message_info(msg, config):
     info = _collect_attribute_info(config)
     info.update(msg.data)
-    info['request_address'] = config.get(
+    info["request_address"] = config.get(
         "request_address", get_own_ip()) + ":" + config["request_port"]
     return info
 
 
 def _add_files_to_cache(msg, config):
     with file_cache_lock:
-        for filename in gen_dict_extract(msg.data, 'uid'):
-            file_cache.appendleft(config["topic"] + '/' + filename)
+        for filename in gen_dict_extract(msg.data, "uid"):
+            file_cache.appendleft(config["topic"] + "/" + filename)
 
 
 def process_path(chain_config, path, publisher):
@@ -832,7 +811,7 @@ def process_path(chain_config, path, publisher):
     if os.stat(path).st_size == 0:
         LOGGER.debug("Ignoring empty file: %s", path)
     else:
-        LOGGER.debug('We have a match: %s', path)
+        LOGGER.debug("We have a match: %s", path)
         pathname = unpack(path, **chain_config)
         publish_file(path, publisher, chain_config, pathname)
 
@@ -850,17 +829,16 @@ def publish_file(orig_pathname, publisher, attrs, unpacked_pathname):
 def create_message_with_request_info(pathname, orig_pathname, attrs):
     """Create a message containing request info."""
     info = _get_notify_message_info(attrs, orig_pathname, pathname)
-    msg = Message(attrs["topic"], 'file', info)
+    msg = Message(attrs["topic"], "file", info)
     with file_cache_lock:
-        file_cache.appendleft(attrs["topic"] + '/' + info["uid"])
+        file_cache.appendleft(attrs["topic"] + "/" + info["uid"])
     return msg
 
 
 def create_message_with_remote_fs_info(pathname, orig_pathname, attrs):
     """Create a message containing remote filesystem info."""
-    from pytroll_collectors.fsspec_to_message import \
-        extract_local_files_to_message_for_remote_use
-    msg = extract_local_files_to_message_for_remote_use(pathname, attrs['topic'], attrs.get("unpack"))
+    from pytroll_collectors.fsspec_to_message import extract_local_files_to_message_for_remote_use
+    msg = extract_local_files_to_message_for_remote_use(pathname, attrs["topic"], attrs.get("unpack"))
     info = _collect_attribute_info(attrs)
     info.update(parse(attrs["origin"], orig_pathname))
     msg.data.update(info)
@@ -870,10 +848,10 @@ def create_message_with_remote_fs_info(pathname, orig_pathname, attrs):
 def _get_notify_message_info(attrs, orig_pathname, pathname):
     info = _collect_attribute_info(attrs)
     info.update(parse(attrs["origin"], orig_pathname))
-    info['uri'] = pathname
-    info['uid'] = os.path.basename(pathname)
+    info["uri"] = pathname
+    info["uid"] = os.path.basename(pathname)
     if "request_port" in attrs:
-        info['request_address'] = attrs.get("request_address",
+        info["request_address"] = attrs.get("request_address",
                                             get_own_ip()) + ":" + attrs["request_port"]
     return info
 
@@ -982,7 +960,7 @@ def parse_args(args=None, default_port=9010):
                         default=default_port)
     parser.add_argument("--disable-backlog",
                         help="Disable glob and handling of backlog of files at start/restart",
-                        action='store_true')
+                        action="store_true")
     parser.add_argument("-w", "--watchdog", default=False, action="store_true",
                         help="Use Watchdog polling instead of os-based notifying")
     add_logging_options_to_parser(parser, legacy=True)

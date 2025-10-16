@@ -1,55 +1,31 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-#
-# Copyright (c) 2012, 2013, 2014, 2015, 2016
-#
-# Author(s):
-#
-#   Martin Raspaud <martin.raspaud@smhi.se>
-#   Panu Lahtinen <panu.lahtinen@fmi.fi>
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 """Trollmoves client."""
 import argparse
+import bz2
+import hashlib
 import logging
 import os
 import socket
+import subprocess
+import tarfile
 import time
 from collections import deque
 from configparser import ConfigParser
-from threading import Lock, Thread, Event
-import hashlib
-from urllib.parse import urlparse, urlunparse
-import subprocess
 from contextlib import suppress
+from threading import Event, Lock, Thread
+from urllib.parse import urlparse, urlunparse
 
-import tarfile
-from zmq import LINGER, POLLIN, REQ, Poller
-import bz2
 from posttroll import get_context
 from posttroll.message import Message, MessageError
 from posttroll.publisher import create_publisher_from_dict_config
 from posttroll.subscriber import Subscriber
 from trollsift.parser import compose
+from zmq import LINGER, POLLIN, REQ, Poller
 
 from trollmoves import heartbeat_monitor
 from trollmoves.logging import add_logging_options_to_parser
 from trollmoves.move_it_base import MoveItBase
-from trollmoves.utils import get_local_ips
-from trollmoves.utils import gen_dict_extract, translate_dict
 from trollmoves.movers import CTimer
+from trollmoves.utils import gen_dict_extract, get_local_ips, translate_dict
 
 LOGGER = logging.getLogger(__name__)
 
@@ -64,9 +40,9 @@ DEFAULT_REQ_TIMEOUT = 1
 SERVER_HEARTBEAT_TOPIC = "/heartbeat/move_it_server"
 CLIENT_HEARTBEAT_TOPIC_BASE = "/heartbeat/move_it"
 
-COMPRESSED_ENDINGS = {'xrit': ['C_'],
-                      'tar': ['.tar', '.tar.gz', '.tgz', '.tar.bz2'],
-                      'bzip': ['.bz2'],
+COMPRESSED_ENDINGS = {"xrit": ["C_"],
+                      "tar": [".tar", ".tar.gz", ".tgz", ".tar.bz2"],
+                      "bzip": [".bz2"],
                       }
 BUNZIP_BLOCK_SIZE = 1024
 LISTENER_CHECK_INTERVAL = 1
@@ -151,7 +127,7 @@ def _check_provider_config(conf, section):
         return False
 
     conf[section]["providers"] = [
-        "tcp://" + item.split('/', 1)[0] for item in conf[section]["providers"].split()
+        "tcp://" + item.split("/", 1)[0] for item in conf[section]["providers"].split()
     ]
     return True
 
@@ -277,10 +253,10 @@ class Listener(Thread):
 
     def _process_message(self, msg):
         delay = self.ckwargs.get("processing_delay", False)
-        backup_targets = self.ckwargs.get('backup_targets', None)
+        backup_targets = self.ckwargs.get("backup_targets", None)
         if backup_targets:
             LOGGER.debug("Adding backup_targets %s to the message.", str(backup_targets))
-            msg.data['backup_targets'] = backup_targets
+            msg.data["backup_targets"] = backup_targets
         if delay:
             # If this is a hot spare client, wait for a while
             # for a public "push" message which will update
@@ -353,9 +329,9 @@ def unpack_tar(filename, **kwargs):
 
 def unpack_xrit(filename, **kwargs):
     """Unpack XRIT files."""
-    if filename.endswith('__'):
+    if filename.endswith("__"):
         return filename
-    cmd = kwargs.get('xritdecompressor')
+    cmd = kwargs.get("xritdecompressor")
     if cmd is None:
         raise OSError("Path to 'xRITDecompress' utility not defined. "
                       "Set it with 'xritdecompressor' config option.")
@@ -367,7 +343,7 @@ def unpack_xrit(filename, **kwargs):
 
 def unpack_bzip(filename, **kwargs):
     """Unzip .bz2 files."""
-    block_size = int(kwargs.get('block_size', BUNZIP_BLOCK_SIZE))
+    block_size = int(kwargs.get("block_size", BUNZIP_BLOCK_SIZE))
     out_fname = filename[:-4]
     if os.path.exists(out_fname):
         return out_fname
@@ -388,8 +364,8 @@ def unpack_bzip(filename, **kwargs):
 
 def check_output(*popenargs, **kwargs):
     """Copy from python 2.7, `subprocess.check_output`."""
-    if 'stdout' in kwargs:
-        raise ValueError('stdout argument not allowed, it will be overridden.')
+    if "stdout" in kwargs:
+        raise ValueError("stdout argument not allowed, it will be overridden.")
     LOGGER.debug("Calling %s", str(popenargs))
     process = subprocess.Popen(stdout=subprocess.PIPE, *popenargs, **kwargs)
     output, unused_err = process.communicate()
@@ -403,15 +379,15 @@ def check_output(*popenargs, **kwargs):
     return output
 
 
-unpackers = {'tar': unpack_tar,
-             'xrit': unpack_xrit,
-             'bzip': unpack_bzip}
+unpackers = {"tar": unpack_tar,
+             "xrit": unpack_xrit,
+             "bzip": unpack_bzip}
 
 
 def already_received(msg):
     """Check if the files from msg already are in the local cache."""
     with cache_lock:
-        for filename in gen_dict_extract(msg.data, 'uid'):
+        for filename in gen_dict_extract(msg.data, "uid"):
             if filename not in file_cache:
                 return False
         else:
@@ -420,27 +396,27 @@ def already_received(msg):
 
 def resend_if_local(msg, publisher):
     """Resend the message provided all uris point to local files."""
-    for uri in gen_dict_extract(msg.data, 'uri'):
+    for uri in gen_dict_extract(msg.data, "uri"):
         urlobj = urlparse(uri)
         if not publisher or not is_localhost(urlobj.netloc):
             return
 
-    LOGGER.debug('Sending: %s', str(msg))
+    LOGGER.debug("Sending: %s", str(msg))
     publisher.send(str(msg))
 
 
 def create_push_req_message(msg, destination, login):
     """Create a message for push request."""
-    fake_req = Message(msg.subject, 'push', data=msg.data.copy())
+    fake_req = Message(msg.subject, "push", data=msg.data.copy())
     duri = urlparse(destination)
-    scheme = duri.scheme or 'file'
+    scheme = duri.scheme or "file"
     dest_hostname = duri.hostname or socket.gethostname()
     if duri.port:
         dest_hostname += ":{}".format(duri.port)
     fake_req.data["destination"] = urlunparse((scheme, dest_hostname, duri.path, "", "", ""))
     if login:
         # if necessary add the credentials for the real request
-        req = Message(msg.subject, 'push', data=msg.data.copy())
+        req = Message(msg.subject, "push", data=msg.data.copy())
         req.data["destination"] = urlunparse((scheme, login + "@" + dest_hostname, duri.path, "", "", ""))
     else:
         req = fake_req
@@ -450,7 +426,7 @@ def create_push_req_message(msg, destination, login):
 def create_local_dir(destination, local_root, mode=0o777):
     """Create the local directory if it doesn't exist and return that path."""
     duri = urlparse(destination)
-    if duri.scheme in ('s3'):
+    if duri.scheme in ("s3"):
         return None
     local_dir = os.path.join(*([local_root] + duri.path.split(os.path.sep)))
 
@@ -463,36 +439,36 @@ def create_local_dir(destination, local_root, mode=0o777):
 def unpack_and_create_local_message(msg, local_dir, **kwargs):
     """Unpack the file(s) given in the message, and return an updated message."""
     def unpack_callback(var, **kwargs):
-        unpack = kwargs.get('compression')
+        unpack = kwargs.get("compression")
         endings = COMPRESSED_ENDINGS[unpack]
-        is_compressed = any([var['uid'].endswith(ending) for ending in endings])
+        is_compressed = any([var["uid"].endswith(ending) for ending in endings])
         if not is_compressed:
             return var
-        packname = var.pop('uid')
-        del var['uri']
+        packname = var.pop("uid")
+        del var["uri"]
         new_names = unpackers[unpack](os.path.join(local_dir, packname),
                                       **kwargs)
         if kwargs.get("delete"):
             LOGGER.debug("Deleting %s", os.path.join(local_dir, packname))
             os.remove(os.path.join(local_dir, packname))
         if isinstance(new_names, tuple):
-            var['dataset'] = [dict(uid=os.path.basename(nn),
+            var["dataset"] = [dict(uid=os.path.basename(nn),
                                    uri=os.path.join(local_dir, nn))
                               for nn in new_names]
         else:
-            var['uid'] = os.path.basename(new_names)
-            var['uri'] = os.path.join(local_dir, new_names)
+            var["uid"] = os.path.basename(new_names)
+            var["uri"] = os.path.join(local_dir, new_names)
         return var
 
-    if kwargs.get('compression') in COMPRESSED_ENDINGS:
-        lmsg_data = translate_dict(msg.data, ('uri', 'uid'), unpack_callback,
+    if kwargs.get("compression") in COMPRESSED_ENDINGS:
+        lmsg_data = translate_dict(msg.data, ("uri", "uid"), unpack_callback,
                                    **kwargs)
-        if 'dataset' in lmsg_data:
-            lmsg_type = 'dataset'
-        elif 'collection' in lmsg_data:
-            lmsg_type = 'collection'
+        if "dataset" in lmsg_data:
+            lmsg_type = "dataset"
+        elif "collection" in lmsg_data:
+            lmsg_type = "collection"
         else:
-            lmsg_type = 'file'
+            lmsg_type = "file"
     else:
         lmsg_data = msg.data.copy()
         lmsg_type = msg.type
@@ -514,11 +490,11 @@ def make_uris(msg, destination, login=None):
             netloc = login.split(":")[0] + "@" + netloc
 
     def uri_callback(var):
-        uid = var['uid']
+        uid = var["uid"]
         path = os.path.join(duri.path, uid)
-        var['uri'] = urlunparse((scheme, netloc, path, "", "", ""))
+        var["uri"] = urlunparse((scheme, netloc, path, "", "", ""))
         return var
-    msg.data = translate_dict(msg.data, ('uri', 'uid'), uri_callback)
+    msg.data = translate_dict(msg.data, ("uri", "uid"), uri_callback)
     return msg
 
 
@@ -532,7 +508,7 @@ def replace_mda(msg, kwargs):
     for key in msg.data:
         if key in kwargs:
             try:
-                replacement = dict(item.split(':') for item in kwargs[key].split('|'))
+                replacement = dict(item.split(":") for item in kwargs[key].split("|"))
                 replacement = replacement[msg.data[key]]
             except (ValueError, AttributeError):
                 replacement = kwargs[key]
@@ -551,7 +527,7 @@ def send_request(msg, req, timeout):
 
 def send_ack(msg, timeout):
     """Send an ACK (no push required)."""
-    req = Message(msg.subject, 'ack', data=msg.data)
+    req = Message(msg.subject, "ack", data=msg.data)
     LOGGER.debug("Sending: %s", str(req))
 
     response, hostname = send_request(msg, req, timeout)
@@ -572,10 +548,10 @@ def terminate_transfers(uid, timeout):
 
 def get_msg_uid(msg):
     """Compute the uid of the message."""
-    filenames = sorted(gen_dict_extract(msg.data, 'uid'))
+    filenames = sorted(gen_dict_extract(msg.data, "uid"))
     m = hashlib.md5()
     for filename in filenames:
-        m.update(filename.encode('utf-8'))
+        m.update(filename.encode("utf-8"))
     return m.hexdigest()
 
 
@@ -628,7 +604,7 @@ def add_to_ongoing_transfers(msg):
 def add_to_file_cache(msg):
     """Add files in the message to received file cache."""
     with cache_lock:
-        for uid in gen_dict_extract(msg.data, 'uid'):
+        for uid in gen_dict_extract(msg.data, "uid"):
             if uid not in file_cache:
                 LOGGER.debug("Add %s to file cache", str(uid))
                 file_cache.append(uid)
@@ -655,8 +631,8 @@ def _request_files(hashed_uid, destination, login, publisher, **kwargs):
 
         req, no_credentials_req = create_push_req_message(msg, _destination, login)
         LOGGER.info("Requesting: %s", str(no_credentials_req))
-        if kwargs.get('create_target_directory', True):
-            local_dir = create_local_dir(_destination, kwargs.get('ftp_root', '/'))
+        if kwargs.get("create_target_directory", True):
+            local_dir = create_local_dir(_destination, kwargs.get("ftp_root", "/"))
         else:
             local_dir = None
 
@@ -664,7 +640,7 @@ def _request_files(hashed_uid, destination, login, publisher, **kwargs):
 
         response, hostname = send_request(msg, req, float(kwargs["transfer_req_timeout"]))
 
-        if response and response.type in ['file', 'collection', 'dataset']:
+        if response and response.type in ["file", "collection", "dataset"]:
             LOGGER.debug("Server done sending file")
             add_to_file_cache(msg)
             _send_ack_message(msg, publisher)
@@ -684,7 +660,7 @@ def _request_files(hashed_uid, destination, login, publisher, **kwargs):
             LOGGER.error("Failed to get valid response from server %s: %s",
                          str(hostname), str(response))
     else:
-        LOGGER.warning('Could not get a working source for requesting %s',
+        LOGGER.warning("Could not get a working source for requesting %s",
                        str(msg))
         terminate_transfers(hashed_uid, float(kwargs["req_timeout"]))
 
@@ -709,17 +685,17 @@ def _send_ack_message(msg, publisher):
 
     This is for the possible hot spare clients so they know the primary has completed the request.
     """
-    msg = Message(msg.subject, 'ack', msg.data)
+    msg = Message(msg.subject, "ack", msg.data)
     LOGGER.debug("Sending a public 'ack' of completed transfer: %s", str(msg))
     publisher.send(str(msg))
 
 
 def _update_local_message(lmsg, _destination, login, response, **kwargs):
     lmsg = make_uris(lmsg, _destination, login)
-    lmsg.data['origin'] = response.data['request_address']
-    lmsg.data.pop('request_address', None)
+    lmsg.data["origin"] = response.data["request_address"]
+    lmsg.data.pop("request_address", None)
     lmsg = replace_mda(lmsg, kwargs)
-    lmsg.data.pop('destination', None)
+    lmsg.data.pop("destination", None)
 
     return lmsg
 
@@ -761,21 +737,21 @@ class Chain(Thread):
             if self._config.get("heartbeat", False):
                 topics.append(SERVER_HEARTBEAT_TOPIC)
                 # Subscribe also to heartbeat messages of other clients
-                topics.append(CLIENT_HEARTBEAT_TOPIC_BASE + '_' + self._name)
+                topics.append(CLIENT_HEARTBEAT_TOPIC_BASE + "_" + self._name)
             for provider in self._config["providers"]:
                 if provider in keep_providers and provider in self.listeners:
                     LOGGER.debug("Not restarting Listener to %s, config not changed.", provider)
                     continue
-                if '/' in provider.split(':')[-1]:
+                if "/" in provider.split(":")[-1]:
                     parts = urlparse(provider)
-                    if parts.scheme != '':
+                    if parts.scheme != "":
                         provider = urlunparse((parts.scheme, parts.netloc,
-                                               '', '', '', ''))
+                                               "", "", "", ""))
                     else:
                         # If there's no scheme, urlparse thinks the
                         # URI is a local file
-                        provider = urlunparse(('tcp', parts.path,
-                                               '', '', '', ''))
+                        provider = urlunparse(("tcp", parts.path,
+                                               "", "", "", ""))
                     topics.append(parts.path)
                 LOGGER.debug("Add listener for %s with topic %s",
                              provider, str(topics))
@@ -793,7 +769,7 @@ class Chain(Thread):
 
     def restart_dead_listeners(self):
         """Restart dead listeners."""
-        plural = ['', 's']
+        plural = ["", "s"]
         for provider in list(self.listeners.keys()):
             if not self.listeners[provider].is_alive():
                 cause_of_death = self.listeners[provider].cause_of_death
@@ -991,7 +967,7 @@ class PushRequester:
                         try:
                             rep = Message(rawstr=reply)
                         except MessageError as err:
-                            LOGGER.error('Message error: %s', str(err))
+                            LOGGER.error("Message error: %s", str(err))
                             break
                         LOGGER.debug("Receiving (REQ) %s", str(rep))
                         self.failures = 0
