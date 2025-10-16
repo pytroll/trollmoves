@@ -1,3 +1,32 @@
+## Version 0.17.0 (2025/10/16)
+
+### Issues Closed
+
+* [Issue 221](https://github.com/pytroll/trollmoves/issues/221) - Connection parameter "profile" not allowed anymore ([PR 225](https://github.com/pytroll/trollmoves/pull/225) by [@adybbroe](https://github.com/adybbroe))
+* [Issue 220](https://github.com/pytroll/trollmoves/issues/220) - Bug in server - process_message: Missing argument to call ([PR 226](https://github.com/pytroll/trollmoves/pull/226) by [@adybbroe](https://github.com/adybbroe))
+* [Issue 218](https://github.com/pytroll/trollmoves/issues/218) - Server is broken ([PR 219](https://github.com/pytroll/trollmoves/pull/219) by [@mraspaud](https://github.com/mraspaud))
+* [Issue 206](https://github.com/pytroll/trollmoves/issues/206) - Make it configurable what kind of file (modification/access/change/creation) time should be used
+
+In this release 4 issues were closed.
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 226](https://github.com/pytroll/trollmoves/pull/226) - Fix missing argument in function call when receiving messages ([220](https://github.com/pytroll/trollmoves/issues/220))
+* [PR 225](https://github.com/pytroll/trollmoves/pull/225) - Allow profile again in order to specify where to find the S3 credentials ([221](https://github.com/pytroll/trollmoves/issues/221))
+* [PR 219](https://github.com/pytroll/trollmoves/pull/219) - Fix posttroll notifier not to return a tuple ([218](https://github.com/pytroll/trollmoves/issues/218))
+
+#### Features added
+
+* [PR 228](https://github.com/pytroll/trollmoves/pull/228) - Switch to Apache v2.0 license
+* [PR 227](https://github.com/pytroll/trollmoves/pull/227) - Convert to pyproject.toml and hatchling/hatch-vcs
+* [PR 225](https://github.com/pytroll/trollmoves/pull/225) - Allow profile again in order to specify where to find the S3 credentials ([221](https://github.com/pytroll/trollmoves/issues/221))
+* [PR 173](https://github.com/pytroll/trollmoves/pull/173) - Making it possible to recursively clean files in sub-directories
+
+In this release 7 pull requests were closed.
+
+
 ## Version 0.16.0 (2025/04/23)
 
 
