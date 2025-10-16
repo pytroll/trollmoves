@@ -785,7 +785,7 @@ def process_notification(notification, publisher, chain_config):
 def process_message(chain_config, msg, publisher):
     """Modify and publish a message."""
     LOGGER.debug("We have a match: %s", str(msg))
-    info = _collect_message_info(msg)
+    info = _collect_message_info(msg, chain_config)
     msg = Message(chain_config["topic"], msg.type, info)
     publisher.send(str(msg))
     _add_files_to_cache(msg, chain_config)

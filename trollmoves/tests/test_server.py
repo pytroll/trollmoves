@@ -5,7 +5,7 @@ import os
 import time
 import unittest
 from collections import deque
-from tempfile import NamedTemporaryFile, TemporaryDirectory, gettempdir
+from tempfile import NamedTemporaryFile, gettempdir
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -127,28 +127,63 @@ def test_handler_does_not_dispatch_files_not_matching_pattern():
     assert handler.dispatch(event) is None
 
 
-def _run_process_notify(process_notify, publisher):
+def _run_process_notify(process_notify, publisher, tmpdir):
     fname = "20200428_1000_foo.tif"
     fname_pattern = "{start_time:%Y%m%d_%H%M}_{product}.tif"
 
-    with TemporaryDirectory() as tmpdir:
-        matching_pattern = os.path.join(tmpdir, fname_pattern)
-        pathname = os.path.join(tmpdir, fname)
-        kwargs = {"origin": matching_pattern,
-                  "request_address": "localhost",
-                  "request_port": "9001",
-                  "topic": "/topic"}
+    matching_pattern = os.path.join(tmpdir, fname_pattern)
+    pathname = os.path.join(tmpdir, fname)
+    kwargs = {"origin": matching_pattern,
+              "request_address": "localhost",
+              "request_port": "9001",
+              "topic": "/topic"}
 
-        with open(os.path.join(pathname), "w") as fid:
-            fid.write("foo")
+    with open(os.path.join(pathname), "w") as fid:
+        fid.write("foo")
 
-        process_notify(pathname, publisher, kwargs)
+    process_notify(pathname, publisher, kwargs)
+
+    return pathname, fname, kwargs
+
+
+def _run_process_notify_with_message(process_notify, publisher, tmpdir):
+    """Run process notification with a message."""
+    from posttroll.message import Message
+    fname = "20200428_1000_foo.tif"
+    fname_pattern = "{start_time:%Y%m%d_%H%M}_{product}.tif"
+
+    matching_pattern = os.path.join(tmpdir, fname_pattern)
+    pathname = os.path.join(tmpdir, fname)
+    kwargs = {"origin": matching_pattern,
+              "request_address": "localhost",
+              "request_port": "9001",
+              "topic": "/topic"}
+
+    with open(os.path.join(pathname), "w") as fid:
+        fid.write("foo")
+
+    # Make message from filepath:
+    msg_string = ('pytroll://topic file s@lx.serv.com 2018-10-25T01:15:54.752065 v1.01 application/json '
+                  '{"sensor": "viirs", "format": "SDR", "variant": "DR", "uid": '
+                  f'"{os.path.basename(pathname)}", "uri": '
+                  f'"{pathname}"'
+                  '}')
+    message = Message(rawstr=msg_string)
+    process_notify(message, publisher, kwargs)
 
     return pathname, fname, kwargs
 
 
 @patch("trollmoves.server.file_cache", new_callable=deque)
-def test_process_notify_matching_file(file_cache):
+def test_process_notify_matching_file_as_message(file_cache, tmp_path):
+    """Test process_notify() with a file matching the configured pattern."""
+    from trollmoves.server import process_notification
+    publisher = MagicMock()
+    pathname, fname, kwargs = _run_process_notify_with_message(process_notification, publisher, tmp_path)
+
+
+@patch("trollmoves.server.file_cache", new_callable=deque)
+def test_process_notify_matching_file(file_cache, tmp_path):
     """Test process_notify() with a file matching the configured pattern."""
     from posttroll.message import Message
 
@@ -156,7 +191,7 @@ def test_process_notify_matching_file(file_cache):
 
     publisher = MagicMock()
 
-    pathname, fname, kwargs = _run_process_notify(process_notification, publisher)
+    pathname, fname, kwargs = _run_process_notify(process_notification, publisher, tmp_path)
 
     # Check that the message was formed correctly
     message_info = {"start_time": dt.datetime(2020, 4, 28, 10, 0),

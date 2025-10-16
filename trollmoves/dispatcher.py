@@ -11,14 +11,15 @@ Format of the configuration file
 Example config::
 
     # Optional direct subscriptions
-    # subscribe_addresses:
-    #   - tcp://127.0.0.1:40000
+    # posttroll_subscriber:
+    #   subscribe_addresses:
+    #     - tcp://127.0.0.1:40000
     # Nameserver to connect to. Optional. Defaults to localhost
-    # nameserver: 127.0.0.1
+    #   nameserver: 127.0.0.1
     # Subscribe to specific services. Optional. Default: connect to all services
-    # subscribe_services:
-    #   - service_name_1
-    #   - service_name_2
+    #   subscribe_services:
+    #     - service_name_1
+    #     - service_name_2
     target1:
       host: ftp://ftp.target1.com
       connection_parameters:
