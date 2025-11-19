@@ -280,3 +280,49 @@ def check_message_for_filesystem_info_and_untarring(subscriber, tmp_path, moved_
     assert msg.data["dataset"][0]["uri"] == expected_uri
     assert msg.data["sensor"] == "seviri"
     assert msg.data["variant"] == "0DEG"
+
+@pytest.fixture
+def server_not_existing_path(source_dir, tmp_path, free_port, reraise, capsys):
+    """Create a move it server instance not existing path."""
+    server_config = f"""
+    [eumetcast-hrit-0deg]
+    origin = {str(source_dir)}/H-000-{{nominal_time:%Y%m%d%H%M}}-__
+    request_port = 9094
+    publisher_port = {free_port}
+    info = sensor=seviri;variant=0DEG
+    topic = /1b/hrit-segment/0deg
+    delete = False
+
+    [eumetcast-hrit-0deg-NE]
+    origin = /NOT_EXISTING/H-000-{{nominal_time:%Y%m%d%H%M}}-__
+    request_port = 9095
+    publisher_port = {free_port}
+    info = sensor=seviri;variant=0DEG
+    topic = /1b/hrit-segment/0deg
+    delete = False
+    """
+    server_config_filename = tmp_path / "server_config.cfg"
+    with open(server_config_filename, "wb") as fp:
+        fp.write(server_config.encode())
+    cmd_args = parse_args_server(["--port", str(free_port), "-v", "-l", str(tmp_path / "move_it_server.log"),
+                                  str(server_config_filename)])
+    server = MoveItServer(cmd_args)
+    server.reload_cfg_file(cmd_args.config_file)
+    thread = Thread(target=reraise.wrap(server.run))
+    thread.start()
+    yield server
+    server.chains_stop()
+    thread.join()
+
+@given("Move it server is started")
+def start_move_it_server_not_existing_path(server_not_existing_path):
+    """Start a move_it_server instance."""
+    return server_not_existing_path
+
+@then('I should see "Error starting chain"')
+def should_see_output(caplog):
+    assert "Error starting chain eumetcast-hrit-0deg-NE: [Errno 2] No such file or directory" in caplog.text
+
+@scenario("move_it_server_client.feature", "Starting server with not existing path")
+def test_starting_server_with_not_existing_path():
+    """Stub for this scenario."""

@@ -652,7 +652,15 @@ def _update_chains(chains, new_chain_configs, manager, use_polling, notifier_bui
             continue
 
         chain.create_notifier(notifier_builder, use_polling, function_to_run_on_matching_files)
-        chain.start()
+        try:
+            chain.start()
+        except FileNotFoundError as err:
+            LOGGER.error(f"Error starting chain {chain_name}: {str(err)}")
+            LOGGER.warning(f"Remove and skip {chain_name}")
+            chains[chain_name].request_manager.stop()
+            del chains[chain_name]
+            del chain
+            continue
 
         if "origin" in chain_config:
             old_glob.append((globify(chain_config["origin"]), chain.function_to_run, chain_config))
