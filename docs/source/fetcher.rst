@@ -26,7 +26,7 @@ command of the script gives::
 
 An example config would be for this command line interface would be::
 
-    destination: /home/myuser/downloads/
+    destination: /home/myuser/downloads/{start_time:%Y%m%d}
     publisher_config:
         nameservers: false
         port: 1979
@@ -40,6 +40,13 @@ The `publisher_config` and `subscriber_config` dictionaries in the config are pa
 :py:func:`~posttroll.publisher.create_publisher_from_dict_config` and
 :py:func:`~posttroll.subscriber.create_subscriber_from_dict_config` respectively, so refer to the corresponding
 documentation to see how to populate them.
+
+Destination directory
+#####################
+
+The destination must be a directory, and that path can contain references to items is the message being received as template.
+For example providing a destination like `.../{start_time:%Y%m%d}` will resolve to eg `.../20251202`.
+Moreover, the destination directory will be created automatically if not already present, along with it's parents if needed.
 
 
 API
