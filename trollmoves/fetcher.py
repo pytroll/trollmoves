@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import os
 from contextlib import closing
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import yaml
 from posttroll.subscriber import create_subscriber_from_dict_config
 from pytroll_watchers.fetch import fetch_file
 from pytroll_watchers.publisher import file_publisher_from_generator
+from trollsift import compose
 
 from trollmoves.logging import add_logging_options_to_parser, setup_logging
 
@@ -20,11 +22,14 @@ def fetch_from_message(message, destination):
 
     Args:
         message: A posttroll message instance with information about the files to fetch.
-        destination: the directory to save the files to.
+        destination: the directory to save the files to. Can contain template elements from the message according to
+          trollsift syntax.
 
     Returns:
         The path to the downloaded file.
     """
+    destination = Path(compose(os.fspath(destination), message.data))
+    destination.mkdir(parents=True, exist_ok=True)
     try:
         return fetch_file(message.data["path"], destination, message.data["filesystem"])
     except KeyError:
