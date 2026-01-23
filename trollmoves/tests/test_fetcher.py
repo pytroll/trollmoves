@@ -47,6 +47,22 @@ def test_fetch_message_with_uri(tmp_path):
     assert (dest_path2 / uid).exists()
 
 
+def test_fetch_message_with_uri_into_template_directory(tmp_path):
+    """Test fetch_message can use uri."""
+    uid = "IVCDB_j02_d20240419_t1114110_e1115356_b07465_c20240419113435035578_cspp_dev.h5"
+    sdr_file = tmp_path / "sdr" / uid
+    create_data_file(sdr_file)
+    msg = ('pytroll://segment/viirs/l1b/ file a001673@c22519.ad.smhi.se 2024-04-19T11:35:00.487388 v1.01 '
+        'application/json {"sensor": "viirs", "start_time": "20240419T111411", '
+           f'"uid": "{uid}", "uri": "file://{str(sdr_file)}"' '}')
+
+    dest_path_template = tmp_path / "{sensor}/{start_time:%Y/%m%d}"
+    dest_path2 = tmp_path / "viirs/2024/0419"
+
+    fetch_from_message(Message(rawstr=msg), dest_path_template)
+    assert (dest_path2 / uid).exists()
+
+
 def test_fetch_message_logs(tmp_path, caplog):
     """Test fetch_message logs."""
     caplog.set_level("DEBUG")
