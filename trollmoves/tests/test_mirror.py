@@ -2,11 +2,11 @@
 
 import unittest
 from tempfile import NamedTemporaryFile
-from unittest.mock import patch
+from unittest.mock import DEFAULT, patch
 
 import pytest
 
-from trollmoves.mirror import MirrorRequestManager, MoveItMirror, parse_args
+from trollmoves.mirror import MoveItMirror, parse_args
 
 
 class TestMirrorDeleter(unittest.TestCase):
