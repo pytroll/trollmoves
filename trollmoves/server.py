@@ -19,7 +19,7 @@ from queue import Empty, Queue
 from threading import Lock, Thread
 from urllib.parse import urlparse
 
-from posttroll import get_context
+from posttroll.backends.zmq.socket import close_socket, set_up_client_socket, set_up_server_socket
 from posttroll.message import Message, MessageError
 from posttroll.publisher import get_own_ip
 from posttroll.subscriber import Subscribe
@@ -67,12 +67,10 @@ class RequestManager(Thread):
         self._deleter = Deleter(attrs)
 
     def _set_out_socket(self):
-        self.out_socket = get_context().socket(ROUTER)
-        self.out_socket.bind("tcp://*:" + str(self.port))
+        self.out_socket, _, _ = set_up_server_socket(ROUTER, "tcp://*:" + str(self.port))
 
     def _set_in_socket(self):
-        self.in_socket = get_context().socket(PULL)
-        self.in_socket.bind("inproc://replies" + str(self.port))
+        self.in_socket, _, _ = set_up_server_socket(PULL, "inproc://replies" + str(self.port))
 
     def _set_station(self):
         try:
@@ -201,12 +199,13 @@ class RequestManager(Thread):
 
     def _send_multipart_reply(self, reply, address):
         LOGGER.debug("Response: %s", str(reply))
-        in_socket = get_context().socket(PUSH)
-        in_socket.connect("inproc://replies" + str(self.port))
+        in_socket = set_up_client_socket(PUSH, "inproc://replies" + str(self.port))
         try:
             in_socket.send_multipart([address, b"", str(reply)])
         except TypeError:
             in_socket.send_multipart([address, b"", bytes(str(reply), "utf-8")])
+        finally:
+            close_socket(in_socket)
 
     def run(self):
         """Run request manager."""

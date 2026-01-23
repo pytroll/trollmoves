@@ -14,7 +14,7 @@ from contextlib import suppress
 from threading import Event, Lock, Thread
 from urllib.parse import urlparse, urlunparse
 
-from posttroll import get_context
+from posttroll.backends.zmq.socket import set_up_client_socket
 from posttroll.message import Message, MessageError
 from posttroll.publisher import create_publisher_from_dict_config
 from posttroll.subscriber import Subscriber
@@ -925,8 +925,7 @@ class PushRequester:
 
     def connect(self):
         """Connect to the server."""
-        self._socket = get_context().socket(REQ)
-        self._socket.connect(self._reqaddress)
+        self._socket = set_up_client_socket(REQ, self._reqaddress)
         self._poller.register(self._socket, POLLIN)
 
     def stop(self):

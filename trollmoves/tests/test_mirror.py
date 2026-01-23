@@ -2,7 +2,7 @@
 
 import unittest
 from tempfile import NamedTemporaryFile
-from unittest.mock import DEFAULT, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -29,11 +29,11 @@ class TestMirrorRequestManager(unittest.TestCase):
 
     def test_deleter_gets_attrs(self):
         """Test that the deleter gets the right info on init."""
-        from trollmoves.mirror import MirrorRequestManager
         attrs = {"origin": "here"}
 
         with patch("trollmoves.mirror.MirrorDeleter", autospec=True) as md:
-            with patch.multiple("trollmoves.server", Poller=DEFAULT, get_context=DEFAULT):
+            with patch("trollmoves.mirror.RequestManager", autospec=True):
+                from trollmoves.mirror import MirrorRequestManager
                 MirrorRequestManager("some_port", attrs)  # noqa
                 assert md.call_args[0][0] == attrs
 
