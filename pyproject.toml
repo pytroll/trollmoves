@@ -21,7 +21,7 @@ classifiers = [
 ]
 dependencies = [
     "netifaces-plus",
-    "posttroll>=1.5.1",
+    "posttroll>=1.13.1",
     "pyyaml",
     "pyzmq",
     "trollsift",
