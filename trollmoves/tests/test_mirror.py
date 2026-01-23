@@ -6,7 +6,7 @@ from unittest.mock import DEFAULT, patch
 
 import pytest
 
-from trollmoves.mirror import MoveItMirror, parse_args
+from trollmoves.mirror import MirrorRequestManager, MoveItMirror, parse_args
 
 
 class TestMirrorDeleter(unittest.TestCase):
@@ -29,7 +29,6 @@ class TestMirrorRequestManager(unittest.TestCase):
 
     def test_deleter_gets_attrs(self):
         """Test that the deleter gets the right info on init."""
-        from trollmoves.mirror import MirrorRequestManager
         attrs = {"origin": "here"}
 
         with patch("trollmoves.mirror.MirrorDeleter", autospec=True) as md:
@@ -54,10 +53,11 @@ class TestMoveItMirror:
 
     def test_reloads_config_crashes_when_config_file_does_not_exist(self):
         """Test that reloading a non existing config file crashes."""
-        cmd_args = parse_args(["--port", "9999", "somefile99999.cfg"])
-        mirror = MoveItMirror(cmd_args)
-        with pytest.raises(FileNotFoundError):
-            mirror.reload_cfg_file(cmd_args.config_file)
+        with patch.multiple("trollmoves.mirror", MirrorRequestManager=DEFAULT, create_publisher=DEFAULT):
+            cmd_args = parse_args(["--port", "9999", "somefile99999.cfg"])
+            mirror = MoveItMirror(cmd_args)
+            with pytest.raises(FileNotFoundError):
+                mirror.reload_cfg_file(cmd_args.config_file)
 
     @patch("trollmoves.move_it_base.Publisher")
     def test_reloads_config_on_example_config(self, fake_publisher):
