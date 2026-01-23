@@ -32,7 +32,7 @@ class TestMirrorRequestManager(unittest.TestCase):
         attrs = {"origin": "here"}
 
         with patch("trollmoves.mirror.MirrorDeleter", autospec=True) as md:
-            with patch("trollmoves.mirror.RequestManager", autospec=True):
+            with patch("trollmoves.server.RequestManager.__init__", return_value=None):
                 from trollmoves.mirror import MirrorRequestManager
                 MirrorRequestManager("some_port", attrs)  # noqa
                 assert md.call_args[0][0] == attrs
