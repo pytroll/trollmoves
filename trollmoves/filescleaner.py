@@ -55,7 +55,7 @@ class FilesCleaner():
         section_files = 0
         section_size = 0
         for pathname in glob(pathname_template):
-            for dirpath, _dirnames, _ in os.walk(Path(pathname).parent):
+            for dirpath, _dirnames, _ in os.walk(Path(pathname).parent, followlinks=True):
                 files_in_dir = glob(os.path.join(dirpath, Path(pathname_template).name))
 
                 if len(files_in_dir) == 0:
@@ -75,9 +75,9 @@ class FilesCleaner():
             if not os.path.exists(filepath):
                 continue
             try:
-                stat = os.lstat(filepath)
+                stat = os.stat(filepath)
             except OSError:
-                LOGGER.warning("Couldn't lstat path=%s", str(filepath))
+                LOGGER.warning("Couldn't stat path=%s", str(filepath))
                 continue
 
             if dt.datetime.fromtimestamp(getattr(stat, self.stat_time_method), tz=dt.timezone.utc) < ref_time:
