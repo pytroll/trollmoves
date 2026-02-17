@@ -12,23 +12,26 @@ from trollmoves.filescleaner import FilesCleaner
 
 LOGGER = logging.getLogger(__name__)
 
+
+class DummyPublish(object):
+    """A fake publish in case posttroll isn't installed."""
+
+    def __enter__(self):
+        """Fake enter."""
+        return self
+
+    def __exit__(self, etype, value, traceback):
+        """Fake exit."""
+
+    def send(self, msg):
+        """Fake send."""
+
+
 try:
     from posttroll.message import Message
     from posttroll.publisher import Publish
 except ImportError:
-
-    class Publish(object):
-        """A fake publish in case posttroll isn't installed."""
-
-        def __enter__(self):
-            """Fake enter."""
-            return self
-
-        def __exit__(self, etype, value, traceback):
-            """Fake exit."""
-
-        def send(self, msg):
-            """Fake send."""
+    Publish = DummyPublish
 
     def Message(*args, **kwargs):
         """Fake message object in case posttroll isn't installed."""
@@ -166,7 +169,7 @@ def run(args, conf):
         for section in config_items:
             info = dict(conf.items(section))
             fcleaner = FilesCleaner(pub, section, info, dry_run=args.dry_run)
-            size, num_files = fcleaner.clean_section()
+            size, num_files, files = fcleaner.clean_section()
             tot_size += size
             tot_files += num_files
 
