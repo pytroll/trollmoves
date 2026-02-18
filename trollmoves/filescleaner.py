@@ -128,7 +128,9 @@ class FilesCleaner():
     def remove_file(self, filename):
         """Remove a file given its filename, and publish when removed.
 
-        Removing an empty directory is not published.
+        Removal of an empty directory is not published.
+
+        The return value of this function is the removed filename, or None if nothing was removed.
         """
         try:
             if os.path.isdir(filename):
