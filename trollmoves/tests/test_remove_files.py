@@ -7,26 +7,15 @@ import os
 import pytest
 
 from trollmoves.filescleaner import FilesCleaner
+from trollmoves.remove_it import DummyPublish
 
 DUMMY_CONTENT = "some dummy content"
 
 OLD_FILES_TIME = dt.datetime(2023, 5, 25, 12, 0, tzinfo=dt.timezone.utc)
 
 
-class FakePublisher():
+class FakePublisher(DummyPublish):
     """Implements a Fake Publisher for testing."""
-
-    def __init__(self):
-        """Initialize the class."""
-        pass
-
-    def __enter__(self):
-        """Enter method."""
-        return self
-
-    def __exit__(self, etype, value, traceback):
-        """Exit."""
-        pass
 
     def send(self, msg):
         """Fake send message."""
@@ -52,7 +41,7 @@ def test_remove_files_default(file_structure_with_some_old_files):
             "hours": "3"}
 
     fcleaner = FilesCleaner(pub, section, info, dry_run=False)
-    size, num_files = fcleaner.clean_section()
+    size, num_files, removed_files = fcleaner.clean_section()
 
     assert (dir_base / "a.txt").exists()
     assert (dir_base / "b.txt").exists()
@@ -90,7 +79,7 @@ def test_remove_files_access_time(file_structure_with_some_old_files, hours, exp
             "hours": f"{hours}"}
 
     fcleaner = FilesCleaner(pub, section, info, dry_run=False)
-    size, num_files = fcleaner.clean_section()
+    size, num_files, removed_files = fcleaner.clean_section()
 
     if hours < 6:
         assert num_files == 2
@@ -137,7 +126,7 @@ def test_remove_files_access_time_dryrun(file_structure_with_some_old_files, cap
 
     with caplog.at_level(logging.DEBUG):
         fcleaner = FilesCleaner(pub, section, info, dry_run=True)
-        size, num_files = fcleaner.clean_section()
+        size, num_files, removed_files = fcleaner.clean_section()
 
     assert num_files == 0
 
@@ -167,7 +156,7 @@ def test_remove_files_path_missing(file_structure_with_some_old_files, caplog):
 
     with caplog.at_level(logging.WARNING):
         fcleaner = FilesCleaner(pub, section, info, dry_run=True)
-        size, num_files = fcleaner.clean_section()
+        size, num_files, removed_files = fcleaner.clean_section()
 
     assert size == 0
     assert num_files == 0
@@ -196,7 +185,7 @@ def test_remove_files_empty_dir_mtime(file_structure_with_some_old_files_and_emp
 
     with caplog.at_level(logging.DEBUG):
         fcleaner = FilesCleaner(pub, section, info, dry_run=False)
-        size, num_files = fcleaner.clean_section()
+        size, num_files, removed_files = fcleaner.clean_section()
 
     log_output1 = f'Removed {(sub_dir1 / "b.png")}'
     assert log_output1 in caplog.text
@@ -225,7 +214,7 @@ def test_remove_files_empty_dir_atime(file_structure_with_some_old_files_and_emp
 
     with caplog.at_level(logging.DEBUG):
         fcleaner = FilesCleaner(pub, section, info, dry_run=False)
-        size, num_files = fcleaner.clean_section()
+        size, num_files, removed_files = fcleaner.clean_section()
 
     log_output1 = f'Removed {(sub_dir1 / "b.png")}'
     assert log_output1 in caplog.text
@@ -267,13 +256,18 @@ def dummy_tree_of_some_files(request, tmp_path_factory) -> list[str]:
     os.utime(fn, times=(atime, mtime))
     os.utime(fn.parent, times=(atime, mtime))
     filepaths.append(fn)
+
+
+    real_dir = tmp_path_factory.mktemp("data_to_link")
     fn = basedir / "another_subdir" / "subsubdir2"
-    fn.mkdir()
-    fn = fn / "dummy5.dat"
+    os.symlink(real_dir, fn)
+    # fn.mkdir()
+    symfn = fn / "dummy5.dat"
+    fn = real_dir / "dummy5.dat"
     fn.write_text(DUMMY_CONTENT)
     os.utime(fn, times=(atime, mtime))
     os.utime(fn.parent, times=(atime, mtime))
-    filepaths.append(fn)
+    filepaths.append(symfn)
 
     return filepaths
 
@@ -336,7 +330,7 @@ def test_clean_dir_recursive_mtime_real(dummy_tree_of_some_files, caplog):
     with FakePublisher() as pub, caplog.at_level(logging.DEBUG):
         res = fcleaner.clean_section()
 
-    section_size, section_files = res
+    section_size, section_files, removed_files = res
 
     assert section_size == 36
     assert section_files == 2
@@ -380,7 +374,7 @@ def test_clean_dir_recursive_mtime_dryrun(dummy_tree_of_some_files, tmp_path, ca
     with FakePublisher() as pub, caplog.at_level(logging.INFO):
         res = fcleaner.clean_section()
 
-    section_size, section_files = res
+    section_size, section_files, removed_files = res
 
     assert section_size == 0
     assert section_files == 0
@@ -390,3 +384,28 @@ def test_clean_dir_recursive_mtime_dryrun(dummy_tree_of_some_files, tmp_path, ca
     removed_file = list_of_files_to_clean[2]
     assert f"Would remove {removed_file}" in caplog.text
     assert removed_file.exists()
+
+
+def test_clean_follows_links(dummy_tree_of_some_files, tmp_path):
+    """Test that cleaning follows links."""
+    pub = FakePublisher()
+    list_of_files_to_clean = dummy_tree_of_some_files
+
+    basedir = list_of_files_to_clean[0].parent
+
+    section = "mytest_files1"
+    info = {"mailhost": "localhost",
+            "to": "some_users@xxx.yy",
+            "subject": "Cleanup Error on {hostname}",
+            "base_dir": f"{basedir}",
+            "templates": f"{basedir}/*",
+            "stat_time_method": "st_mtime",
+            "recursive": True,
+            "hours": "1"}
+
+    fcleaner = FilesCleaner(pub, section, info, dry_run=True)
+
+    res = fcleaner.clean_section()
+
+    section_size, section_files, removed_files = res
+    assert str(basedir / "another_subdir" / "subsubdir2" / "dummy5.dat") in removed_files

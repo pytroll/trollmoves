@@ -54,41 +54,48 @@ class FilesCleaner():
 
         section_files = 0
         section_size = 0
+        removed = []
+
         for pathname in glob(pathname_template):
-            for dirpath, _dirnames, _ in os.walk(Path(pathname).parent):
+            for dirpath, _dirnames, _ in os.walk(Path(pathname).parent, followlinks=True):
                 files_in_dir = glob(os.path.join(dirpath, Path(pathname_template).name))
 
                 if len(files_in_dir) == 0:
                     self._remove_empty_directory(dirpath)
 
-                s_size, s_files = self.clean_files_and_dirs(files_in_dir, ref_time)
+                s_size, s_files, removed_files = self.clean_files_and_dirs(files_in_dir, ref_time)
                 section_files += s_files
                 section_size += s_size
+                removed.extend(removed_files)
 
-        return (section_size, section_files)
+        return (section_size, section_files, removed)
 
     def clean_files_and_dirs(self, filepaths, ref_time):
         """Clean files and directories defined by a list of file paths and a reference time."""
         section_files = 0
         section_size = 0
+        removed = []
         for filepath in filepaths:
             if not os.path.exists(filepath):
                 continue
             try:
-                stat = os.lstat(filepath)
+                stat = os.stat(filepath)
             except OSError:
-                LOGGER.warning("Couldn't lstat path=%s", str(filepath))
+                LOGGER.warning("Couldn't stat path=%s", str(filepath))
                 continue
 
             if dt.datetime.fromtimestamp(getattr(stat, self.stat_time_method), tz=dt.timezone.utc) < ref_time:
                 if not self.dry_run:
-                    _ = self.remove_file(filepath)
-                    section_files += 1
-                    section_size += stat.st_size
+                    removed_file = self.remove_file(filepath)
+                    if removed_file:
+                        section_files += 1
+                        section_size += stat.st_size
+                        removed.append(removed_file)
                 else:
+                    removed.append(filepath)
                     LOGGER.info(f"Would remove {str(filepath)}")
 
-        return (section_size, section_files)
+        return (section_size, section_files, removed)
 
     def clean_section(self):
         """Do the files cleaning given a list of directory paths and time thresholds.
@@ -100,25 +107,30 @@ class FilesCleaner():
         base_dir = self.info.get("base_dir", "")
         if not os.path.exists(base_dir):
             LOGGER.warning("Path %s missing, skipping section %s", base_dir, self.section)
-            return (section_size, section_files)
+            return (section_size, section_files, [])
         LOGGER.info("Cleaning in %s", base_dir)
 
         templates = (item.strip() for item in self.info["templates"].split(","))
 
         ref_time = self._get_reference_time()
+        removed = []
 
         for template in templates:
             pathname = os.path.join(base_dir, template)
-            size, num_files = self.clean_dir(ref_time, pathname)
+            size, num_files, removed_files = self.clean_dir(ref_time, pathname)
             section_files += num_files
             section_size += size
+            removed.extend(removed_files)
 
-        return (section_size, section_files)
+
+        return (section_size, section_files, removed)
 
     def remove_file(self, filename):
         """Remove a file given its filename, and publish when removed.
 
-        Removing an empty directory is not published.
+        Removal of an empty directory is not published.
+
+        The return value of this function is the removed filename, or None if nothing was removed.
         """
         try:
             if os.path.isdir(filename):
@@ -133,10 +145,11 @@ class FilesCleaner():
                 LOGGER.debug("Removed %s", filename)
         except FileNotFoundError:
             LOGGER.debug("File already removed.")
+            return
         except OSError as err:
             LOGGER.warning("Can't remove %s: %s", filename, str(err))
-            return False
-        return True
+            return
+        return filename
 
     def _remove_empty_directory(self, dirpath):
         """Remove empty directory."""
