@@ -312,7 +312,7 @@ class TestMoveItServer:
             mock_reload_config.assert_called_once()
 
 
-@patch("trollmoves.server.get_context")
+@patch("trollmoves.server.set_up_server_socket")
 @patch("trollmoves.server.Poller.poll")
 @patch("trollmoves.server.RequestManager._set_station")
 @patch("trollmoves.server.RequestManager._set_out_socket")
@@ -325,7 +325,7 @@ def test_requestmanager_run_valid_pytroll_message(patch_process_request,
                                                   patch_set_out_socket,
                                                   patch_set_station,
                                                   patch_poller,
-                                                  patch_get_context):
+                                                  patch_set_up_server_socket):
     """Test request manager run with valid address and payload."""
     from posttroll.message import _MAGICK
     from zmq import POLLIN
@@ -335,6 +335,7 @@ def test_requestmanager_run_valid_pytroll_message(patch_process_request,
                r"/test/1/2/3 info ras@hawaii 2008-04-11T22:13:22.123000 v1.01" +
                r' text/ascii "what' + r"'" + r's up doc"')
     address = b"tcp://192.168.10.8:37325"
+    patch_set_up_server_socket.return_value = MagicMock(), MagicMock(), MagicMock()
     patch_get_address_and_payload.return_value = address, payload
     port = 9876
     patch_poller.return_value = {"POLLIN": POLLIN}
@@ -344,7 +345,7 @@ def test_requestmanager_run_valid_pytroll_message(patch_process_request,
     patch_process_request.assert_called_once()
 
 
-@patch("trollmoves.server.get_context")
+@patch("trollmoves.server.set_up_server_socket")
 @patch("trollmoves.server.Poller.poll")
 @patch("trollmoves.server.RequestManager._set_station")
 @patch("trollmoves.server.RequestManager._set_out_socket")
@@ -355,7 +356,7 @@ def test_requestmanager_run_MessageError_exception(patch_validate_file_pattern,
                                                    patch_set_out_socket,
                                                    patch_set_station,
                                                    patch_poller,
-                                                   patch_get_context,
+                                                   patch_set_up_server_socket,
                                                    caplog):
     """Test request manager run with invalid payload causing a MessageError exception."""
     import logging
@@ -363,6 +364,7 @@ def test_requestmanager_run_MessageError_exception(patch_validate_file_pattern,
     from zmq import POLLIN
 
     from trollmoves.server import RequestManager
+    patch_set_up_server_socket.return_value = MagicMock(), MagicMock(), MagicMock()
     patch_get_address_and_payload.return_value = "address", "fake_payload"
     port = 9876
     patch_poller.return_value = {"POLLIN": POLLIN}

@@ -6,7 +6,7 @@ from unittest.mock import DEFAULT, patch
 
 import pytest
 
-from trollmoves.mirror import MirrorRequestManager, MoveItMirror, parse_args
+from trollmoves.mirror import MoveItMirror, parse_args
 
 
 class TestMirrorDeleter(unittest.TestCase):
@@ -32,7 +32,8 @@ class TestMirrorRequestManager(unittest.TestCase):
         attrs = {"origin": "here"}
 
         with patch("trollmoves.mirror.MirrorDeleter", autospec=True) as md:
-            with patch.multiple("trollmoves.server", Poller=DEFAULT, get_context=DEFAULT):
+            with patch("trollmoves.server.RequestManager.__init__", return_value=None):
+                from trollmoves.mirror import MirrorRequestManager
                 MirrorRequestManager("some_port", attrs)  # noqa
                 assert md.call_args[0][0] == attrs
 

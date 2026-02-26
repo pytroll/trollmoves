@@ -137,7 +137,7 @@ class MirrorRequestManager(RequestManager):
 
     def __init__(self, port, attrs):
         """Set up this mirror request manager."""
-        RequestManager.__init__(self, port, attrs)
+        super().__init__(port, attrs)
         self._deleter = MirrorDeleter(attrs)
 
     def push(self, message):

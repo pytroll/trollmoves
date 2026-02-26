@@ -6,6 +6,7 @@ import argparse
 import time
 
 import zmq
+from posttroll.backends.zmq.socket import close_socket, set_up_client_socket
 from posttroll.message import Message
 
 REQUEST_TIMEOUT = 4500
@@ -78,11 +79,8 @@ def run(args):
 
     req_data = get_request_data(args)
 
-    context = zmq.Context(1)
-
     print("Connecting to '%s' ..." % args.server)
-    client = context.socket(zmq.REQ)
-    client.connect(args.server)
+    client = set_up_client_socket(zmq.REQ, args.server)
 
     poll = zmq.Poller()
     poll.register(client, zmq.POLLIN)
@@ -110,17 +108,15 @@ def run(args):
                 else:
                     print("No response from server, retrying ...")
                     # Socket is confused. Close and remove it.
-                    client.setsockopt(zmq.LINGER, 0)
-                    client.close()
                     poll.unregister(client)
+                    close_socket(client)
                     retries_left -= 1
                     if retries_left == 0:
                         print("Server seems to be offline, abandoning")
                         break
                     print("Reconnecting and resending (%s)" % request)
                     # Create new connection
-                    client = context.socket(zmq.REQ)
-                    client.connect(args.server)
+                    client = set_up_client_socket(zmq.REQ, args.server)
                     poll.register(client, zmq.POLLIN)
                     client.send(request)
             if args.spam is not None:
@@ -130,7 +126,7 @@ def run(args):
     except KeyboardInterrupt:
         pass
     finally:
-        context.term()
+        close_socket(client)
 
 
 def main():
