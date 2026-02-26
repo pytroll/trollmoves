@@ -1,3 +1,26 @@
+## Version 0.18.0 (2026/02/26)
+
+### Issues Closed
+
+* [Issue 229](https://github.com/pytroll/trollmoves/issues/229) - move-it-server does not start correctly of a monitoring directory does not exist ([PR 230](https://github.com/pytroll/trollmoves/pull/230) by [@TAlonglong](https://github.com/TAlonglong))
+
+In this release 1 issue was closed.
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 230](https://github.com/pytroll/trollmoves/pull/230) - Remove chain if origin directory does not exists. Add test ([229](https://github.com/pytroll/trollmoves/issues/229))
+
+#### Features added
+
+* [PR 234](https://github.com/pytroll/trollmoves/pull/234) - Follow links in remove_it
+* [PR 233](https://github.com/pytroll/trollmoves/pull/233) - Use Posttroll socket functions
+* [PR 232](https://github.com/pytroll/trollmoves/pull/232) - Add templating functionality to the fetcher
+
+In this release 4 pull requests were closed.
+
+
 ## Version 0.17.0 (2025/10/16)
 
 ### Issues Closed
