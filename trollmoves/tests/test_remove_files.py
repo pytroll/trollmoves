@@ -264,8 +264,8 @@ def dummy_tree_of_some_files(request, tmp_path_factory) -> list[str]:
     dir_name = basedir / "another_subdir" / "subsubdir2"
     os.symlink(real_dir, dir_name)
     symfn = dir_name / "subsubsub" / "dummy5.dat"
-    file5  = real_dir / "subsubsub" /"dummy5.dat"
-    file6  = real_dir / "subsubsub" /".dummy6.dat"
+    file5  = real_dir / "subsubsub" / "dummy5.dat"
+    file6  = real_dir / "subsubsub" / ".dummy6.dat"
     file5.parent.mkdir()
     file5.write_text(DUMMY_CONTENT)
     os.utime(file5, times=(atime, mtime))
