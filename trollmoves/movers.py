@@ -363,6 +363,30 @@ class FtpMover(Mover):
             connection.storbinary("STOR " + destination_filename,
                                   file_obj)
 
+    def finalize_atomic_transfer(self, tmp_destination, final_destination):
+        """Finalize atomic transfer by renaming tmp -> final on FTP server."""
+        connection = self.get_connection(self.destination.hostname, self.destination.port, self._dest_username)
+
+        def cd_tree(current_dir):
+            if current_dir != "":
+                try:
+                    connection.cwd(current_dir)
+                except (IOError, error_perm):
+                    cd_tree("/".join(current_dir.split("/")[:-1]))
+                    connection.mkd(current_dir)
+                    connection.cwd(current_dir)
+
+        dest_dirname = os.path.dirname(tmp_destination.path)
+        tmp_basename = os.path.basename(tmp_destination.path)
+        final_basename = os.path.basename(final_destination.path)
+        cd_tree(dest_dirname)
+        try:
+            connection.rename(tmp_basename, final_basename)
+        except Exception as err:
+            LOGGER.exception("Failed to finalize FTP atomic transfer: %s", str(err))
+            raise
+        self.destination = final_destination
+
 
 class ScpMover(Mover):
     """Move files over ssh with scp."""
@@ -478,6 +502,39 @@ class ScpMover(Mover):
         finally:
             scp.close()
 
+    def finalize_atomic_transfer(self, tmp_destination, final_destination):
+        """Finalize atomic transfer for SCP by performing remote rename via SFTP."""
+        ssh_connection = self.get_connection(self.destination.hostname,
+                                             self.destination.port or 22,
+                                             self._dest_username)
+        sftp = None
+        try:
+            sftp = ssh_connection.open_sftp()
+            final_dir = os.path.dirname(final_destination.path)
+            # ensure final directory exists
+            if final_dir:
+                parts = final_dir.split('/')
+                path = ''
+                for p in parts:
+                    if not p:
+                        continue
+                    path = path + '/' + p
+                    try:
+                        sftp.stat(path)
+                    except IOError:
+                        try:
+                            sftp.mkdir(path)
+                        except Exception:
+                            pass
+            sftp.rename(tmp_destination.path, final_destination.path)
+        finally:
+            if sftp is not None:
+                try:
+                    sftp.close()
+                except Exception:
+                    pass
+        self.destination = final_destination
+
 
 class SftpMover(Mover):
     """Move files over sftp."""
@@ -502,6 +559,35 @@ class SftpMover(Mover):
                         key_filename=self.attrs.get("ssh_private_key_file"))
             with ssh.open_sftp() as sftp:
                 sftp.put(self.origin, self.destination.path)
+
+    def finalize_atomic_transfer(self, tmp_destination, final_destination):
+        """Finalize atomic transfer for SFTP by renaming tmp -> final on remote host."""
+        import paramiko
+        with paramiko.SSHClient() as ssh:
+            ssh.load_system_host_keys()
+            ssh.connect(self.destination.hostname,
+                        port=self.destination.port or 22,
+                        username=self._dest_username,
+                        allow_agent=True,
+                        key_filename=self.attrs.get("ssh_private_key_file"))
+            with ssh.open_sftp() as sftp:
+                final_dir = os.path.dirname(final_destination.path)
+                if final_dir:
+                    parts = final_dir.split('/')
+                    path = ''
+                    for p in parts:
+                        if not p:
+                            continue
+                        path = path + '/' + p
+                        try:
+                            sftp.stat(path)
+                        except IOError:
+                            try:
+                                sftp.mkdir(path)
+                            except Exception:
+                                pass
+                sftp.rename(tmp_destination.path, final_destination.path)
+        self.destination = final_destination
 
 
 class S3Mover(Mover):
