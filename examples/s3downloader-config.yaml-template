@@ -16,9 +16,3 @@ s3_kwargs:
   profile: metno # Optional
   client_kwargs:
     endpoint_url: <url to the object store>
-
-  # Optional atomic transfer options for S3 Mover (passed to movers):
-  # s3_use_multipart: True      # Prefer multipart upload (boto3 required)
-  # s3_use_copy: False          # If multipart not used, perform copy+delete to finalize tmp key
-  # tmp_prefix: '.'             # Prefix used for temporary keys (e.g. '.filename')
-  # s3_multipart_chunksize: 8388608  # Chunk size in bytes for multipart uploads
