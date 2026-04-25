@@ -39,6 +39,14 @@ the messages it publishes, along with a json representation of a `fsspec`
 filesystem. From there, processes accepting these (eg `trollflow2`) will be able
 to use `fsspec` to read and process the remote files.
 
+#### Using initial temporary filenames
+
+To avoid exposing partially-uploaded files, movers can be configured to upload
+first to a temporary name and be renamed/activated only after the transfer
+completes. See [the mover section](#Using temporary-initial-filenames-in-transfers)
+and `examples/move_it_server.ini` for details and examples.
+
+
 ### Trollmoves Client
 
 Trollmoves Client is configured to subscribe to a specific topic, and to make requests
@@ -95,6 +103,7 @@ Required libraries:
 In addition, the required packages for the transfer protocol(s) to be used. See the
 mover documentation below for more details.
 
+
 ## Individual movers
 
 The individual movers can be used via the above listed processes, or used directly
@@ -146,12 +155,12 @@ analogous to moving a file from one directory to a new destination changing the
 filename. The new destination filename will be the last part of the provided
 destination following the last slash ('/').
 
-New atomic-transfer options (opt-in)
+### Using temporary initial filenames in transfers
 
-To avoid exposing partially-uploaded files, movers can be configured to upload
-first to a temporary name and be renamed/activated only after the transfer
-completes. These options are passed via the mover's connection_parameters or
-attrs dictionary.
+It is possible to first transfer the files to temporary filenames and
+renamed after the transfer. This can be helpful if the consumer does
+not use Posttroll messaging to avoid premature reads. These options
+are passed via the mover's connection_parameters or attrs dictionary.
 
 - use_tmp_on_transfer: boolean (default: False)
     If true, movers will upload to a temporary destination (see tmp_prefix)
