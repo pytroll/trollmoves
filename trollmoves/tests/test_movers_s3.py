@@ -8,8 +8,7 @@ import pytest
 from trollmoves.movers import S3Mover, S3FileSystem, boto3
 
 
-@patch('trollmoves.movers.boto3.client')
-def test_s3_multipart_upload(mock_boto_client):
+def test_s3_multipart_upload():
     # Create a temporary file with some content
     with tempfile.NamedTemporaryFile('wb', delete=False) as f:
         f.write(b'hello world')
@@ -20,24 +19,27 @@ def test_s3_multipart_upload(mock_boto_client):
     mock_client.create_multipart_upload.return_value = {'UploadId': 'upload123'}
     mock_client.upload_part.return_value = {'ETag': 'etag-1'}
     mock_client.complete_multipart_upload.return_value = {'ResponseMetadata': {'HTTPStatusCode': 200}}
-    mock_boto_client.return_value = mock_client
 
-    # Destination: s3://mybucket/some/path/file
-    dest = 's3://mybucket/some/path/file'
-    attrs = {'s3_use_multipart': True, 'client_kwargs': {}}
+    mock_boto_mod = MagicMock()
+    mock_boto_mod.client = MagicMock(return_value=mock_client)
 
-    mover = S3Mover(tmpname, dest, attrs=attrs)
-    # Should use boto3 multipart upload and complete it
-    mover.copy()
+    with patch('trollmoves.movers.boto3', new=mock_boto_mod):
+        # Destination: s3://mybucket/some/path/file
+        dest = 's3://mybucket/some/path/file'
+        attrs = {'s3_use_multipart': True, 'client_kwargs': {}}
 
-    # Assertions: multipart calls were made
-    mock_client.create_multipart_upload.assert_called()
-    assert mock_client.upload_part.called
-    mock_client.complete_multipart_upload.assert_called()
+        mover = S3Mover(tmpname, dest, attrs=attrs)
+        # Should use boto3 multipart upload and complete it
+        mover.copy()
 
-    # Destination should be updated to final key
-    assert mover.destination.scheme == 's3'
-    assert 'mybucket' in mover.destination.netloc or 'mybucket' in mover.destination.path
+        # Assertions: multipart calls were made
+        mock_client.create_multipart_upload.assert_called()
+        assert mock_client.upload_part.called
+        mock_client.complete_multipart_upload.assert_called()
+
+        # Destination should be updated to final key
+        assert mover.destination.scheme == 's3'
+        assert 'mybucket' in mover.destination.netloc or 'mybucket' in mover.destination.path
 
     # Cleanup
     os.remove(tmpname)
