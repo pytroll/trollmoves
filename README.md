@@ -146,6 +146,40 @@ analogous to moving a file from one directory to a new destination changing the
 filename. The new destination filename will be the last part of the provided
 destination following the last slash ('/').
 
+New atomic-transfer options (opt-in)
+
+To avoid exposing partially-uploaded files, movers can be configured to upload
+first to a temporary name and be renamed/activated only after the transfer
+completes. These options are passed via the mover's connection_parameters or
+attrs dictionary.
+
+- use_tmp_on_transfer: boolean (default: False)
+    If true, movers will upload to a temporary destination (see tmp_prefix)
+    and finalize the transfer by renaming/moving the tmp object to the final
+    name after successful transfer.
+- tmp_prefix: string (default: '.')
+    Prefix to use for temporary filenames (e.g. ".filename").
+
+S3-specific options
+- s3_use_multipart: boolean (default: True)
+    When True and boto3 is available, S3Mover will perform a multipart upload
+    directly to the final key and CompleteMultipartUpload to make the object
+    visible atomically.
+- s3_use_copy: boolean (default: False)
+    If multipart uploads are not used, enabling this will finalize an upload
+    performed to a tmp key by performing a server-side copy (CopyObject) to
+    the final key and deleting the temporary key. This is compatible with
+    s3fs or boto3 backends but requires additional permissions.
+- s3_multipart_chunksize: integer (default: 8388608)
+    Chunk size (bytes) used for multipart uploads when boto3 multipart is used.
+
+Behavior notes
+- Multipart uploads (preferred) avoid the extra server-side copy step but
+  require boto3 and appropriate permissions. Copy+delete is provided as a
+  fallback for S3-compatible endpoints that do not support multipart.
+- The tmp_prefix and use_tmp_on_transfer options are intentionally opt-in to
+  preserve existing behavior by default.
+
 
 ## s3downloader
 
