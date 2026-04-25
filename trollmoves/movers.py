@@ -45,6 +45,7 @@ except ImportError:
     boto3 = None
 
 from trollmoves.utils import clean_url
+from ._mover_utils import ensure_remote_dirs, ensure_local_dir
 
 S3_ALLOWED_SETTINGS = ["anon", "endpoint_url", "key", "secret",
                        "token", "use_ssl", "s3_additional_kwargs", "client_kwargs",
@@ -373,18 +374,9 @@ class FtpMover(Mover):
         """Upload the file."""
         connection = self.get_connection(self.destination.hostname, self.destination.port, self._dest_username)
 
-        def cd_tree(current_dir):
-            if current_dir != "":
-                try:
-                    connection.cwd(current_dir)
-                except (IOError, error_perm):
-                    cd_tree("/".join(current_dir.split("/")[:-1]))
-                    connection.mkd(current_dir)
-                    connection.cwd(current_dir)
-
         LOGGER.debug("cd to %s", os.path.dirname(self.destination.path))
         destination_dirname, destination_filename = os.path.split(self.destination.path)
-        cd_tree(destination_dirname)
+        ensure_remote_dirs(connection, destination_dirname)
         if not destination_filename:
             destination_filename = os.path.basename(self.origin)
         with open(self.origin, "rb") as file_obj:
@@ -395,19 +387,10 @@ class FtpMover(Mover):
         """Finalize atomic transfer by renaming tmp -> final on FTP server."""
         connection = self.get_connection(self.destination.hostname, self.destination.port, self._dest_username)
 
-        def cd_tree(current_dir):
-            if current_dir != "":
-                try:
-                    connection.cwd(current_dir)
-                except (IOError, error_perm):
-                    cd_tree("/".join(current_dir.split("/")[:-1]))
-                    connection.mkd(current_dir)
-                    connection.cwd(current_dir)
-
         dest_dirname = os.path.dirname(tmp_destination.path)
         tmp_basename = os.path.basename(tmp_destination.path)
         final_basename = os.path.basename(final_destination.path)
-        cd_tree(dest_dirname)
+        ensure_remote_dirs(connection, dest_dirname)
         try:
             connection.rename(tmp_basename, final_basename)
         except Exception as err:
