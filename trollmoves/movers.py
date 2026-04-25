@@ -45,7 +45,7 @@ except ImportError:
     boto3 = None
 
 from trollmoves.utils import clean_url
-from ._mover_utils import ensure_remote_dirs, ensure_local_dir
+from ._mover_utils import ensure_remote_dirs, ensure_local_dir, ensure_final_directory_for_rename
 
 S3_ALLOWED_SETTINGS = ["anon", "endpoint_url", "key", "secret",
                        "token", "use_ssl", "s3_additional_kwargs", "client_kwargs",
@@ -521,22 +521,7 @@ class ScpMover(Mover):
         sftp = None
         try:
             sftp = ssh_connection.open_sftp()
-            final_dir = os.path.dirname(final_destination.path)
-            # ensure final directory exists
-            if final_dir:
-                parts = final_dir.split("/")
-                path = ""
-                for p in parts:
-                    if not p:
-                        continue
-                    path = path + "/" + p
-                    try:
-                        sftp.stat(path)
-                    except IOError:
-                        try:
-                            sftp.mkdir(path)
-                        except Exception:
-                            pass
+            ensure_final_directory_for_rename(sftp, final_destination.path)
             sftp.rename(tmp_destination.path, final_destination.path)
         finally:
             if sftp is not None:
@@ -582,21 +567,7 @@ class SftpMover(Mover):
                         allow_agent=True,
                         key_filename=self.attrs.get("ssh_private_key_file"))
             with ssh.open_sftp() as sftp:
-                final_dir = os.path.dirname(final_destination.path)
-                if final_dir:
-                    parts = final_dir.split("/")
-                    path = ""
-                    for p in parts:
-                        if not p:
-                            continue
-                        path = path + "/" + p
-                        try:
-                            sftp.stat(path)
-                        except IOError:
-                            try:
-                                sftp.mkdir(path)
-                            except Exception:
-                                pass
+                ensure_final_directory_for_rename(sftp, final_destination.path)
                 sftp.rename(tmp_destination.path, final_destination.path)
         self.destination = final_destination
 

@@ -90,3 +90,30 @@ def ensure_remote_dirs(connection, path):
         return
 
     raise TypeError("Unsupported connection type for ensure_remote_dirs")
+
+
+def ensure_final_directory_for_rename(sftp_connection, final_destination_path):
+    """Ensure final directory exists for a rename operation on SFTP.
+
+    Used in finalize_atomic_transfer operations to ensure the target directory
+    exists before renaming a temporary file to its final location. Attempts to
+    stat each path segment; creates with mkdir if it doesn't exist. Silently
+    ignores all errors to match existing SFTP behavior in movers.
+    """
+    final_dir = os.path.dirname(final_destination_path)
+    if not final_dir:
+        return
+
+    parts = final_dir.split("/")
+    path = ""
+    for p in parts:
+        if not p:
+            continue
+        path = path + "/" + p
+        try:
+            sftp_connection.stat(path)
+        except IOError:
+            try:
+                sftp_connection.mkdir(path)
+            except Exception:
+                pass
