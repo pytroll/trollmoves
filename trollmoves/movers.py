@@ -52,16 +52,34 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None, backup_
     LOGGER.debug("Copying to: %s", fake_dest)
     try:
         LOGGER.debug("Scheme = %s", str(dest_url.scheme))
-        mover = MOVERS[dest_url.scheme]
+        mover_cls = MOVERS[dest_url.scheme]
     except KeyError:
         LOGGER.error("Unsupported protocol '" + str(dest_url.scheme) +
                      "'. Could not copy " + pathname + " to " + str(destination))
         raise
 
     try:
-        m = mover(pathname, new_dest, attrs=attrs, backup_targets=backup_targets)
-        m.copy()
-        last_dest = m.destination
+        use_tmp = bool(attrs and attrs.get('use_tmp_on_transfer'))
+        if use_tmp:
+            tmp_prefix = attrs.get('tmp_prefix', '.')
+            tmp_dest = mover_cls.tmp_destination_for(new_dest, tmp_prefix)
+            m = mover_cls(pathname, tmp_dest, attrs=attrs, backup_targets=backup_targets)
+            m.copy()
+            # finalize: default finalizer works for local schemes; subclasses should override
+            try:
+                m.finalize_atomic_transfer(m.destination, new_dest)
+            except NotImplementedError:
+                # cleanup tmp and raise error to indicate unsupported scheme for atomic transfer
+                try:
+                    if hasattr(m.destination, 'path') and os.path.exists(m.destination.path):
+                        os.remove(m.destination.path)
+                finally:
+                    raise
+            last_dest = new_dest
+        else:
+            m = mover_cls(pathname, new_dest, attrs=attrs, backup_targets=backup_targets)
+            m.copy()
+            last_dest = m.destination
         if last_dest != new_dest:
             new_dest = last_dest
             fake_dest = clean_url(new_dest)
@@ -107,6 +125,49 @@ class Mover:
         """Move the file."""
         raise NotImplementedError("Move for scheme " + self.destination.scheme +
                                   " not implemented (yet).")
+
+    def supports_atomic(self):
+        """Return True if this mover supports the default atomic finalize method.
+
+        Subclasses should override if they can perform remote atomic rename.
+        """
+        try:
+            scheme = self.destination.scheme
+        except Exception:
+            scheme = ''
+        return scheme in ('', 'file')
+
+    @staticmethod
+    def tmp_destination_for(dest, tmp_prefix='.'):
+        """Return a copy of dest with the basename prefixed by tmp_prefix."""
+        try:
+            path = dest.path
+        except Exception:
+            return dest
+        dirname = os.path.dirname(path)
+        basename = os.path.basename(path)
+        tmp_name = tmp_prefix + basename
+        return dest._replace(path=os.path.join(dirname, tmp_name))
+
+    def finalize_atomic_transfer(self, tmp_destination, final_destination):
+        """Finalize atomic transfer by renaming tmp to final.
+
+        Default implementation works for local filesystems (empty or 'file' scheme).
+        Subclasses handling remote schemes must override this method.
+        """
+        try:
+            tmp_path = tmp_destination.path
+            final_path = final_destination.path
+        except AttributeError:
+            raise NotImplementedError("Finalize atomic transfer not implemented for remote schemes")
+
+        final_dir = os.path.dirname(final_path)
+        if not os.path.exists(final_dir):
+            os.makedirs(final_dir)
+        # Use os.replace for atomic rename where possible
+        os.replace(tmp_path, final_path)
+        # Update mover's destination to final
+        self.destination = final_destination
 
     def get_connection(self, hostname, port, username=None):
         """Get the connection."""
@@ -168,6 +229,20 @@ class FileMover(Mover):
     def move(self):
         """Move the file."""
         shutil.move(self.origin, self.destination.path)
+
+    def finalize_atomic_transfer(self, tmp_destination, final_destination):
+        """Finalize atomic transfer for local filesystem by renaming tmp -> final."""
+        try:
+            tmp_path = tmp_destination.path
+            final_path = final_destination.path
+        except AttributeError:
+            raise NotImplementedError("Finalize atomic transfer not implemented for this scheme")
+
+        final_dir = os.path.dirname(final_path)
+        if not os.path.exists(final_dir):
+            os.makedirs(final_dir)
+        os.replace(tmp_path, final_path)
+        self.destination = final_destination
 
 
 class CTimer(Thread):
