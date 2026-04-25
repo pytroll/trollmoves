@@ -161,7 +161,7 @@ attrs dictionary.
     Prefix to use for temporary filenames (e.g. ".filename").
 
 S3-specific options
-- s3_use_multipart: boolean (default: True)
+- s3_use_multipart: boolean (default: False)
     When True and boto3 is available, S3Mover will perform a multipart upload
     directly to the final key and CompleteMultipartUpload to make the object
     visible atomically.
