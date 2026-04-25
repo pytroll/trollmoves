@@ -157,7 +157,7 @@ attrs dictionary.
     If true, movers will upload to a temporary destination (see tmp_prefix)
     and finalize the transfer by renaming/moving the tmp object to the final
     name after successful transfer.
-- tmp_prefix: string (default: '.')
+- tmp_prefix: string (default: "\1")
     Prefix to use for temporary filenames (e.g. ".filename").
 
 S3-specific options

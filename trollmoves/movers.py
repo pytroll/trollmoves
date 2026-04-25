@@ -87,9 +87,9 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None, backup_
         raise
 
     try:
-        use_tmp = bool(attrs and attrs.get('use_tmp_on_transfer'))
+        use_tmp = bool(attrs and attrs.get("use_tmp_on_transfer"))
         if use_tmp:
-            tmp_prefix = attrs.get('tmp_prefix', '.')
+            tmp_prefix = attrs.get("tmp_prefix", ".")
             tmp_dest = mover_cls.tmp_destination_for(new_dest, tmp_prefix)
             m = mover_cls(pathname, tmp_dest, attrs=attrs, backup_targets=backup_targets)
             m.copy()
@@ -99,7 +99,7 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None, backup_
             except NotImplementedError:
                 # cleanup tmp and raise error to indicate unsupported scheme for atomic transfer
                 try:
-                    if hasattr(m.destination, 'path') and os.path.exists(m.destination.path):
+                    if hasattr(m.destination, "path") and os.path.exists(m.destination.path):
                         os.remove(m.destination.path)
                 finally:
                     raise
@@ -162,11 +162,11 @@ class Mover:
         try:
             scheme = self.destination.scheme
         except Exception:
-            scheme = ''
-        return scheme in ('', 'file')
+            scheme = ""
+        return scheme in ("", "file")
 
     @staticmethod
-    def tmp_destination_for(dest, tmp_prefix='.'):
+    def tmp_destination_for(dest, tmp_prefix="."):
         """Return a copy of dest with the basename prefixed by tmp_prefix."""
         try:
             path = dest.path
@@ -202,19 +202,19 @@ class Mover:
         with self.active_connection_lock:
             LOGGER.debug("Destination username and passwd: %s %s",
                          self._dest_username, self._dest_password)
-            LOGGER.debug('Getting connection to %s@%s:%s',
+            LOGGER.debug("Getting connection to %s@%s:%s",
                          username, hostname, port)
             try:
                 connection, timer = self.active_connections[(hostname, port, username)]
                 if not self.is_connected(connection):
                     del self.active_connections[(hostname, port, username)]
-                    LOGGER.debug('Resetting connection')
+                    LOGGER.debug("Resetting connection")
                     connection = self.open_connection()
                 timer.cancel()
             except KeyError:
                 connection = self.open_connection()
 
-            timer = CTimer(int(self.attrs.get('connection_uptime', 30)),
+            timer = CTimer(int(self.attrs.get("connection_uptime", 30)),
                            self.delete_connection, (connection,))
             timer.start()
             self.active_connections[(self.destination.hostname, port, username)] = connection, timer
@@ -224,7 +224,7 @@ class Mover:
     def delete_connection(self, connection):
         """Delete active connection *connection*."""
         with self.active_connection_lock:
-            LOGGER.debug('Closing connection to %s@%s:%s',
+            LOGGER.debug("Closing connection to %s@%s:%s",
                          self._dest_username, self.destination.hostname, self.destination.port)
             try:
                 if current_thread().finished.is_set():
@@ -316,7 +316,7 @@ class FtpMover(Mover):
         try:
             secrets = netrc.netrc()
         except (netrc.NetrcParseError, FileNotFoundError) as e__:
-            LOGGER.warning('Failed retrieve authentification details from netrc file! Exception: %s', str(e__))
+            LOGGER.warning("Failed retrieve authentification details from netrc file! Exception: %s", str(e__))
             return
 
         LOGGER.debug("Destination hostname: %s", self.destination.hostname)
@@ -324,7 +324,7 @@ class FtpMover(Mover):
         LOGGER.debug("Check if hostname matches any listed in the netrc file")
         if self.destination.hostname in list(secrets.hosts.keys()):
             self._dest_username, account, self._dest_password = secrets.authenticators(self.destination.hostname)
-            LOGGER.debug('Got username and password from netrc file!')
+            LOGGER.debug("Got username and password from netrc file!")
 
     def open_connection(self):
         """Open the connection and login."""
@@ -382,13 +382,13 @@ class FtpMover(Mover):
                     connection.mkd(current_dir)
                     connection.cwd(current_dir)
 
-        LOGGER.debug('cd to %s', os.path.dirname(self.destination.path))
+        LOGGER.debug("cd to %s", os.path.dirname(self.destination.path))
         destination_dirname, destination_filename = os.path.split(self.destination.path)
         cd_tree(destination_dirname)
         if not destination_filename:
             destination_filename = os.path.basename(self.origin)
-        with open(self.origin, 'rb') as file_obj:
-            connection.storbinary('STOR ' + destination_filename,
+        with open(self.origin, "rb") as file_obj:
+            connection.storbinary("STOR " + destination_filename,
                                   file_obj)
 
     def finalize_atomic_transfer(self, tmp_destination, final_destination):
@@ -541,12 +541,12 @@ class ScpMover(Mover):
             final_dir = os.path.dirname(final_destination.path)
             # ensure final directory exists
             if final_dir:
-                parts = final_dir.split('/')
-                path = ''
+                parts = final_dir.split("/")
+                path = ""
                 for p in parts:
                     if not p:
                         continue
-                    path = path + '/' + p
+                    path = path + "/" + p
                     try:
                         sftp.stat(path)
                     except IOError:
@@ -601,12 +601,12 @@ class SftpMover(Mover):
             with ssh.open_sftp() as sftp:
                 final_dir = os.path.dirname(final_destination.path)
                 if final_dir:
-                    parts = final_dir.split('/')
-                    path = ''
+                    parts = final_dir.split("/")
+                    path = ""
                     for p in parts:
                         if not p:
                             continue
-                        path = path + '/' + p
+                        path = path + "/" + p
                         try:
                             sftp.stat(path)
                         except IOError:
@@ -691,58 +691,58 @@ class S3Mover(Mover):
         if S3FileSystem is None and boto3 is None:
             raise ImportError("S3Mover requires 's3fs' or 'boto3' to be installed.")
 
-        use_multipart = bool(self.attrs.get('s3_use_multipart', False))
-        use_copy = bool(self.attrs.get('s3_use_copy', False))
-        tmp_prefix = self.attrs.get('tmp_prefix', '.')
+        use_multipart = bool(self.attrs.get("s3_use_multipart", False))
+        use_copy = bool(self.attrs.get("s3_use_copy", False))
+        tmp_prefix = self.attrs.get("tmp_prefix", ".")
 
         # Destination path inside bucket (bucket/key or bucket/dir/file)
         destination_file_path = self._get_destination()
-        LOGGER.debug('destination_file_path = %s', destination_file_path)
+        LOGGER.debug("destination_file_path = %s", destination_file_path)
 
         # Prefer multipart upload using boto3 when configured and available
         if use_multipart and boto3 is not None:
             # Derive final key: if basename starts with tmp_prefix, strip it
-            parts = destination_file_path.split('/')
+            parts = destination_file_path.split("/")
             if len(parts) == 1:
                 bucket = parts[0]
-                key = ''
+                key = ""
             else:
                 bucket = parts[0]
-                key = '/'.join(parts[1:])
+                key = "/".join(parts[1:])
 
-            basename = key.split('/')[-1] if key else ''
+            basename = key.split("/")[-1] if key else ""
             if basename.startswith(tmp_prefix):
                 final_basename = basename[len(tmp_prefix):]
-                final_key = key.rsplit('/', 1)[0] + '/' + final_basename if '/' in key else final_basename
+                final_key = key.rsplit("/", 1)[0] + "/" + final_basename if "/" in key else final_basename
             else:
                 final_key = key
 
             # Build boto3 client with optional client_kwargs or credentials
-            boto_kwargs = dict(self.attrs.get('client_kwargs', {})) if isinstance(self.attrs.get('client_kwargs', {}), dict) else {}
-            if self.attrs.get('key') and self.attrs.get('secret'):
+            boto_kwargs = dict(self.attrs.get("client_kwargs", {})) if isinstance(self.attrs.get("client_kwargs", {}), dict) else {}
+            if self.attrs.get("key") and self.attrs.get("secret"):
                 # Use explicit credentials
-                client = boto3.client('s3', aws_access_key_id=self.attrs.get('key'), aws_secret_access_key=self.attrs.get('secret'), **boto_kwargs)
+                client = boto3.client("s3", aws_access_key_id=self.attrs.get("key"), aws_secret_access_key=self.attrs.get("secret"), **boto_kwargs)
             else:
-                client = boto3.client('s3', **boto_kwargs)
+                client = boto3.client("s3", **boto_kwargs)
 
             # multipart upload in chunks of 8MB
-            chunk_size = int(self.attrs.get('s3_multipart_chunksize', 8 * 1024 * 1024))
+            chunk_size = int(self.attrs.get("s3_multipart_chunksize", 8 * 1024 * 1024))
             try:
                 mp = client.create_multipart_upload(Bucket=bucket, Key=final_key)
-                upload_id = mp['UploadId']
+                upload_id = mp["UploadId"]
                 parts = []
                 part_number = 1
-                with open(self.origin, 'rb') as f:
+                with open(self.origin, "rb") as f:
                     while True:
                         data = f.read(chunk_size)
                         if not data:
                             break
                         resp = client.upload_part(Bucket=bucket, Key=final_key, PartNumber=part_number, UploadId=upload_id, Body=data)
-                        parts.append({'ETag': resp['ETag'], 'PartNumber': part_number})
+                        parts.append({"ETag": resp["ETag"], "PartNumber": part_number})
                         part_number += 1
-                client.complete_multipart_upload(Bucket=bucket, Key=final_key, UploadId=upload_id, MultipartUpload={'Parts': parts})
+                client.complete_multipart_upload(Bucket=bucket, Key=final_key, UploadId=upload_id, MultipartUpload={"Parts": parts})
             except Exception as e:
-                LOGGER.exception('Multipart upload failed: %s', str(e))
+                LOGGER.exception("Multipart upload failed: %s", str(e))
                 try:
                     client.abort_multipart_upload(Bucket=bucket, Key=final_key, UploadId=upload_id)
                 except Exception:
@@ -750,15 +750,15 @@ class S3Mover(Mover):
                 raise
 
             # Update destination to final key
-            self.destination = urlparse('s3://' + bucket + '/' + final_key)
+            self.destination = urlparse("s3://" + bucket + "/" + final_key)
             return
 
         # Fallback: use s3fs put to destination_file_path (tmp or final)
         if S3FileSystem is None:
             raise ImportError("S3Mover requires 's3fs' to be installed for non-multipart operations.")
         s3 = S3FileSystem(**self.attrs)
-        LOGGER.debug('Before call to put: destination_file_path = %s', destination_file_path)
-        LOGGER.debug('self.origin = %s', self.origin)
+        LOGGER.debug("Before call to put: destination_file_path = %s", destination_file_path)
+        LOGGER.debug("self.origin = %s", self.origin)
         _create_s3_destination_path(s3, destination_file_path)
         s3.put(self.origin, destination_file_path)
 
@@ -773,12 +773,12 @@ class S3Mover(Mover):
         bucket_parts = []
         bucket_parts.append(self.destination.netloc)
 
-        if self.destination.path != '/':
-            bucket_parts.append(self.destination.path.strip('/'))
-        if self.destination.path.endswith('/'):
+        if self.destination.path != "/":
+            bucket_parts.append(self.destination.path.strip("/"))
+        if self.destination.path.endswith("/"):
             bucket_parts.append(os.path.basename(self.origin))
 
-        return '/'.join(bucket_parts)
+        return "/".join(bucket_parts)
 
     def move(self):
         """Move the file."""
@@ -791,54 +791,54 @@ class S3Mover(Mover):
         Default behavior: if multipart upload path was used, there's nothing to do.
         Otherwise, if configured, perform copy+delete (server-side copy) to move tmp key to final key.
         """
-        use_multipart = bool(self.attrs.get('s3_use_multipart', False))
-        use_copy = bool(self.attrs.get('s3_use_copy', False))
-        tmp_prefix = self.attrs.get('tmp_prefix', '.')
+        use_multipart = bool(self.attrs.get("s3_use_multipart", False))
+        use_copy = bool(self.attrs.get("s3_use_copy", False))
+        tmp_prefix = self.attrs.get("tmp_prefix", ".")
 
-        destination_file_path = tmp_destination and (tmp_destination.path.lstrip('/')) or self._get_destination()
+        destination_file_path = tmp_destination and (tmp_destination.path.lstrip("/")) or self._get_destination()
         # derive bucket and keys
-        parts = destination_file_path.split('/')
+        parts = destination_file_path.split("/")
         if len(parts) == 1:
             bucket = parts[0]
-            tmp_key = ''
+            tmp_key = ""
         else:
             bucket = parts[0]
-            tmp_key = '/'.join(parts[1:])
+            tmp_key = "/".join(parts[1:])
 
-        basename = tmp_key.split('/')[-1] if tmp_key else ''
+        basename = tmp_key.split("/")[-1] if tmp_key else ""
         if basename.startswith(tmp_prefix):
             final_basename = basename[len(tmp_prefix):]
-            final_key = tmp_key.rsplit('/', 1)[0] + '/' + final_basename if '/' in tmp_key else final_basename
+            final_key = tmp_key.rsplit("/", 1)[0] + "/" + final_basename if "/" in tmp_key else final_basename
         else:
             final_key = tmp_key
 
         # If multipart path was used and boto3 completed upload to final key, nothing to do
         if use_multipart and boto3 is not None:
-            self.destination = urlparse('s3://' + bucket + '/' + final_key)
+            self.destination = urlparse("s3://" + bucket + "/" + final_key)
             return
 
         # Otherwise perform copy+delete if configured
         if not use_copy:
             # No server-side rename available and copy disabled: raise to indicate unsupported op
-            raise NotImplementedError('S3 atomic finalize requires either multipart uploads or copy+delete fallback')
+            raise NotImplementedError("S3 atomic finalize requires either multipart uploads or copy+delete fallback")
 
         # use s3fs or boto3 to copy and delete tmp key
         if S3FileSystem is not None:
             s3 = S3FileSystem(**self.attrs)
-            s3.copy(destination_file_path, bucket + '/' + final_key)
+            s3.copy(destination_file_path, bucket + "/" + final_key)
             s3.rm(destination_file_path)
-            self.destination = urlparse('s3://' + bucket + '/' + final_key)
+            self.destination = urlparse("s3://" + bucket + "/" + final_key)
             return
 
         if boto3 is None:
-            raise ImportError('No S3 backend available for copy+delete finalize')
+            raise ImportError("No S3 backend available for copy+delete finalize")
         # boto3 copy_object and delete_object
-        boto_kwargs = dict(self.attrs.get('client_kwargs', {})) if isinstance(self.attrs.get('client_kwargs', {}), dict) else {}
-        client = boto3.client('s3', **boto_kwargs)
-        copy_source = {'Bucket': bucket, 'Key': tmp_key}
+        boto_kwargs = dict(self.attrs.get("client_kwargs", {})) if isinstance(self.attrs.get("client_kwargs", {}), dict) else {}
+        client = boto3.client("s3", **boto_kwargs)
+        copy_source = {"Bucket": bucket, "Key": tmp_key}
         client.copy_object(CopySource=copy_source, Bucket=bucket, Key=final_key)
         client.delete_object(Bucket=bucket, Key=tmp_key)
-        self.destination = urlparse('s3://' + bucket + '/' + final_key)
+        self.destination = urlparse("s3://" + bucket + "/" + final_key)
 
 
 def _create_s3_destination_path(s3, destination_file_path):
@@ -847,10 +847,10 @@ def _create_s3_destination_path(s3, destination_file_path):
         s3.mkdirs(destination_path)
 
 
-MOVERS = {'ftp': FtpMover,
-          'file': FileMover,
-          '': FileMover,
-          'scp': ScpMover,
-          'sftp': SftpMover,
-          's3': S3Mover,
+MOVERS = {"ftp": FtpMover,
+          "file": FileMover,
+          "": FileMover,
+          "scp": ScpMover,
+          "sftp": SftpMover,
+          "s3": S3Mover,
           }

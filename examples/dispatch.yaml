@@ -64,7 +64,7 @@ target-s3-example1:
     # Optional atomic transfer options for S3 mover:
     # s3_use_multipart: True      # Prefer multipart upload (boto3 required)
     # s3_use_copy: False          # If multipart not used, perform copy+delete to finalize tmp key
-    # tmp_prefix: '.'             # Prefix used for temporary keys (e.g. '.filename')
+    # tmp_prefix: "\1"             # Prefix used for temporary keys (e.g. "\1")
     # s3_multipart_chunksize: 8388608  # Chunk size in bytes for multipart uploads
   aliases:
     platform_name:
