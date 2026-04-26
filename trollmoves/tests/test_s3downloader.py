@@ -345,7 +345,7 @@ def test_listener_init(patch_listener_queue):
 
 
 @patch("posttroll.subscriber.Subscriber")
-@patch("posttroll.subscriber.get_pub_address")
+@patch("posttroll.ns.get_pub_address")
 def test_listener_message(patch_get_pub_address, patch_subscriber, caplog):
     """Test listener push message."""
     import logging
@@ -368,7 +368,7 @@ def test_listener_message(patch_get_pub_address, patch_subscriber, caplog):
 
 
 @patch("posttroll.subscriber.Subscriber")
-@patch("posttroll.subscriber.get_pub_address")
+@patch("posttroll.ns.get_pub_address")
 @patch("queue.Queue")
 def test_listener_message_break(patch_listener_queue, patch_get_pub_address, patch_subscriber, caplog):
     """Test listener push message."""
@@ -419,7 +419,7 @@ def test_listener_message_stop():
 
 
 @patch("posttroll.subscriber.Subscriber")
-@patch("posttroll.subscriber.get_pub_address")
+@patch("posttroll.ns.get_pub_address")
 def test_listener_message_check_config(patch_get_pub_address, patch_subscriber):
     """Test listener push message."""
     import queue
@@ -437,7 +437,7 @@ def test_listener_message_check_config(patch_get_pub_address, patch_subscriber):
 
 
 @patch("posttroll.subscriber.Subscriber")
-@patch("posttroll.subscriber.get_pub_address")
+@patch("posttroll.ns.get_pub_address")
 def test_listener_message_check_message_and_put(patch_get_pub_address, patch_subscriber):
     """Test listener push message."""
     import queue
@@ -457,7 +457,7 @@ def test_listener_message_check_message_and_put(patch_get_pub_address, patch_sub
 
 
 @patch("posttroll.subscriber.Subscriber")
-@patch("posttroll.subscriber.get_pub_address")
+@patch("posttroll.ns.get_pub_address")
 def test_listener_message_exception_1(patch_get_pub_address, patch_subscriber):
     """Test listener push message."""
     import queue
@@ -472,7 +472,7 @@ def test_listener_message_exception_1(patch_get_pub_address, patch_subscriber):
 
 
 @patch("posttroll.subscriber.Subscriber")
-@patch("posttroll.subscriber.get_pub_address")
+@patch("posttroll.ns.get_pub_address")
 def test_listener_message_exception_2(patch_get_pub_address, patch_subscriber):
     """Test listener push message."""
     import queue
