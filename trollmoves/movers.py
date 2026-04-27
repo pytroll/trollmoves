@@ -8,7 +8,7 @@ import socket
 import sys
 import time
 import traceback
-from ftplib import FTP, all_errors, error_perm
+from ftplib import FTP, all_errors
 from threading import Event, Lock, Thread, current_thread
 from urllib.parse import urlparse
 
@@ -22,7 +22,8 @@ except ImportError:
     boto3 = None
 
 from trollmoves.utils import clean_url
-from ._mover_utils import ensure_remote_dirs, ensure_local_dir, ensure_final_directory_for_rename
+
+from ._mover_utils import ensure_final_directory_for_rename, ensure_remote_dirs
 
 S3_ALLOWED_SETTINGS = ["anon", "endpoint_url", "key", "secret",
                        "token", "use_ssl", "s3_additional_kwargs", "client_kwargs",
@@ -623,7 +624,6 @@ class S3Mover(Mover):
             raise ImportError("S3Mover requires 's3fs' or 'boto3' to be installed.")
 
         use_multipart = bool(self.attrs.get("s3_use_multipart", False))
-        use_copy = bool(self.attrs.get("s3_use_copy", False))
         tmp_prefix = self.attrs.get("tmp_prefix", ".")
 
         # Destination path inside bucket (bucket/key or bucket/dir/file)
@@ -649,10 +649,16 @@ class S3Mover(Mover):
                 final_key = key
 
             # Build boto3 client with optional client_kwargs or credentials
-            boto_kwargs = dict(self.attrs.get("client_kwargs", {})) if isinstance(self.attrs.get("client_kwargs", {}), dict) else {}
+            client_kwargs = self.attrs.get("client_kwargs", {})
+            boto_kwargs = dict(client_kwargs) if isinstance(client_kwargs, dict) else {}
             if self.attrs.get("key") and self.attrs.get("secret"):
                 # Use explicit credentials
-                client = boto3.client("s3", aws_access_key_id=self.attrs.get("key"), aws_secret_access_key=self.attrs.get("secret"), **boto_kwargs)
+                client = boto3.client(
+                    "s3",
+                    aws_access_key_id=self.attrs.get("key"),
+                    aws_secret_access_key=self.attrs.get("secret"),
+                    **boto_kwargs,
+                )
             else:
                 client = boto3.client("s3", **boto_kwargs)
 
@@ -668,10 +674,16 @@ class S3Mover(Mover):
                         data = f.read(chunk_size)
                         if not data:
                             break
-                        resp = client.upload_part(Bucket=bucket, Key=final_key, PartNumber=part_number, UploadId=upload_id, Body=data)
+                        resp = client.upload_part(
+                            Bucket=bucket, Key=final_key, PartNumber=part_number,
+                            UploadId=upload_id, Body=data,
+                        )
                         parts.append({"ETag": resp["ETag"], "PartNumber": part_number})
                         part_number += 1
-                client.complete_multipart_upload(Bucket=bucket, Key=final_key, UploadId=upload_id, MultipartUpload={"Parts": parts})
+                client.complete_multipart_upload(
+                    Bucket=bucket, Key=final_key, UploadId=upload_id,
+                    MultipartUpload={"Parts": parts},
+                )
             except Exception as e:
                 LOGGER.exception("Multipart upload failed: %s", str(e))
                 try:
@@ -726,7 +738,12 @@ class S3Mover(Mover):
         use_copy = bool(self.attrs.get("s3_use_copy", False))
         tmp_prefix = self.attrs.get("tmp_prefix", ".")
 
-        destination_file_path = tmp_destination and (tmp_destination.path.lstrip("/")) or self._get_destination()
+        if tmp_destination:
+            _bucket = tmp_destination.netloc
+            _key = tmp_destination.path.lstrip("/")
+            destination_file_path = _bucket + "/" + _key if _key else _bucket
+        else:
+            destination_file_path = self._get_destination()
         # derive bucket and keys
         parts = destination_file_path.split("/")
         if len(parts) == 1:
@@ -764,7 +781,8 @@ class S3Mover(Mover):
         if boto3 is None:
             raise ImportError("No S3 backend available for copy+delete finalize")
         # boto3 copy_object and delete_object
-        boto_kwargs = dict(self.attrs.get("client_kwargs", {})) if isinstance(self.attrs.get("client_kwargs", {}), dict) else {}
+        client_kwargs = self.attrs.get("client_kwargs", {})
+        boto_kwargs = dict(client_kwargs) if isinstance(client_kwargs, dict) else {}
         client = boto3.client("s3", **boto_kwargs)
         copy_source = {"Bucket": bucket, "Key": tmp_key}
         client.copy_object(CopySource=copy_source, Bucket=bucket, Key=final_key)
