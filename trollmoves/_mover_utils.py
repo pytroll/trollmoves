@@ -5,6 +5,7 @@ and dependency-free; supports FTP-like objects (ftplib.FTP) and SFTP-like
 (paramiko SFTPClient) objects by duck-typing.
 """
 
+import ftplib
 import os
 
 
@@ -35,7 +36,7 @@ def _ensure_remote_dirs_ftp(connection, parts):
     try:
         connection.cwd(path)
         return
-    except Exception:
+    except (ftplib.Error, OSError):
         pass
 
     # Build path from root, creating missing segments and only cd'ing when needed
@@ -44,22 +45,22 @@ def _ensure_remote_dirs_ftp(connection, parts):
         current = current + "/" + part
         try:
             connection.cwd(current)
-        except Exception:
+        except (ftplib.Error, OSError):
             # try to create the directory; accept failures silently and proceed
             try:
                 connection.mkd(current)
-            except Exception:
+            except (ftplib.Error, OSError):
                 try:
                     connection.mkd(part)
-                except Exception:
+                except (ftplib.Error, OSError):
                     pass
             # after creating, change into it
             try:
                 connection.cwd(current)
-            except Exception:
+            except (ftplib.Error, OSError):
                 try:
                     connection.cwd(part)
-                except Exception:
+                except (ftplib.Error, OSError):
                     pass
 
 
@@ -74,13 +75,13 @@ def _ensure_remote_dirs_sftp(connection, parts):
         current = current + "/" + part
         try:
             connection.stat(current)
-        except Exception:
+        except OSError:
             try:
                 connection.mkdir(current)
-            except Exception:
+            except OSError:
                 try:
                     connection.mkdir(part)
-                except Exception:
+                except OSError:
                     pass
 
 
@@ -136,5 +137,5 @@ def ensure_final_directory_for_rename(sftp_connection, final_destination_path):
         except OSError:
             try:
                 sftp_connection.mkdir(path)
-            except Exception:
+            except OSError:
                 pass

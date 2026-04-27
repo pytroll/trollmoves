@@ -79,7 +79,8 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None, backup_
             try:
                 m.finalize_atomic_transfer(tmp_dest, new_dest)
             except Exception:
-                # Clean up local tmp file on any error; remote tmp files are not cleaned up here
+                # Intentionally broad: must clean up local tmp regardless of protocol error.
+                # Re-raises so the caller sees the original failure.
                 try:
                     if hasattr(tmp_dest, "path") and os.path.exists(tmp_dest.path):
                         os.remove(tmp_dest.path)
@@ -96,6 +97,7 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None, backup_
         if hook:
             hook(pathname, new_dest)
     except Exception as err:
+        # Intentionally broad: logs and re-raises any failure from copy/finalize across all protocols.
         exc_type, exc_value, exc_traceback = sys.exc_info()
         LOGGER.error("Something went wrong during copy of %s to %s: %s",
                      pathname, str(fake_dest), str(err))
@@ -143,7 +145,7 @@ class Mover:
         """
         try:
             scheme = self.destination.scheme
-        except Exception:
+        except AttributeError:
             scheme = ""
         return scheme in ("", "file")
 
@@ -152,7 +154,7 @@ class Mover:
         """Return a copy of dest with the basename prefixed by tmp_prefix."""
         try:
             path = dest.path
-        except Exception:
+        except AttributeError:
             return dest
         dirname = os.path.dirname(path)
         basename = os.path.basename(path)
@@ -360,7 +362,7 @@ class FtpMover(Mover):
         ensure_remote_dirs(connection, dest_dirname)
         try:
             connection.rename(tmp_basename, final_basename)
-        except Exception as err:
+        except all_errors as err:
             LOGGER.exception("Failed to finalize FTP atomic transfer: %s", str(err))
             raise
         self.destination = final_destination
@@ -408,6 +410,8 @@ class ScpMover(Mover):
             except socket.timeout as sto:
                 LOGGER.exception("SSH connection timed out: %s", str(sto))
             except Exception as err:
+                # Intentionally broad: SSHClient.connect() may raise unexpected exceptions
+                # (e.g. from underlying transport or third-party SSH agents).
                 LOGGER.exception("Unknown exception at init SSHClient: %s", str(err))
             else:
                 return ssh_connection
@@ -450,14 +454,15 @@ class ScpMover(Mover):
 
     def copy(self):
         """Upload the file."""
-        from scp import SCPClient
+        from paramiko import SSHException as _SSHException
+        from scp import SCPClient, SCPException
 
         ssh_connection = self.get_connection(self.destination.hostname,
                                              self.destination.port or 22,
                                              self._dest_username)
         try:
             scp = SCPClient(ssh_connection.get_transport())
-        except Exception as err:
+        except (TypeError, _SSHException, OSError) as err:
             LOGGER.error("Failed to initiate SCPClient: %s", str(err))
             ssh_connection.close()
             raise
@@ -473,7 +478,7 @@ class ScpMover(Mover):
             else:
                 LOGGER.error("OSError in scp.put: %s", str(osex))
                 raise
-        except Exception as err:
+        except (SCPException, _SSHException) as err:
             LOGGER.error("Something went wrong with scp: %s", str(err))
             LOGGER.error("Exception name %s", type(err).__name__)
             LOGGER.error("Exception args %s", str(err.args))
@@ -483,6 +488,7 @@ class ScpMover(Mover):
 
     def finalize_atomic_transfer(self, tmp_destination, final_destination):
         """Finalize atomic transfer for SCP by performing remote rename via SFTP."""
+        from paramiko import SSHException as _SSHException
         ssh_connection = self.get_connection(self.destination.hostname,
                                              self.destination.port or 22,
                                              self._dest_username)
@@ -495,7 +501,7 @@ class ScpMover(Mover):
             if sftp is not None:
                 try:
                     sftp.close()
-                except Exception:
+                except (_SSHException, OSError):
                     pass
         self.destination = final_destination
 
@@ -622,6 +628,8 @@ class S3Mover(Mover):
 
         # Prefer multipart upload using boto3 when configured and available
         if use_multipart and boto3 is not None:
+            from botocore.exceptions import BotoCoreError
+            from botocore.exceptions import ClientError as BotoCoreClientError
             # Derive final key: if basename starts with tmp_prefix, strip it
             path_parts = destination_file_path.split("/")
             if len(path_parts) == 1:
@@ -675,12 +683,12 @@ class S3Mover(Mover):
                     Bucket=bucket, Key=final_key, UploadId=upload_id,
                     MultipartUpload={"Parts": upload_parts},
                 )
-            except Exception as e:
+            except (BotoCoreClientError, BotoCoreError, OSError) as e:
                 LOGGER.exception("Multipart upload failed: %s", str(e))
                 if upload_id is not None:
                     try:
                         client.abort_multipart_upload(Bucket=bucket, Key=final_key, UploadId=upload_id)
-                    except Exception:
+                    except (BotoCoreClientError, BotoCoreError):
                         pass
                 raise
 
