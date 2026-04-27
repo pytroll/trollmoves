@@ -18,7 +18,7 @@ def ensure_local_dir(path):
         return
     dirname = path
     if os.path.isfile(path) or os.path.splitext(path)[1]:
-        dirname = os.path.dirname(path) or '.'
+        dirname = os.path.dirname(path) or "."
     os.makedirs(dirname, exist_ok=True)
 
 
@@ -133,7 +133,7 @@ def ensure_final_directory_for_rename(sftp_connection, final_destination_path):
         path = path + "/" + p
         try:
             sftp_connection.stat(path)
-        except IOError:
+        except OSError:
             try:
                 sftp_connection.mkdir(path)
             except Exception:

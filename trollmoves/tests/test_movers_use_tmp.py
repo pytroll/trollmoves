@@ -175,8 +175,10 @@ def test_move_it_use_tmp_cleanup_on_finalize_error(tmp_path, source_file, monkey
     destination = str(dest_dir / "data.txt")
     attrs = {"use_tmp_on_transfer": True}
 
-    monkeypatch.setattr(FileMover, "finalize_atomic_transfer",
-                        lambda *_: (_ for _ in ()).throw(NotImplementedError("simulated")))
+    def _raise(*_):
+        raise NotImplementedError("simulated")
+
+    monkeypatch.setattr(FileMover, "finalize_atomic_transfer", _raise)
 
     with pytest.raises(NotImplementedError):
         move_it(str(source_file), destination, attrs=attrs)
@@ -184,6 +186,27 @@ def test_move_it_use_tmp_cleanup_on_finalize_error(tmp_path, source_file, monkey
     # The tmp file must have been cleaned up
     assert not (dest_dir / ".data.txt").exists()
     # The final destination should not exist either
+    assert not (dest_dir / "data.txt").exists()
+
+
+def test_move_it_use_tmp_cleanup_on_oserror(tmp_path, source_file, monkeypatch):
+    """Non-NotImplementedError exceptions from finalize also trigger cleanup."""
+    from trollmoves.movers import FileMover, move_it
+
+    dest_dir = tmp_path / "dest"
+    dest_dir.mkdir()
+    destination = str(dest_dir / "data.txt")
+    attrs = {"use_tmp_on_transfer": True}
+
+    def _raise_os(*_):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(FileMover, "finalize_atomic_transfer", _raise_os)
+
+    with pytest.raises(OSError, match="disk full"):
+        move_it(str(source_file), destination, attrs=attrs)
+
+    assert not (dest_dir / ".data.txt").exists()
     assert not (dest_dir / "data.txt").exists()
 
 
@@ -282,7 +305,7 @@ def test_move_it_use_tmp_sftp_scheme(tmp_path, source_file, monkeypatch):
 # ===========================================================================
 
 def test_ftp_mover_finalize_atomic_transfer_rename_args():
-    """FtpMover.finalize_atomic_transfer calls rename with correct basenames."""
+    """FtpMover.finalize_atomic_transfer: cwd to dest dir then rename with basenames."""
     from trollmoves.movers import FtpMover
 
     origin = "/path/to/source.txt"
@@ -294,9 +317,10 @@ def test_ftp_mover_finalize_atomic_transfer_rename_args():
     final_dest = urlparse("ftp://ftphost/remote/dir/source.txt")
 
     with patch.object(mover, "get_connection", return_value=mock_connection):
-        with patch("trollmoves.movers.ensure_remote_dirs"):
-            mover.finalize_atomic_transfer(tmp_dest, final_dest)
+        mover.finalize_atomic_transfer(tmp_dest, final_dest)
 
+    # ensure_remote_dirs cds to the directory; rename uses basenames relative to that cwd
+    mock_connection.cwd.assert_called_with("/remote/dir")
     mock_connection.rename.assert_called_once_with(".source.txt", "source.txt")
 
 
@@ -310,8 +334,7 @@ def test_ftp_mover_finalize_updates_destination():
     final_dest = urlparse("ftp://ftphost/dir/file.txt")
 
     with patch.object(mover, "get_connection", return_value=mock_connection):
-        with patch("trollmoves.movers.ensure_remote_dirs"):
-            mover.finalize_atomic_transfer(tmp_dest, final_dest)
+        mover.finalize_atomic_transfer(tmp_dest, final_dest)
 
     assert mover.destination == final_dest
 
@@ -322,22 +345,27 @@ def test_ftp_mover_finalize_updates_destination():
 
 @patch("trollmoves.movers.S3FileSystem")
 def test_s3_mover_finalize_copy_mode(mock_s3fs):
-    """s3_use_copy=True: finalize calls s3.copy and s3.rm with correct keys."""
+    """s3_use_copy=True: finalize uses final_destination directly (not tmp-stripping).
+
+    tmp is in a staging prefix; final is in a completely different path to prove
+    the implementation reads final_destination rather than reverse-engineering it
+    from the tmp path.
+    """
     from trollmoves.movers import S3Mover
 
     mock_s3 = MagicMock()
     mock_s3fs.return_value = mock_s3
 
-    mover = S3Mover("/local/file.txt", "s3://mybucket/dir/file.txt",
+    mover = S3Mover("/local/file.txt", "s3://mybucket/staging/.file.txt",
                     attrs={"s3_use_copy": True, "tmp_prefix": "."})
 
-    tmp_dest = urlparse("s3://mybucket/dir/.file.txt")
-    final_dest = urlparse("s3://mybucket/dir/file.txt")
+    tmp_dest = urlparse("s3://mybucket/staging/.file.txt")
+    final_dest = urlparse("s3://mybucket/archive/2024/file.txt")  # different dir
     mover.finalize_atomic_transfer(tmp_dest, final_dest)
 
-    mock_s3.copy.assert_called_once_with("mybucket/dir/.file.txt", "mybucket/dir/file.txt")
-    mock_s3.rm.assert_called_once_with("mybucket/dir/.file.txt")
-    assert mover.destination == urlparse("s3://mybucket/dir/file.txt")
+    mock_s3.copy.assert_called_once_with("mybucket/staging/.file.txt", "mybucket/archive/2024/file.txt")
+    mock_s3.rm.assert_called_once_with("mybucket/staging/.file.txt")
+    assert mover.destination == urlparse("s3://mybucket/archive/2024/file.txt")
 
 
 @patch("trollmoves.movers.boto3")
@@ -369,3 +397,34 @@ def test_s3_mover_finalize_raises_if_unconfigured():
 
     with pytest.raises(NotImplementedError):
         mover.finalize_atomic_transfer(tmp_dest, final_dest)
+
+
+# ===========================================================================
+# Group H – move_it() FTP end-to-end with use_tmp (mocked)
+# ===========================================================================
+
+@patch("trollmoves.movers.FTP")
+def test_move_it_use_tmp_ftp_scheme(mock_ftp_class, tmp_path):
+    """Full use_tmp round-trip via move_it() with ftp:// destination (mocked FTP)."""
+    from trollmoves.movers import move_it
+
+    source = tmp_path / "upload.txt"
+    source.write_text("ftp content")
+
+    mock_ftp = MagicMock()
+    mock_ftp_class.return_value.__enter__ = lambda s: mock_ftp
+    mock_ftp_class.return_value.__exit__ = MagicMock(return_value=False)
+    mock_ftp_class.return_value = mock_ftp
+
+    destination = "ftp://ftphost/remote/dir/upload.txt"
+    attrs = {"use_tmp_on_transfer": True}
+
+    move_it(str(source), destination, attrs=attrs)
+
+    # copy step: storbinary was called once (for the tmp file)
+    assert mock_ftp.storbinary.call_count == 1
+    store_call_args = mock_ftp.storbinary.call_args[0]
+    assert store_call_args[0] == "STOR .upload.txt"
+
+    # finalize step: rename was called once from tmp to final
+    mock_ftp.rename.assert_called_once_with(".upload.txt", "upload.txt")
