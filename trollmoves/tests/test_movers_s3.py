@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 
 import pytest
 
-from trollmoves.movers import S3Mover, S3FileSystem, boto3
+from trollmoves.movers import S3Mover
 
 
 def test_s3_multipart_upload():
@@ -80,4 +80,90 @@ def test_s3_copy_delete_fallback(mock_s3fs):
     mock_s3.rm.assert_called_once()
 
     # Cleanup
+    os.remove(tmpname)
+
+
+def test_build_boto3_client_default_credentials():
+    """_build_boto3_client uses boto3 default chain when no key/secret present."""
+    with tempfile.NamedTemporaryFile("wb", delete=False) as f:
+        tmpname = f.name
+
+    mock_boto_mod = MagicMock()
+    mock_boto_mod.client = MagicMock(return_value=MagicMock())
+
+    with patch("trollmoves.movers.boto3", new=mock_boto_mod):
+        mover = S3Mover(tmpname, "s3://bucket/key", attrs={"client_kwargs": {"endpoint_url": "http://minio"}})
+        mover._build_boto3_client()
+        mock_boto_mod.client.assert_called_once_with("s3", endpoint_url="http://minio")
+
+    os.remove(tmpname)
+
+
+def test_build_boto3_client_explicit_credentials():
+    """_build_boto3_client passes key, secret, and token when present."""
+    with tempfile.NamedTemporaryFile("wb", delete=False) as f:
+        tmpname = f.name
+
+    mock_boto_mod = MagicMock()
+    mock_boto_mod.client = MagicMock(return_value=MagicMock())
+
+    with patch("trollmoves.movers.boto3", new=mock_boto_mod):
+        attrs = {"key": "AKID", "secret": "SECRET", "token": "MYTOKEN"}
+        mover = S3Mover(tmpname, "s3://bucket/key", attrs=attrs)
+        mover._build_boto3_client()
+        mock_boto_mod.client.assert_called_once_with(
+            "s3",
+            aws_access_key_id="AKID",
+            aws_secret_access_key="SECRET",
+            aws_session_token="MYTOKEN",
+        )
+
+    os.remove(tmpname)
+
+
+def test_do_multipart_upload_aborts_on_error():
+    """_do_multipart_upload aborts the upload when an error occurs mid-upload."""
+    with tempfile.NamedTemporaryFile("wb", delete=False) as f:
+        f.write(b"data")
+        tmpname = f.name
+
+    from botocore.exceptions import ClientError
+
+    mock_client = MagicMock()
+    mock_client.create_multipart_upload.return_value = {"UploadId": "uid-abort"}
+    mock_client.upload_part.side_effect = ClientError(
+        {"Error": {"Code": "InternalError", "Message": "fail"}}, "UploadPart"
+    )
+
+    mock_boto_mod = MagicMock()
+    with patch("trollmoves.movers.boto3", new=mock_boto_mod):
+        mover = S3Mover(tmpname, "s3://bucket/key", attrs={})
+        with pytest.raises(ClientError):
+            mover._do_multipart_upload(mock_client, "bucket", "key")
+
+    mock_client.abort_multipart_upload.assert_called_once_with(
+        Bucket="bucket", Key="key", UploadId="uid-abort"
+    )
+    os.remove(tmpname)
+
+
+def test_do_multipart_upload_no_abort_when_create_fails():
+    """_do_multipart_upload does not call abort if create_multipart_upload itself fails."""
+    with tempfile.NamedTemporaryFile("wb", delete=False) as f:
+        tmpname = f.name
+
+    from botocore.exceptions import ClientError
+
+    mock_client = MagicMock()
+    mock_client.create_multipart_upload.side_effect = ClientError(
+        {"Error": {"Code": "AccessDenied", "Message": "denied"}}, "CreateMultipartUpload"
+    )
+
+    mock_boto_mod = MagicMock()
+    with patch("trollmoves.movers.boto3", new=mock_boto_mod):
+        mover = S3Mover(tmpname, "s3://bucket/key", attrs={})
+        with pytest.raises(ClientError):
+            mover._do_multipart_upload(mock_client, "bucket", "key")
+
+    mock_client.abort_multipart_upload.assert_not_called()
     os.remove(tmpname)

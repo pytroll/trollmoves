@@ -619,81 +619,11 @@ class S3Mover(Mover):
         if S3FileSystem is None and boto3 is None:
             raise ImportError("S3Mover requires 's3fs' or 'boto3' to be installed.")
 
-        use_multipart = bool(self.attrs.get("s3_use_multipart", False))
-        tmp_prefix = self.attrs.get("tmp_prefix", ".")
-
-        # Destination path inside bucket (bucket/key or bucket/dir/file)
         destination_file_path = self._get_destination()
         LOGGER.debug("destination_file_path = %s", destination_file_path)
 
-        # Prefer multipart upload using boto3 when configured and available
-        if use_multipart and boto3 is not None:
-            from botocore.exceptions import BotoCoreError
-            from botocore.exceptions import ClientError as BotoCoreClientError
-            # Derive final key: if basename starts with tmp_prefix, strip it
-            path_parts = destination_file_path.split("/")
-            if len(path_parts) == 1:
-                bucket = path_parts[0]
-                key = ""
-            else:
-                bucket = path_parts[0]
-                key = "/".join(path_parts[1:])
-
-            basename = key.split("/")[-1] if key else ""
-            if basename.startswith(tmp_prefix):
-                final_basename = basename[len(tmp_prefix):]
-                final_key = key.rsplit("/", 1)[0] + "/" + final_basename if "/" in key else final_basename
-            else:
-                final_key = key
-
-            # Build boto3 client with optional client_kwargs or credentials
-            client_kwargs = self.attrs.get("client_kwargs", {})
-            boto_kwargs = dict(client_kwargs) if isinstance(client_kwargs, dict) else {}
-            if self.attrs.get("key") and self.attrs.get("secret"):
-                # Use explicit credentials
-                client = boto3.client(
-                    "s3",
-                    aws_access_key_id=self.attrs.get("key"),
-                    aws_secret_access_key=self.attrs.get("secret"),
-                    **boto_kwargs,
-                )
-            else:
-                client = boto3.client("s3", **boto_kwargs)
-
-            # multipart upload in chunks of 8MB
-            chunk_size = int(self.attrs.get("s3_multipart_chunksize", 8 * 1024 * 1024))
-            upload_id = None
-            try:
-                mp = client.create_multipart_upload(Bucket=bucket, Key=final_key)
-                upload_id = mp["UploadId"]
-                upload_parts = []
-                part_number = 1
-                with open(self.origin, "rb") as f:
-                    while True:
-                        data = f.read(chunk_size)
-                        if not data:
-                            break
-                        resp = client.upload_part(
-                            Bucket=bucket, Key=final_key, PartNumber=part_number,
-                            UploadId=upload_id, Body=data,
-                        )
-                        upload_parts.append({"ETag": resp["ETag"], "PartNumber": part_number})
-                        part_number += 1
-                client.complete_multipart_upload(
-                    Bucket=bucket, Key=final_key, UploadId=upload_id,
-                    MultipartUpload={"Parts": upload_parts},
-                )
-            except (BotoCoreClientError, BotoCoreError, OSError) as e:
-                LOGGER.exception("Multipart upload failed: %s", str(e))
-                if upload_id is not None:
-                    try:
-                        client.abort_multipart_upload(Bucket=bucket, Key=final_key, UploadId=upload_id)
-                    except (BotoCoreClientError, BotoCoreError):
-                        pass
-                raise
-
-            # Update destination to final key
-            self.destination = urlparse("s3://" + bucket + "/" + final_key)
+        if bool(self.attrs.get("s3_use_multipart", False)) and boto3 is not None:
+            self._multipart_upload(destination_file_path)
             return
 
         # Fallback: use s3fs put to destination_file_path (tmp or final)
@@ -705,6 +635,86 @@ class S3Mover(Mover):
         LOGGER.debug("self.origin = %s", self.origin)
         _create_s3_destination_path(s3, destination_file_path)
         s3.put(self.origin, destination_file_path)
+
+    def _build_boto3_client(self):
+        """Build and return a boto3 S3 client from attrs.
+
+        Reads client_kwargs, key, secret, and token from self.attrs.
+        Falls back to boto3 default credential chain when key/secret are absent.
+        """
+        client_kwargs = self.attrs.get("client_kwargs", {})
+        boto_kwargs = dict(client_kwargs) if isinstance(client_kwargs, dict) else {}
+        if self.attrs.get("key") and self.attrs.get("secret"):
+            return boto3.client(
+                "s3",
+                aws_access_key_id=self.attrs["key"],
+                aws_secret_access_key=self.attrs["secret"],
+                aws_session_token=self.attrs.get("token"),
+                **boto_kwargs,
+            )
+        return boto3.client("s3", **boto_kwargs)
+
+    def _do_multipart_upload(self, client, bucket, final_key):
+        """Perform a multipart upload of self.origin to bucket/final_key.
+
+        Uploads in chunks of s3_multipart_chunksize bytes (default 8 MB).
+        On failure, aborts the multipart upload (best-effort) and re-raises.
+        """
+        from botocore.exceptions import BotoCoreError
+        from botocore.exceptions import ClientError as BotoCoreClientError
+
+        chunk_size = int(self.attrs.get("s3_multipart_chunksize", 8 * 1024 * 1024))
+        upload_id = None
+        try:
+            mp = client.create_multipart_upload(Bucket=bucket, Key=final_key)
+            upload_id = mp["UploadId"]
+            upload_parts = []
+            part_number = 1
+            with open(self.origin, "rb") as f:
+                while True:
+                    data = f.read(chunk_size)
+                    if not data:
+                        break
+                    resp = client.upload_part(
+                        Bucket=bucket, Key=final_key, PartNumber=part_number,
+                        UploadId=upload_id, Body=data,
+                    )
+                    upload_parts.append({"ETag": resp["ETag"], "PartNumber": part_number})
+                    part_number += 1
+            client.complete_multipart_upload(
+                Bucket=bucket, Key=final_key, UploadId=upload_id,
+                MultipartUpload={"Parts": upload_parts},
+            )
+        except (BotoCoreClientError, BotoCoreError, OSError) as e:
+            LOGGER.exception("Multipart upload failed: %s", str(e))
+            if upload_id is not None:
+                try:
+                    client.abort_multipart_upload(Bucket=bucket, Key=final_key, UploadId=upload_id)
+                except (BotoCoreClientError, BotoCoreError):
+                    pass
+            raise
+
+    def _multipart_upload(self, destination_file_path):
+        """Orchestrate a boto3 multipart upload.
+
+        Parses destination_file_path into bucket and key, strips the tmp_prefix from the
+        basename if present to derive the final key, then uploads and updates self.destination.
+        """
+        tmp_prefix = self.attrs.get("tmp_prefix", ".")
+        path_parts = destination_file_path.split("/")
+        bucket = path_parts[0]
+        key = "/".join(path_parts[1:]) if len(path_parts) > 1 else ""
+
+        basename = key.split("/")[-1] if key else ""
+        if basename.startswith(tmp_prefix):
+            final_basename = basename[len(tmp_prefix):]
+            final_key = key.rsplit("/", 1)[0] + "/" + final_basename if "/" in key else final_basename
+        else:
+            final_key = key
+
+        client = self._build_boto3_client()
+        self._do_multipart_upload(client, bucket, final_key)
+        self.destination = urlparse("s3://" + bucket + "/" + final_key)
 
 
     def _sanitize_attrs(self):
@@ -776,8 +786,7 @@ class S3Mover(Mover):
         if boto3 is None:
             raise ImportError("No S3 backend available for copy+delete finalize")
         # boto3 copy_object and delete_object
-        boto_kwargs = dict(s3_attrs.get("client_kwargs", {}))
-        client = boto3.client("s3", **boto_kwargs)
+        client = self._build_boto3_client()
         copy_source = {"Bucket": tmp_bucket, "Key": tmp_key}
         client.copy_object(CopySource=copy_source, Bucket=final_bucket, Key=final_key)
         client.delete_object(Bucket=tmp_bucket, Key=tmp_key)
