@@ -469,7 +469,7 @@ class ScpMover(Mover):
                 LOGGER.error("No such file or directory. File not transfered: "
                              "%s. Original error message: %s",
                              self.origin, str(osex))
-                raise
+                return
             else:
                 LOGGER.error("OSError in scp.put: %s", str(osex))
                 raise
