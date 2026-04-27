@@ -428,3 +428,71 @@ def test_move_it_use_tmp_ftp_scheme(mock_ftp_class, tmp_path):
 
     # finalize step: rename was called once from tmp to final
     mock_ftp.rename.assert_called_once_with(".upload.txt", "upload.txt")
+
+
+# ===========================================================================
+# Group I – supports_atomic classmethod on each mover class
+# ===========================================================================
+
+def test_supports_atomic_file_mover():
+    """FileMover always supports atomic transfers."""
+    from trollmoves.movers import FileMover
+    assert FileMover.supports_atomic() is True
+    assert FileMover.supports_atomic(attrs={}) is True
+
+
+def test_supports_atomic_ftp_mover():
+    """FtpMover always supports atomic transfers."""
+    from trollmoves.movers import FtpMover
+    assert FtpMover.supports_atomic() is True
+
+
+def test_supports_atomic_scp_mover():
+    """ScpMover always supports atomic transfers."""
+    from trollmoves.movers import ScpMover
+    assert ScpMover.supports_atomic() is True
+
+
+def test_supports_atomic_sftp_mover():
+    """SftpMover always supports atomic transfers."""
+    from trollmoves.movers import SftpMover
+    assert SftpMover.supports_atomic() is True
+
+
+def test_supports_atomic_base_mover_returns_false():
+    """The base Mover class returns False as a safe default."""
+    from trollmoves.movers import Mover
+    assert Mover.supports_atomic() is False
+    assert Mover.supports_atomic(attrs={"use_tmp_on_transfer": True}) is False
+
+
+# ===========================================================================
+# Group J – move_it() falls back when supports_atomic returns False
+# ===========================================================================
+
+def test_move_it_falls_back_when_atomic_not_supported(tmp_path, monkeypatch, caplog):
+    """When use_tmp_on_transfer=True but supports_atomic returns False, move_it
+    falls back to a direct transfer and logs an error."""
+    import logging
+
+    from trollmoves.movers import FileMover, move_it
+
+    # Make FileMover report it does not support atomic so we can test the fallback
+    # without needing a custom protocol.
+    monkeypatch.setattr(FileMover, "supports_atomic", classmethod(lambda cls, attrs=None: False))
+
+    source = tmp_path / "source" / "data.txt"
+    source.parent.mkdir()
+    source.write_text("fallback content")
+    dest = tmp_path / "dest" / "data.txt"
+
+    with caplog.at_level(logging.ERROR, logger="trollmoves.movers"):
+        move_it(str(source), str(dest), attrs={"use_tmp_on_transfer": True})
+
+    # Final file must exist (transfer succeeded via direct path)
+    assert dest.exists()
+    assert dest.read_text() == "fallback content"
+    # Tmp file must NOT exist
+    assert not (tmp_path / "dest" / ".data.txt").exists()
+    # An error must have been logged about the fallback
+    assert any("does not support atomic" in record.message for record in caplog.records)

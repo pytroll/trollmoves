@@ -94,6 +94,13 @@ def _create_mover(mover_cls, pathname, new_dest, attrs, backup_targets=None, tmp
 def _get_tmp_destination(mover_cls, new_dest, attrs):
     use_tmp = bool(attrs and attrs.get("use_tmp_on_transfer"))
     if use_tmp:
+        if not mover_cls.supports_atomic(attrs):
+            LOGGER.error(
+                "Mover '%s' does not support atomic transfers. "
+                "Falling back to transfer without temporary files.",
+                mover_cls.__name__,
+            )
+            return None
         tmp_prefix = attrs.get("tmp_prefix", ".")
         tmp_dest = mover_cls.tmp_destination_for(new_dest, tmp_prefix)
         return tmp_dest
@@ -145,16 +152,15 @@ class Mover:
         raise NotImplementedError("Move for scheme " + self.destination.scheme +
                                   " not implemented (yet).")
 
-    def supports_atomic(self):
-        """Return True if this mover supports the default atomic finalize method.
+    @classmethod
+    def supports_atomic(cls, attrs=None):
+        """Return True if this mover class supports atomic tmp→final transfers.
 
-        Subclasses should override if they can perform remote atomic rename.
+        The default is False (conservative). Subclasses that implement
+        finalize_atomic_transfer should override and return True (or, in
+        the case of S3Mover, inspect *attrs* to decide).
         """
-        try:
-            scheme = self.destination.scheme
-        except AttributeError:
-            scheme = ""
-        return scheme in ("", "file")
+        return False
 
     @staticmethod
     def tmp_destination_for(dest, tmp_prefix="."):
@@ -232,6 +238,11 @@ class Mover:
 class FileMover(Mover):
     """Move files in the filesystem."""
 
+    @classmethod
+    def supports_atomic(cls, attrs=None):
+        """Local filesystem always supports atomic rename via os.replace."""
+        return True
+
     def copy(self):
         """Copy the file."""
         dirname = os.path.dirname(self.destination.path)
@@ -284,6 +295,11 @@ class FtpMover(Mover):
 
     active_connections = dict()
     active_connection_lock = Lock()
+
+    @classmethod
+    def supports_atomic(cls, attrs=None):
+        """FTP supports atomic rename via RNFR/RNTO."""
+        return True
 
     def _get_netrc_authentication(self):
         """Get login authentications from netrc file if available."""
@@ -377,6 +393,11 @@ class ScpMover(Mover):
 
     active_connections = dict()
     active_connection_lock = Lock()
+
+    @classmethod
+    def supports_atomic(cls, attrs=None):
+        """SCP supports atomic rename via SFTP rename over the same SSH connection."""
+        return True
 
     def open_connection(self):
         """Open a connection."""
@@ -513,6 +534,11 @@ class ScpMover(Mover):
 class SftpMover(Mover):
     """Move files over sftp."""
 
+    @classmethod
+    def supports_atomic(cls, attrs=None):
+        """SFTP supports atomic rename."""
+        return True
+
     def move(self):
         """Push the file."""
         self.copy()
@@ -617,6 +643,13 @@ class S3Mover(Mover):
         """Initialize the S3Mover."""
         super().__init__(origin, destination, attrs, backup_targets)
         self._sanitize_attrs()
+
+    @classmethod
+    def supports_atomic(cls, attrs=None):
+        """S3 supports atomic transfers only when multipart upload or copy+delete is configured."""
+        if not attrs:
+            return False
+        return bool(attrs.get("s3_use_multipart")) or bool(attrs.get("s3_use_copy"))
 
     def copy(self):
         """Copy the file to a bucket."""

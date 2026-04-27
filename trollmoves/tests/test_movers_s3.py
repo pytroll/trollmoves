@@ -167,3 +167,38 @@ def test_do_multipart_upload_no_abort_when_create_fails():
 
     mock_client.abort_multipart_upload.assert_not_called()
     os.remove(tmpname)
+
+
+# ===========================================================================
+# supports_atomic classmethod for S3Mover
+# ===========================================================================
+
+def test_s3_mover_supports_atomic_no_attrs():
+    """S3Mover.supports_atomic returns False when no attrs are provided."""
+    assert S3Mover.supports_atomic() is False
+    assert S3Mover.supports_atomic(attrs=None) is False
+
+
+def test_s3_mover_supports_atomic_empty_attrs():
+    """S3Mover.supports_atomic returns False when attrs have no relevant keys."""
+    assert S3Mover.supports_atomic(attrs={}) is False
+
+
+def test_s3_mover_supports_atomic_with_multipart():
+    """S3Mover.supports_atomic returns True when s3_use_multipart is set."""
+    assert S3Mover.supports_atomic(attrs={"s3_use_multipart": True}) is True
+
+
+def test_s3_mover_supports_atomic_with_copy():
+    """S3Mover.supports_atomic returns True when s3_use_copy is set."""
+    assert S3Mover.supports_atomic(attrs={"s3_use_copy": True}) is True
+
+
+def test_s3_mover_supports_atomic_with_both():
+    """S3Mover.supports_atomic returns True when both flags are set."""
+    assert S3Mover.supports_atomic(attrs={"s3_use_multipart": True, "s3_use_copy": True}) is True
+
+
+def test_s3_mover_supports_atomic_false_values():
+    """S3Mover.supports_atomic returns False when flags are explicitly False."""
+    assert S3Mover.supports_atomic(attrs={"s3_use_multipart": False, "s3_use_copy": False}) is False
