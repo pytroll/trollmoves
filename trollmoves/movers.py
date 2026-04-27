@@ -58,7 +58,6 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None, backup_
     new_dest = dest_url._replace(path=new_path)
     fake_dest = clean_url(new_dest)
 
-    LOGGER.debug("new_dest = %s", new_dest)
     LOGGER.debug("Copying to: %s", fake_dest)
     try:
         LOGGER.debug("Scheme = %s", str(dest_url.scheme))
@@ -69,31 +68,9 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None, backup_
         raise
 
     try:
-        use_tmp = bool(attrs and attrs.get("use_tmp_on_transfer"))
-        if use_tmp:
-            tmp_prefix = attrs.get("tmp_prefix", ".")
-            tmp_dest = mover_cls.tmp_destination_for(new_dest, tmp_prefix)
-            m = mover_cls(pathname, tmp_dest, attrs=attrs, backup_targets=backup_targets)
-            m.copy()
-            # finalize: default finalizer works for local schemes; subclasses should override
-            try:
-                m.finalize_atomic_transfer(tmp_dest, new_dest)
-            except Exception:
-                # Intentionally broad: must clean up local tmp regardless of protocol error.
-                # Re-raises so the caller sees the original failure.
-                try:
-                    if hasattr(tmp_dest, "path") and os.path.exists(tmp_dest.path):
-                        os.remove(tmp_dest.path)
-                finally:
-                    raise
-            last_dest = new_dest
-        else:
-            m = mover_cls(pathname, new_dest, attrs=attrs, backup_targets=backup_targets)
-            m.copy()
-            last_dest = m.destination
-        if last_dest != new_dest:
-            new_dest = last_dest
-            fake_dest = clean_url(new_dest)
+        tmp_dest = _get_tmp_destination(mover_cls, new_dest, attrs)
+        mover = _create_mover(mover_cls, pathname, new_dest, attrs, backup_targets, tmp_dest)
+        _copy(mover, new_dest, tmp_dest)
         if hook:
             hook(pathname, new_dest)
     except Exception as err:
@@ -104,9 +81,39 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None, backup_
         LOGGER.debug("".join(traceback.format_tb(exc_traceback)))
         raise err
     else:
-        LOGGER.info("Successfully copied %s to %s",
-                    pathname, str(fake_dest))
-    return m.destination
+        LOGGER.info("Successfully copied %s to %s", pathname, str(fake_dest))
+    return mover.destination
+
+
+def _create_mover(mover_cls, pathname, new_dest, attrs, backup_targets=None, tmp_dest=None):
+    if tmp_dest:
+        return mover_cls(pathname, tmp_dest, attrs=attrs, backup_targets=backup_targets)
+    return mover_cls(pathname, new_dest, attrs=attrs, backup_targets=backup_targets)
+
+
+def _get_tmp_destination(mover_cls, new_dest, attrs):
+    use_tmp = bool(attrs and attrs.get("use_tmp_on_transfer"))
+    if use_tmp:
+        tmp_prefix = attrs.get("tmp_prefix", ".")
+        tmp_dest = mover_cls.tmp_destination_for(new_dest, tmp_prefix)
+        return tmp_dest
+    return None
+
+
+def _copy(mover, new_dest, tmp_dest=None):
+    mover.copy()
+    if tmp_dest:
+        # finalize: default finalizer works for local schemes; subclasses should override
+        try:
+            mover.finalize_atomic_transfer(tmp_dest, new_dest)
+        except Exception:
+            # Intentionally broad: must clean up local tmp regardless of protocol error.
+            # Re-raises so the caller sees the original failure.
+            try:
+                if hasattr(tmp_dest, "path") and os.path.exists(tmp_dest.path):
+                    os.remove(tmp_dest.path)
+            finally:
+                raise
 
 
 class Mover:
@@ -184,10 +191,8 @@ class Mover:
     def get_connection(self, hostname, port, username=None):
         """Get the connection."""
         with self.active_connection_lock:
-            LOGGER.debug("Destination username and passwd: %s %s",
-                         self._dest_username, self._dest_password)
-            LOGGER.debug("Getting connection to %s@%s:%s",
-                         username, hostname, port)
+            LOGGER.debug("Destination username and passwd: %s %s", self._dest_username, self._dest_password)
+            LOGGER.debug("Getting connection to %s@%s:%s", username, hostname, port)
             try:
                 connection, timer = self.active_connections[(hostname, port, username)]
                 if not self.is_connected(connection):
@@ -198,8 +203,7 @@ class Mover:
             except KeyError:
                 connection = self.open_connection()
 
-            timer = CTimer(int(self.attrs.get("connection_uptime", 30)),
-                           self.delete_connection, (connection,))
+            timer = CTimer(int(self.attrs.get("connection_uptime", 30)), self.delete_connection, (connection,))
             timer.start()
             self.active_connections[(self.destination.hostname, port, username)] = connection, timer
 
