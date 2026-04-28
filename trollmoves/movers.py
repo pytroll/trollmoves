@@ -200,23 +200,23 @@ class Mover:
     def get_connection(self, hostname, port, username=None):
         """Get the connection."""
         with self.active_connection_lock:
-            LOGGER.debug("Destination username and passwd: %s %s", self._dest_username, self._dest_password)
-            LOGGER.debug("Getting connection to %s@%s:%s", username, hostname, port)
-            try:
-                connection, timer = self.active_connections[(hostname, port, username)]
-                if not self.is_connected(connection):
-                    del self.active_connections[(hostname, port, username)]
-                    LOGGER.debug("Resetting connection")
-                    connection = self.open_connection()
-                timer.cancel()
-            except KeyError:
-                connection = self.open_connection()
-
+            connection = self._get_connection(hostname, port, username)
             timer = CTimer(int(self.attrs.get("connection_uptime", 30)), self.delete_connection, (connection,))
             timer.start()
             self.active_connections[(self.destination.hostname, port, username)] = connection, timer
 
             return connection
+
+    def _get_connection(self, hostname, port, username=None):
+        LOGGER.debug("Getting connection to %s@%s:%s", username, hostname, port)
+        if (hostname, port, username) in self.active_connections:
+            connection, timer = self.active_connections[(hostname, port, username)]
+            timer.cancel()
+            if self.is_connected(connection):
+                return connection
+            del self.active_connections[(hostname, port, username)]
+            LOGGER.debug("Resetting connection")
+        return self.open_connection()
 
     def delete_connection(self, connection):
         """Delete active connection *connection*."""
