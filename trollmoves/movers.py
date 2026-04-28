@@ -231,11 +231,14 @@ class Mover:
             try:
                 self.close_connection(connection)
             finally:
-                for key, (current_connection, current_timer) in self.active_connections.items():
-                    if current_connection == connection:
-                        del self.active_connections[key]
-                        current_timer.cancel()
-                        break
+                self._remove_connection_from_active_connections(connection)
+
+    def _remove_connection_from_active_connections(self, connection):
+        for key, (current_connection, current_timer) in self.active_connections.items():
+            if current_connection == connection:
+                del self.active_connections[key]
+                current_timer.cancel()
+                break
 
 
 class FileMover(Mover):
