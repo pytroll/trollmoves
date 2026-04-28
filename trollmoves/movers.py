@@ -482,7 +482,7 @@ class ScpMover(Mover):
 
     def copy(self):
         """Upload the file."""
-        from paramiko import SSHException as _SSHException
+        from paramiko import SSHException
         from scp import SCPClient, SCPException
 
         ssh_connection = self.get_connection(self.destination.hostname,
@@ -490,7 +490,7 @@ class ScpMover(Mover):
                                              self._dest_username)
         try:
             scp = SCPClient(ssh_connection.get_transport())
-        except (TypeError, _SSHException, OSError) as err:
+        except (TypeError, SSHException, OSError) as err:
             LOGGER.error("Failed to initiate SCPClient: %s", str(err))
             ssh_connection.close()
             raise
@@ -506,7 +506,7 @@ class ScpMover(Mover):
             else:
                 LOGGER.error("OSError in scp.put: %s", str(osex))
                 raise
-        except (SCPException, _SSHException) as err:
+        except (SCPException, SSHException) as err:
             LOGGER.error("Something went wrong with scp: %s", str(err))
             LOGGER.error("Exception name %s", type(err).__name__)
             LOGGER.error("Exception args %s", str(err.args))
@@ -516,7 +516,7 @@ class ScpMover(Mover):
 
     def finalize_atomic_transfer(self, tmp_destination, final_destination):
         """Finalize atomic transfer for SCP by performing remote rename via SFTP."""
-        from paramiko import SSHException as _SSHException
+        from paramiko import SSHException
         ssh_connection = self.get_connection(self.destination.hostname,
                                              self.destination.port or 22,
                                              self._dest_username)
@@ -529,7 +529,7 @@ class ScpMover(Mover):
             if sftp is not None:
                 try:
                     sftp.close()
-                except (_SSHException, OSError):
+                except (SSHException, OSError):
                     pass
         self.destination = final_destination
 
