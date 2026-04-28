@@ -93,18 +93,21 @@ def _create_mover(mover_cls, pathname, new_dest, attrs, backup_targets=None, tmp
 
 def _get_tmp_destination(mover_cls, new_dest, attrs):
     use_tmp = bool(attrs and attrs.get("use_tmp_on_transfer"))
-    if use_tmp:
-        if not mover_cls.supports_atomic(attrs):
-            LOGGER.error(
-                "Mover '%s' does not support atomic transfers. "
-                "Falling back to transfer without temporary files.",
-                mover_cls.__name__,
-            )
-            return None
-        tmp_prefix = attrs.get("tmp_prefix", ".")
-        tmp_dest = mover_cls.tmp_destination_for(new_dest, tmp_prefix)
-        return tmp_dest
-    return None
+    if not use_tmp:
+        return None
+
+    if not mover_cls.supports_atomic(attrs):
+        LOGGER.error(
+            "Mover '%s' does not support atomic transfers. "
+            "Falling back to transfer without temporary files.",
+            mover_cls.__name__,
+        )
+        return None
+
+    tmp_prefix = attrs.get("tmp_prefix", ".")
+    tmp_dest = mover_cls.tmp_destination_for(new_dest, tmp_prefix)
+
+    return tmp_dest
 
 
 def _copy(mover, new_dest, tmp_dest=None):
