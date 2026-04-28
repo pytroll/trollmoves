@@ -516,22 +516,18 @@ class ScpMover(Mover):
 
     def finalize_atomic_transfer(self, tmp_destination, final_destination):
         """Finalize atomic transfer for SCP by performing remote rename via SFTP."""
-        from paramiko import SSHException
         ssh_connection = self.get_connection(self.destination.hostname,
                                              self.destination.port or 22,
                                              self._dest_username)
-        sftp = None
-        try:
-            sftp = ssh_connection.open_sftp()
-            ensure_final_directory_for_rename(sftp, final_destination.path)
-            sftp.rename(tmp_destination.path, final_destination.path)
-        finally:
-            if sftp is not None:
-                try:
-                    sftp.close()
-                except (SSHException, OSError):
-                    pass
+        _rename_over_sftp(ssh_connection, tmp_destination, final_destination)
         self.destination = final_destination
+
+
+def _rename_over_sftp(ssh_connection, tmp_destination, final_destination):
+    """Rename tmp_destination to final_destination on remote host via SFTP."""
+    with ssh_connection.open_sftp() as sftp:
+        ensure_final_directory_for_rename(sftp, final_destination.path)
+        sftp.rename(tmp_destination.path, final_destination.path)
 
 
 class SftpMover(Mover):
@@ -573,9 +569,8 @@ class SftpMover(Mover):
                         username=self._dest_username,
                         allow_agent=True,
                         key_filename=self.attrs.get("ssh_private_key_file"))
-            with ssh.open_sftp() as sftp:
-                ensure_final_directory_for_rename(sftp, final_destination.path)
-                sftp.rename(tmp_destination.path, final_destination.path)
+
+            _rename_over_sftp(ssh, tmp_destination, final_destination)
         self.destination = final_destination
 
 
