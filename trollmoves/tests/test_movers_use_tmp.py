@@ -31,10 +31,6 @@ def source_file(tmp_path):
     return path
 
 
-# ===========================================================================
-# Group A – Mover.tmp_destination_for (pure static method, no I/O)
-# ===========================================================================
-
 def test_tmp_destination_for_default_prefix():
     """Default prefix '.' is prepended to the basename."""
     from trollmoves.movers import Mover
@@ -64,10 +60,6 @@ def test_tmp_destination_for_non_path_dest():
     assert result is obj
 
 
-# ===========================================================================
-# Group B – Mover base class finalize_atomic_transfer
-# ===========================================================================
-
 def test_base_mover_finalize_raises_for_pathless_dest():
     """Base Mover.finalize_atomic_transfer raises NotImplementedError when
     tmp_destination has no .path attribute."""
@@ -81,10 +73,6 @@ def test_base_mover_finalize_raises_for_pathless_dest():
     with pytest.raises(NotImplementedError):
         mover.finalize_atomic_transfer(_NoPath(), urlparse("/other/path"))
 
-
-# ===========================================================================
-# Group C – FileMover (real files on local filesystem)
-# ===========================================================================
 
 def test_file_mover_finalize_atomic_transfer_renames(tmp_path):
     """finalize_atomic_transfer renames tmp file to final, preserving content."""
@@ -210,10 +198,6 @@ def test_move_it_use_tmp_cleanup_on_oserror(tmp_path, source_file, monkeypatch):
     assert not (dest_dir / "data.txt").exists()
 
 
-# ===========================================================================
-# Group D – ScpMover (real localhost SSH)
-# ===========================================================================
-
 @pytest.mark.slow
 def test_scp_mover_finalize_atomic_transfer(tmp_path, monkeypatch):
     """ScpMover.finalize_atomic_transfer performs a remote SFTP rename on localhost."""
@@ -256,10 +240,6 @@ def test_move_it_use_tmp_scp_scheme(tmp_path, source_file, monkeypatch):
     assert returned == urlparse(destination)
 
 
-# ===========================================================================
-# Group E – SftpMover (real localhost SSH)
-# ===========================================================================
-
 @pytest.mark.slow
 def test_sftp_mover_finalize_atomic_transfer(tmp_path, monkeypatch):
     """SftpMover.finalize_atomic_transfer performs a remote SFTP rename on localhost."""
@@ -300,10 +280,6 @@ def test_move_it_use_tmp_sftp_scheme(tmp_path, source_file, monkeypatch):
     assert returned == urlparse(destination)
 
 
-# ===========================================================================
-# Group F – FtpMover (mocked FTP connection)
-# ===========================================================================
-
 def test_ftp_mover_finalize_atomic_transfer_rename_args():
     """FtpMover.finalize_atomic_transfer: cwd to dest dir then rename with basenames."""
     from trollmoves.movers import FtpMover
@@ -338,10 +314,6 @@ def test_ftp_mover_finalize_updates_destination():
 
     assert mover.destination == final_dest
 
-
-# ===========================================================================
-# Group G – S3Mover (mocked S3 backend)
-# ===========================================================================
 
 @patch("trollmoves.movers.S3FileSystem")
 def test_s3_mover_finalize_copy_mode(mock_s3fs):
@@ -399,10 +371,6 @@ def test_s3_mover_finalize_raises_if_unconfigured():
         mover.finalize_atomic_transfer(tmp_dest, final_dest)
 
 
-# ===========================================================================
-# Group H – move_it() FTP end-to-end with use_tmp (mocked)
-# ===========================================================================
-
 @patch("trollmoves.movers.FTP")
 def test_move_it_use_tmp_ftp_scheme(mock_ftp_class, tmp_path):
     """Full use_tmp round-trip via move_it() with ftp:// destination (mocked FTP)."""
@@ -429,10 +397,6 @@ def test_move_it_use_tmp_ftp_scheme(mock_ftp_class, tmp_path):
     # finalize step: rename was called once from tmp to final
     mock_ftp.rename.assert_called_once_with(".upload.txt", "upload.txt")
 
-
-# ===========================================================================
-# Group I – supports_atomic classmethod on each mover class
-# ===========================================================================
 
 def test_supports_atomic_file_mover():
     """FileMover always supports atomic transfers."""
@@ -465,10 +429,6 @@ def test_supports_atomic_base_mover_returns_false():
     assert Mover.supports_atomic() is False
     assert Mover.supports_atomic(attrs={"use_tmp_on_transfer": True}) is False
 
-
-# ===========================================================================
-# Group J – move_it() falls back when supports_atomic returns False
-# ===========================================================================
 
 def test_move_it_falls_back_when_atomic_not_supported(tmp_path, monkeypatch, caplog):
     """When use_tmp_on_transfer=True but supports_atomic returns False, move_it
