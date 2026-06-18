@@ -7,6 +7,15 @@ import pytest
 
 from trollmoves.movers import S3Mover
 
+ALLOWED_S3_SETTINGS = ["anon", "endpoint_url", "key", "secret",
+                       "token", "use_ssl", "s3_additional_kwargs", "client_kwargs",
+                       "requester_pays", "default_block_size", "default_fill_cache",
+                       "default_cache_type", "version_aware", "cache_regions",
+                       "asynchronous", "config_kwargs", "kwargs", "session",
+                       "max_concurrency", "fixed_upload_size", "profile",
+                       # allow our atomic-transfer and multipart options to pass through sanitize
+                       "s3_use_multipart", "s3_use_copy", "tmp_prefix", "s3_multipart_chunksize"]
+
 
 def test_s3_multipart_upload():
     # Create a temporary file with some content
@@ -167,6 +176,14 @@ def test_do_multipart_upload_no_abort_when_create_fails():
 
     mock_client.abort_multipart_upload.assert_not_called()
     os.remove(tmpname)
+
+
+def test_allowed_s3_settings():
+    """Check that all expected S3 backend settings are allowed."""
+    from trollmoves.movers import S3_ALLOWED_SETTINGS
+
+    for setting in ALLOWED_S3_SETTINGS:
+        assert setting in S3_ALLOWED_SETTINGS, f"{setting} should be in S3_ALLOWED_SETTINGS"
 
 
 # ===========================================================================

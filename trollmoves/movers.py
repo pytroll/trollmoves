@@ -30,7 +30,7 @@ S3_ALLOWED_SETTINGS = ["anon", "endpoint_url", "key", "secret",
                        "requester_pays", "default_block_size", "default_fill_cache",
                        "default_cache_type", "version_aware", "cache_regions",
                        "asynchronous", "config_kwargs", "kwargs", "session",
-                       "max_concurrency", "fixed_upload_size",
+                       "max_concurrency", "fixed_upload_size", "profile",
                        # allow our atomic-transfer and multipart options to pass through sanitize
                        "s3_use_multipart", "s3_use_copy", "tmp_prefix", "s3_multipart_chunksize"]
 
