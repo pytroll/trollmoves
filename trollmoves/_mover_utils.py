@@ -23,6 +23,7 @@ def ensure_local_dir(path):
     os.makedirs(dirname, exist_ok=True)
 
 
+
 def _ensure_remote_dirs_ftp(connection, parts):
     """Handle FTP-like directory creation (internal helper).
 
@@ -41,42 +42,63 @@ def _ensure_remote_dirs_ftp(connection, parts):
     path = "/" + "/".join(parts)
 
     try:
-        # Fast path: if the full path already exists, a single cwd is sufficient
-        try:
-            connection.cwd(path)
+        # Fast path: the full path already exists.
+        if _ftp_dir_exists(connection, path):
             return
-        except (ftplib.Error, OSError):
-            pass
 
-        # Build path from root, creating missing segments and only cd'ing when needed
+        # Build path from root, creating any missing segments.
         current = ""
         for part in parts:
             current = current + "/" + part
-            try:
-                connection.cwd(current)
-            except (ftplib.Error, OSError):
-                # try to create the directory; accept failures silently and proceed
-                try:
-                    connection.mkd(current)
-                except (ftplib.Error, OSError):
-                    try:
-                        connection.mkd(part)
-                    except (ftplib.Error, OSError):
-                        pass
-                # after creating, change into it
-                try:
-                    connection.cwd(current)
-                except (ftplib.Error, OSError):
-                    try:
-                        connection.cwd(part)
-                    except (ftplib.Error, OSError):
-                        pass
+            if not _ftp_dir_exists(connection, current):
+                _ftp_mkd(connection, current, part)
+                _ftp_cwd_into(connection, current, part)
     finally:
-        if original_cwd is not None:
-            try:
-                connection.cwd(original_cwd)
-            except (ftplib.Error, OSError):
-                pass
+        _restore_cwd(connection, original_cwd)
+
+
+def _ftp_dir_exists(connection, path):
+    """Return True if *path* exists as a directory on the FTP server.
+
+    Uses cwd as a probe; does not permanently change the working directory
+    (the caller is responsible for save/restore via _restore_cwd).
+    """
+    try:
+        connection.cwd(path)
+        return True
+    except (ftplib.Error, OSError):
+        return False
+
+
+def _ftp_mkd(connection, full_path, part):
+    """Create an FTP directory, trying *full_path* first then the relative *part*."""
+    try:
+        connection.mkd(full_path)
+    except (ftplib.Error, OSError):
+        try:
+            connection.mkd(part)
+        except (ftplib.Error, OSError):
+            pass
+
+
+def _ftp_cwd_into(connection, full_path, part):
+    """Change into an FTP directory, trying *full_path* first then the relative *part*."""
+    try:
+        connection.cwd(full_path)
+    except (ftplib.Error, OSError):
+        try:
+            connection.cwd(part)
+        except (ftplib.Error, OSError):
+            pass
+
+
+def _restore_cwd(connection, original_cwd):
+    if original_cwd is None:
+        return
+    try:
+        connection.cwd(original_cwd)
+    except (ftplib.Error, OSError):
+        pass
 
 
 def _ensure_remote_dirs_sftp(connection, parts):
