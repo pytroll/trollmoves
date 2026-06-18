@@ -136,6 +136,32 @@ def test_remove_files_access_time_dryrun(file_structure_with_some_old_files, cap
     assert log_output2 in caplog.text
 
 
+def test_remove_old_files_but_not_basedir(flat_file_structure_with_no_files, caplog):
+    """Test remove old files in a base directory, but do not delete old base dir."""
+    pub = FakePublisher()
+    basedir = flat_file_structure_with_no_files
+
+    section = "mytest_files1"
+    info = {"mailhost": "localhost",
+            "to": "some_users@xxx.yy",
+            "subject": "Cleanup Error on {hostname}",
+            "base_dir": basedir,
+            "stat_time_method": "st_mtime",
+            "recursive": True,
+            "templates": f"{basedir}/*",
+            "hours": "6"}
+
+    with caplog.at_level(logging.WARNING):
+        fcleaner = FilesCleaner(pub, section, info, dry_run=False)
+        size, num_files, removed_files = fcleaner.clean_section()
+
+    assert size == 0
+    assert num_files == 2
+    assert len(removed_files) == 2
+    assert basedir.exists()
+    assert len(caplog.text) == 0
+
+
 def test_remove_files_path_missing(file_structure_with_some_old_files, caplog):
     """Test remove files in file structure with an empty directory."""
     pub = FakePublisher()

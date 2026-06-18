@@ -102,3 +102,24 @@ def file_structure_with_some_old_files_and_empty_dir(tmp_path):
     os.utime(data_subdir2, (eight_hours_ago.timestamp(), eight_hours_ago.timestamp()))
 
     return data_dir, data_subdir1, data_subdir2
+
+
+@pytest.fixture
+def flat_file_structure_with_no_files(tmp_path):
+    """Create a flat directory structure with an old empty basedir."""
+    base_dir = tmp_path / "mydata"
+    base_dir.mkdir(parents=True)
+
+    files = ["old1.png", "old2.tiff"]
+    for fname in files:
+        (base_dir / fname).touch()
+
+    eight_hours_ago = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=8)
+    oldfile = (base_dir / "old1.png")
+    os.utime(oldfile, (eight_hours_ago.timestamp(), eight_hours_ago.timestamp()))
+    oldfile = (base_dir / "old2.tiff")
+    os.utime(oldfile, (eight_hours_ago.timestamp(), eight_hours_ago.timestamp()))
+    # Force the directory to be old as well:
+    os.utime(base_dir, (eight_hours_ago.timestamp(), eight_hours_ago.timestamp()))
+
+    return base_dir
