@@ -56,20 +56,24 @@ class FilesCleaner():
         section_size = 0
         removed = []
 
-        base_path = Path(pathname_template).parent
-        pattern = Path(pathname_template).name
+        base_template = str(Path(pathname_template).parent)
+        file_pattern = Path(pathname_template).name
 
-        for dirpath, _dirnames, _ in os.walk(base_path, followlinks=True):
-            files_in_dir = glob(os.path.join(dirpath, pattern))
+        for base_dir in glob(base_template):
+            if not os.path.isdir(base_dir):
+                continue
 
-            s_size, s_files, removed_files = self.clean_files_and_dirs(files_in_dir, ref_time)
-            section_files += s_files
-            section_size += s_size
-            removed.extend(removed_files)
+            for dirpath, _dirnames, _ in os.walk(base_dir, followlinks=True):
+                files_in_dir = glob(os.path.join(dirpath, file_pattern))
 
-            # Do not remove the configured/base directory itself
-            if Path(dirpath) != base_path and not os.listdir(dirpath):
-                self._remove_empty_directory(dirpath)
+                s_size, s_files, removed_files = self.clean_files_and_dirs(files_in_dir, ref_time)
+                section_files += s_files
+                section_size += s_size
+                removed.extend(removed_files)
+
+                # Do not remove the configured/base directory itself
+                if Path(dirpath) != Path(base_dir) and not os.listdir(dirpath):
+                    self._remove_empty_directory(dirpath)
 
         return (section_size, section_files, removed)
 

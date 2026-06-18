@@ -86,22 +86,27 @@ def file_structure_with_some_old_files_and_empty_dir(tmp_path):
     data_dir = tmp_path / "mydata" / "geo_out"
     data_dir.mkdir(parents=True)
 
-    data_subdir1 = data_dir / "imagery"
+    data_subdir1 = data_dir / "imagery-1"
     data_subdir1.mkdir(parents=True)
-    data_subdir2 = data_dir / "empty_dir"
+    data_subdir2 = data_dir / "imagery-2"
     data_subdir2.mkdir(parents=True)
+    data_subdir3 = data_dir / "empty_dir"
+    data_subdir3.mkdir(parents=True)
 
     files = ["a.png", "b.png", "c.tif"]
     for fname in files:
         (data_subdir1 / fname).touch()
+        (data_subdir2 / fname).touch()
 
     eight_hours_ago = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=8)
     oldfile = (data_subdir1 / "b.png")
     os.utime(oldfile, (eight_hours_ago.timestamp(), eight_hours_ago.timestamp()))
+    oldfile = (data_subdir2 / "c.tif")
+    os.utime(oldfile, (eight_hours_ago.timestamp(), eight_hours_ago.timestamp()))
     # Force the directory to be old as well:
-    os.utime(data_subdir2, (eight_hours_ago.timestamp(), eight_hours_ago.timestamp()))
+    os.utime(data_subdir3, (eight_hours_ago.timestamp(), eight_hours_ago.timestamp()))
 
-    return data_dir, data_subdir1, data_subdir2
+    return data_dir, data_subdir1, data_subdir2, data_subdir3
 
 
 @pytest.fixture
