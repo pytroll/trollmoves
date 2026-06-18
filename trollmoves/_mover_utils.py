@@ -29,39 +29,54 @@ def _ensure_remote_dirs_ftp(connection, parts):
     Implements fast path optimization followed by fallback loop.
     For FTP connections: try single cwd(full_path) first; if fails,
     iterate through parts creating missing directories as needed.
+
+    The connection's working directory is restored to its original value
+    before returning, so callers must not rely on the CWD side-effect.
     """
+    try:
+        original_cwd = connection.pwd()
+    except (ftplib.Error, OSError):
+        original_cwd = None
+
     path = "/" + "/".join(parts)
 
-    # Fast path: if the full path already exists, a single cwd is sufficient
     try:
-        connection.cwd(path)
-        return
-    except (ftplib.Error, OSError):
-        pass
-
-    # Build path from root, creating missing segments and only cd'ing when needed
-    current = ""
-    for part in parts:
-        current = current + "/" + part
+        # Fast path: if the full path already exists, a single cwd is sufficient
         try:
-            connection.cwd(current)
+            connection.cwd(path)
+            return
         except (ftplib.Error, OSError):
-            # try to create the directory; accept failures silently and proceed
-            try:
-                connection.mkd(current)
-            except (ftplib.Error, OSError):
-                try:
-                    connection.mkd(part)
-                except (ftplib.Error, OSError):
-                    pass
-            # after creating, change into it
+            pass
+
+        # Build path from root, creating missing segments and only cd'ing when needed
+        current = ""
+        for part in parts:
+            current = current + "/" + part
             try:
                 connection.cwd(current)
             except (ftplib.Error, OSError):
+                # try to create the directory; accept failures silently and proceed
                 try:
-                    connection.cwd(part)
+                    connection.mkd(current)
                 except (ftplib.Error, OSError):
-                    pass
+                    try:
+                        connection.mkd(part)
+                    except (ftplib.Error, OSError):
+                        pass
+                # after creating, change into it
+                try:
+                    connection.cwd(current)
+                except (ftplib.Error, OSError):
+                    try:
+                        connection.cwd(part)
+                    except (ftplib.Error, OSError):
+                        pass
+    finally:
+        if original_cwd is not None:
+            try:
+                connection.cwd(original_cwd)
+            except (ftplib.Error, OSError):
+                pass
 
 
 def _ensure_remote_dirs_sftp(connection, parts):

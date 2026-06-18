@@ -92,15 +92,51 @@ def test_open_ftp_connection_credentials_in_url():
         ftp.return_value.login.assert_called_once_with("auser", "apasswd")
 
 
-@pytest.mark.parametrize("destination,expected_filename",
-                         [("ftp://localhost.smhi.se/data/satellite/archive/somefile.ext", "STOR somefile.ext"),
-                          ("ftp://localhost.smhi.se/data/satellite/archive/", "STOR " + ORIGIN_FILENAME)])
-def test_ftp_mover_uses_destination_filename(file_to_move, destination, expected_filename):
+@pytest.mark.parametrize("destination,expected_stor",
+                         [("ftp://localhost.smhi.se/data/satellite/archive/somefile.ext",
+                          "STOR /data/satellite/archive/somefile.ext"),
+                          ("ftp://localhost.smhi.se/data/satellite/archive/",
+                          "STOR /data/satellite/archive/" + ORIGIN_FILENAME)])
+def test_ftp_mover_uses_destination_filename(file_to_move, destination, expected_stor):
     """Check ftp movers uses requested destination filename when provided, origin filename otherwise."""
     with _get_ftp(destination, file_to_move) as (ftp, ftp_mover):
         ftp_mover.copy()
-        ftp.return_value.cwd.assert_called_once_with("/data/satellite/archive")
-        assert ftp.return_value.storbinary.call_args[0][0] == expected_filename
+        assert ftp.return_value.storbinary.call_args[0][0] == expected_stor
+
+
+def test_ensure_remote_dirs_ftp_restores_cwd_fast_path():
+    """_ensure_remote_dirs_ftp restores CWD when directory already exists (fast path)."""
+    from unittest.mock import MagicMock
+
+    from trollmoves._mover_utils import _ensure_remote_dirs_ftp
+
+    conn = MagicMock()
+    conn.pwd.return_value = "/original"
+    # Fast path: cwd(path) succeeds on first try
+    conn.cwd.return_value = None
+
+    _ensure_remote_dirs_ftp(conn, ["data", "archive"])
+
+    # CWD must be restored to the original value as the last cwd call
+    conn.cwd.assert_called_with("/original")
+
+
+def test_ensure_remote_dirs_ftp_restores_cwd_after_creation():
+    """_ensure_remote_dirs_ftp restores CWD after creating missing directories (fallback path)."""
+    import ftplib
+    from unittest.mock import MagicMock, call
+
+    from trollmoves._mover_utils import _ensure_remote_dirs_ftp
+
+    conn = MagicMock()
+    conn.pwd.return_value = "/original"
+    # First cwd (fast path for full path) fails; subsequent per-segment cwds succeed
+    conn.cwd.side_effect = [ftplib.Error("no such dir"), None, None, None]
+
+    _ensure_remote_dirs_ftp(conn, ["data", "archive"])
+
+    # Last cwd call must restore original CWD
+    assert conn.cwd.call_args_list[-1] == call("/original")
 
 
 def _get_s3_mover(origin, destination, **attrs):

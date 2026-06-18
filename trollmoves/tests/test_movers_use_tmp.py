@@ -281,7 +281,7 @@ def test_move_it_use_tmp_sftp_scheme(tmp_path, source_file, monkeypatch):
 
 
 def test_ftp_mover_finalize_atomic_transfer_rename_args():
-    """FtpMover.finalize_atomic_transfer: cwd to dest dir then rename with basenames."""
+    """FtpMover.finalize_atomic_transfer: rename uses full paths."""
     from trollmoves.movers import FtpMover
 
     origin = "/path/to/source.txt"
@@ -295,9 +295,7 @@ def test_ftp_mover_finalize_atomic_transfer_rename_args():
     with patch.object(mover, "get_connection", return_value=mock_connection):
         mover.finalize_atomic_transfer(tmp_dest, final_dest)
 
-    # ensure_remote_dirs cds to the directory; rename uses basenames relative to that cwd
-    mock_connection.cwd.assert_called_with("/remote/dir")
-    mock_connection.rename.assert_called_once_with(".source.txt", "source.txt")
+    mock_connection.rename.assert_called_once_with("/remote/dir/.source.txt", "/remote/dir/source.txt")
 
 
 def test_ftp_mover_finalize_updates_destination():
@@ -392,42 +390,28 @@ def test_move_it_use_tmp_ftp_scheme(mock_ftp_class, tmp_path):
     # copy step: storbinary was called once (for the tmp file)
     assert mock_ftp.storbinary.call_count == 1
     store_call_args = mock_ftp.storbinary.call_args[0]
-    assert store_call_args[0] == "STOR .upload.txt"
+    assert store_call_args[0] == "STOR /remote/dir/.upload.txt"
 
-    # finalize step: rename was called once from tmp to final
-    mock_ftp.rename.assert_called_once_with(".upload.txt", "upload.txt")
-
-
-def test_supports_atomic_file_mover():
-    """FileMover always supports atomic transfers."""
-    from trollmoves.movers import FileMover
-    assert FileMover.supports_atomic() is True
-    assert FileMover.supports_atomic(attrs={}) is True
+    # finalize step: rename was called once from tmp to final using full paths
+    mock_ftp.rename.assert_called_once_with("/remote/dir/.upload.txt", "/remote/dir/upload.txt")
 
 
-def test_supports_atomic_ftp_mover():
-    """FtpMover always supports atomic transfers."""
-    from trollmoves.movers import FtpMover
-    assert FtpMover.supports_atomic() is True
-
-
-def test_supports_atomic_scp_mover():
-    """ScpMover always supports atomic transfers."""
-    from trollmoves.movers import ScpMover
-    assert ScpMover.supports_atomic() is True
-
-
-def test_supports_atomic_sftp_mover():
-    """SftpMover always supports atomic transfers."""
-    from trollmoves.movers import SftpMover
-    assert SftpMover.supports_atomic() is True
-
-
-def test_supports_atomic_base_mover_returns_false():
-    """The base Mover class returns False as a safe default."""
-    from trollmoves.movers import Mover
-    assert Mover.supports_atomic() is False
-    assert Mover.supports_atomic(attrs={"use_tmp_on_transfer": True}) is False
+@pytest.mark.parametrize("mover_class,expected", [
+    pytest.param("FileMover", True, id="file_mover"),
+    pytest.param("FtpMover", True, id="ftp_mover"),
+    pytest.param("ScpMover", True, id="scp_mover"),
+    pytest.param("SftpMover", True, id="sftp_mover"),
+    pytest.param("Mover", False, id="base_mover"),
+])
+def test_supports_atomic(mover_class, expected):
+    """Test supports_atomic for various mover classes."""
+    from trollmoves import movers
+    mover = getattr(movers, mover_class)
+    assert mover.supports_atomic() is expected
+    if mover_class == "FileMover":
+        assert mover.supports_atomic(attrs={}) is expected
+    elif mover_class == "Mover":
+        assert mover.supports_atomic(attrs={"use_tmp_on_transfer": True}) is expected
 
 
 def test_move_it_falls_back_when_atomic_not_supported(tmp_path, monkeypatch, caplog):

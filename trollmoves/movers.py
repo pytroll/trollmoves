@@ -369,25 +369,22 @@ class FtpMover(Mover):
         """Upload the file."""
         connection = self.get_connection(self.destination.hostname, self.destination.port, self._dest_username)
 
-        LOGGER.debug("cd to %s", os.path.dirname(self.destination.path))
         destination_dirname, destination_filename = os.path.split(self.destination.path)
-        ensure_remote_dirs(connection, destination_dirname)
         if not destination_filename:
             destination_filename = os.path.basename(self.origin)
+        ensure_remote_dirs(connection, destination_dirname)
+        destination_path = os.path.join(destination_dirname, destination_filename)
         with open(self.origin, "rb") as file_obj:
-            connection.storbinary("STOR " + destination_filename,
-                                  file_obj)
+            connection.storbinary("STOR " + destination_path, file_obj)
 
     def finalize_atomic_transfer(self, tmp_destination, final_destination):
         """Finalize atomic transfer by renaming tmp -> final on FTP server."""
         connection = self.get_connection(self.destination.hostname, self.destination.port, self._dest_username)
 
         dest_dirname = os.path.dirname(tmp_destination.path)
-        tmp_basename = os.path.basename(tmp_destination.path)
-        final_basename = os.path.basename(final_destination.path)
         ensure_remote_dirs(connection, dest_dirname)
         try:
-            connection.rename(tmp_basename, final_basename)
+            connection.rename(tmp_destination.path, final_destination.path)
         except all_errors as err:
             LOGGER.exception("Failed to finalize FTP atomic transfer: %s", str(err))
             raise
