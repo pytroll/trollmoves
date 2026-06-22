@@ -22,6 +22,7 @@ These include:
 
    fetcher
    s3downloader
+   atomic_transfers
 
 
 Indices and tables
