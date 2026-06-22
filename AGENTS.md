@@ -38,9 +38,19 @@ Files of interest for AI tools
 - trollmoves/movers.py: look here for protocol-specific logic and S3 behavior.
 - bin/* and entry_points: show CLI surface and expected runtime scripts.
 
+Development practices
+- Follow the red-green-refactor TDD cycle:
+  1. Red: write a failing test that captures the intended behaviour before writing any implementation.
+  2. Green: write the minimal production code needed to make the test pass — no more.
+  3. Refactor: improve the code (naming, structure, duplication) while keeping all tests green.
+- Tests must be committed together with — or before — the implementation they cover. Do not add production code without a corresponding test.
+- Keep functions and methods small and focused on a single responsibility.
+- Use descriptive names for variables, functions, and classes; avoid abbreviations and single-letter names except in short loops.
+- Write comments only to explain *why*, not *what*; the code itself should make the what obvious.
+- Avoid deep nesting; prefer early returns and guard clauses.
+- Refactoring steps must not change observable behaviour; run the test suite before and after each refactor step to confirm.
+
 When using AI tools in this repo
 - Prefer locating behavior across multiple files: transfers are composed from Posttroll messages (server/client) + mover implementations.
 - If changing protocol behavior, update movers.py and add integration tests exercising the server/client flow.
 - Respect extras in setup.py when suggesting dependency additions: put optional deps in the correct extras group.
-
-
