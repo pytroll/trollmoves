@@ -68,9 +68,8 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None, backup_
         raise
 
     try:
-        tmp_dest = _get_tmp_destination(mover_cls, new_dest, attrs)
-        mover = _create_mover(mover_cls, pathname, new_dest, attrs, backup_targets, tmp_dest)
-        _copy(mover, new_dest, tmp_dest)
+        mover = mover_cls(pathname, new_dest, attrs=attrs, backup_targets=backup_targets)
+        mover.copy()
         if hook:
             hook(pathname, new_dest)
     except Exception as err:
@@ -83,47 +82,6 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None, backup_
     else:
         LOGGER.info("Successfully copied %s to %s", pathname, str(fake_dest))
     return mover.destination
-
-
-def _create_mover(mover_cls, pathname, new_dest, attrs, backup_targets=None, tmp_dest=None):
-    if tmp_dest:
-        return mover_cls(pathname, tmp_dest, attrs=attrs, backup_targets=backup_targets)
-    return mover_cls(pathname, new_dest, attrs=attrs, backup_targets=backup_targets)
-
-
-def _get_tmp_destination(mover_cls, new_dest, attrs):
-    use_tmp = bool(attrs and attrs.get("use_tmp_on_transfer"))
-    if not use_tmp:
-        return None
-
-    if not mover_cls.supports_atomic(attrs):
-        LOGGER.error(
-            "Mover '%s' does not support atomic transfers. "
-            "Falling back to transfer without temporary files.",
-            mover_cls.__name__,
-        )
-        return None
-
-    tmp_prefix = attrs.get("tmp_prefix", ".")
-    tmp_dest = mover_cls.tmp_destination_for(new_dest, tmp_prefix)
-
-    return tmp_dest
-
-
-def _copy(mover, new_dest, tmp_dest=None):
-    mover.copy()
-    if tmp_dest:
-        # finalize: default finalizer works for local schemes; subclasses should override
-        try:
-            mover.finalize_atomic_transfer(tmp_dest, new_dest)
-        except Exception:
-            # Intentionally broad: must clean up local tmp regardless of protocol error.
-            # Re-raises so the caller sees the original failure.
-            try:
-                if hasattr(tmp_dest, "path") and os.path.exists(tmp_dest.path):
-                    os.remove(tmp_dest.path)
-            finally:
-                raise
 
 
 class Mover:
@@ -145,10 +103,58 @@ class Mover:
         self.attrs = attrs or {}
         self.backup_targets = backup_targets
 
+        self._final_dest = self.destination
+        self._tmp_dest = self._compute_tmp_dest()
+
+    def _compute_tmp_dest(self):
+        """Compute the temporary destination URL if atomic transfer is requested.
+
+        Returns the tmp URL when ``use_tmp_on_transfer`` is set in attrs and the
+        mover class supports atomic transfers, otherwise returns None.
+        """
+        if not self.attrs.get("use_tmp_on_transfer"):
+            return None
+        if not self.__class__.supports_atomic(self.attrs):
+            LOGGER.error(
+                "Mover '%s' does not support atomic transfers. "
+                "Falling back to transfer without temporary files.",
+                self.__class__.__name__,
+            )
+            return None
+        tmp_prefix = self.attrs.get("tmp_prefix", ".")
+        return self.__class__.tmp_destination_for(self._final_dest, tmp_prefix)
+
     def copy(self):
-        """Copy the file."""
-        raise NotImplementedError("Copy for scheme " + self.destination.scheme +
-                                  " not implemented (yet).")
+        """Copy the file, using a temporary destination if configured.
+
+        When ``use_tmp_on_transfer`` is set in attrs and the mover supports
+        atomic transfers, the file is first written to a temporary path and then
+        renamed to the final destination via :meth:`finalize_atomic_transfer`.
+        Subclasses must implement :meth:`_copy` for the actual transfer.
+        """
+        if self._tmp_dest:
+            self.destination = self._tmp_dest
+            try:
+                self._copy()
+                self.finalize_atomic_transfer(self._tmp_dest, self._final_dest)
+            except Exception:
+                try:
+                    if hasattr(self._tmp_dest, "path") and os.path.exists(self._tmp_dest.path):
+                        os.remove(self._tmp_dest.path)
+                finally:
+                    raise
+        else:
+            self._copy()
+
+    def _copy(self):
+        """Perform the actual file transfer to self.destination.
+
+        Subclasses must override this method. It is called by :meth:`copy` and
+        should write the file to ``self.destination`` without any tmp/finalize
+        logic (that is handled by the base :meth:`copy` template).
+        """
+        raise NotImplementedError("_copy for scheme " + self.destination.scheme +
+                                   " not implemented (yet).")
 
     def move(self):
         """Move the file."""
@@ -249,8 +255,8 @@ class FileMover(Mover):
         """Local filesystem always supports atomic rename via os.replace."""
         return True
 
-    def copy(self):
-        """Copy the file."""
+    def _copy(self):
+        """Copy the file to self.destination on the local filesystem."""
         dirname = os.path.dirname(self.destination.path)
         if not os.path.exists(dirname):
             os.makedirs(dirname)
@@ -365,8 +371,8 @@ class FtpMover(Mover):
         self.copy()
         os.remove(self.origin)
 
-    def copy(self):
-        """Upload the file."""
+    def _copy(self):
+        """Upload the file to self.destination via FTP."""
         connection = self.get_connection(self.destination.hostname, self.destination.port, self._dest_username)
 
         destination_dirname, destination_filename = os.path.split(self.destination.path)
@@ -480,8 +486,8 @@ class ScpMover(Mover):
         self.copy()
         os.remove(self.origin)
 
-    def copy(self):
-        """Upload the file."""
+    def _copy(self):
+        """Upload the file to self.destination via SCP."""
         from paramiko import SSHException
         from scp import SCPClient, SCPException
 
@@ -543,8 +549,8 @@ class SftpMover(Mover):
         self.copy()
         os.remove(self.origin)
 
-    def copy(self):
-        """Copy files.
+    def _copy(self):
+        """Copy the file to self.destination via SFTP.
 
         Uses high level paramiko functions.
         """
@@ -649,8 +655,15 @@ class S3Mover(Mover):
             return False
         return bool(attrs.get("s3_use_multipart")) or bool(attrs.get("s3_use_copy"))
 
-    def copy(self):
-        """Copy the file to a bucket."""
+    def _copy(self):
+        """Copy the file to a bucket at self.destination.
+
+        For multipart uploads (``s3_use_multipart`` + boto3), the file is uploaded
+        directly to the final S3 key regardless of the current ``self.destination``
+        value — the tmp prefix is stripped internally to preserve the optimization
+        of not needing a server-side rename step.  For all other cases the file is
+        uploaded to the path represented by ``self.destination``.
+        """
         if S3FileSystem is None and boto3 is None:
             raise ImportError("S3Mover requires 's3fs' or 'boto3' to be installed.")
 
