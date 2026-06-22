@@ -404,14 +404,15 @@ def test_move_it_use_tmp_ftp_scheme(mock_ftp_class, tmp_path):
     pytest.param("Mover", False, id="base_mover"),
 ])
 def test_supports_atomic(mover_class, expected):
-    """Test supports_atomic for various mover classes."""
+    """Test supports_atomic property for various mover classes."""
     from trollmoves import movers
-    mover = getattr(movers, mover_class)
-    assert mover.supports_atomic() is expected
-    if mover_class == "FileMover":
-        assert mover.supports_atomic(attrs={}) is expected
-    elif mover_class == "Mover":
-        assert mover.supports_atomic(attrs={"use_tmp_on_transfer": True}) is expected
+    cls = getattr(movers, mover_class)
+    # Use __new__ to avoid triggering __init__ (no files needed for this check).
+    mover = cls.__new__(cls)
+    mover.attrs = {}
+    mover._final_dest = None
+    mover._tmp_dest = None
+    assert mover.supports_atomic is expected
 
 
 def test_move_it_falls_back_when_atomic_not_supported(tmp_path, monkeypatch, caplog):
@@ -423,7 +424,7 @@ def test_move_it_falls_back_when_atomic_not_supported(tmp_path, monkeypatch, cap
 
     # Make FileMover report it does not support atomic so we can test the fallback
     # without needing a custom protocol.
-    monkeypatch.setattr(FileMover, "supports_atomic", classmethod(lambda cls, attrs=None: False))
+    monkeypatch.setattr(FileMover, "supports_atomic", property(lambda self: False))
 
     source = tmp_path / "source" / "data.txt"
     source.parent.mkdir()

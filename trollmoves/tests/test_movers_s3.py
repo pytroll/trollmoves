@@ -187,35 +187,25 @@ def test_allowed_s3_settings():
 
 
 # ===========================================================================
-# supports_atomic classmethod for S3Mover
+# supports_atomic property for S3Mover
 # ===========================================================================
 
-def test_s3_mover_supports_atomic_no_attrs():
-    """S3Mover.supports_atomic returns False when no attrs are provided."""
-    assert S3Mover.supports_atomic() is False
-    assert S3Mover.supports_atomic(attrs=None) is False
+def _s3mover_with_attrs(attrs):
+    """Create a minimal S3Mover instance without triggering __init__ (no files needed)."""
+    mover = S3Mover.__new__(S3Mover)
+    mover.attrs = attrs
+    mover._final_dest = None
+    mover._tmp_dest = None
+    return mover
 
 
-def test_s3_mover_supports_atomic_empty_attrs():
-    """S3Mover.supports_atomic returns False when attrs have no relevant keys."""
-    assert S3Mover.supports_atomic(attrs={}) is False
-
-
-def test_s3_mover_supports_atomic_with_multipart():
-    """S3Mover.supports_atomic returns True when s3_use_multipart is set."""
-    assert S3Mover.supports_atomic(attrs={"s3_use_multipart": True}) is True
-
-
-def test_s3_mover_supports_atomic_with_copy():
-    """S3Mover.supports_atomic returns True when s3_use_copy is set."""
-    assert S3Mover.supports_atomic(attrs={"s3_use_copy": True}) is True
-
-
-def test_s3_mover_supports_atomic_with_both():
-    """S3Mover.supports_atomic returns True when both flags are set."""
-    assert S3Mover.supports_atomic(attrs={"s3_use_multipart": True, "s3_use_copy": True}) is True
-
-
-def test_s3_mover_supports_atomic_false_values():
-    """S3Mover.supports_atomic returns False when flags are explicitly False."""
-    assert S3Mover.supports_atomic(attrs={"s3_use_multipart": False, "s3_use_copy": False}) is False
+@pytest.mark.parametrize("attrs,expected", [
+    pytest.param({}, False, id="empty_attrs"),
+    pytest.param({"s3_use_multipart": True}, True, id="multipart"),
+    pytest.param({"s3_use_copy": True}, True, id="copy"),
+    pytest.param({"s3_use_multipart": True, "s3_use_copy": True}, True, id="both"),
+    pytest.param({"s3_use_multipart": False, "s3_use_copy": False}, False, id="both_false"),
+])
+def test_s3_mover_supports_atomic(attrs, expected):
+    """S3Mover.supports_atomic reflects s3_use_multipart / s3_use_copy from attrs."""
+    assert _s3mover_with_attrs(attrs).supports_atomic is expected
