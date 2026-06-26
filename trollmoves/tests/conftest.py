@@ -86,27 +86,27 @@ def file_structure_with_some_old_files_and_empty_dir(tmp_path):
     data_dir = tmp_path / "mydata" / "geo_out"
     data_dir.mkdir(parents=True)
 
-    data_subdir1 = data_dir / "imagery-1"
-    data_subdir1.mkdir(parents=True)
-    data_subdir2 = data_dir / "imagery-2"
-    data_subdir2.mkdir(parents=True)
-    data_subdir3 = data_dir / "empty_dir"
-    data_subdir3.mkdir(parents=True)
+    subdir1_old_png_file = data_dir / "imagery-1"
+    subdir1_old_png_file.mkdir(parents=True)
+    subdir2_old_tif_file = data_dir / "imagery-2"
+    subdir2_old_tif_file.mkdir(parents=True)
+    subdir3_empty = data_dir / "empty_dir"
+    subdir3_empty.mkdir(parents=True)
 
     files = ["a.png", "b.png", "c.tif"]
     for fname in files:
-        (data_subdir1 / fname).touch()
-        (data_subdir2 / fname).touch()
+        (subdir1_old_png_file / fname).touch()
+        (subdir2_old_tif_file / fname).touch()
 
     eight_hours_ago = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=8)
-    oldfile = (data_subdir1 / "b.png")
+    oldfile = (subdir1_old_png_file / "b.png")
     os.utime(oldfile, (eight_hours_ago.timestamp(), eight_hours_ago.timestamp()))
-    oldfile = (data_subdir2 / "c.tif")
+    oldfile = (subdir2_old_tif_file / "c.tif")
     os.utime(oldfile, (eight_hours_ago.timestamp(), eight_hours_ago.timestamp()))
     # Force the directory to be old as well:
-    os.utime(data_subdir3, (eight_hours_ago.timestamp(), eight_hours_ago.timestamp()))
+    os.utime(subdir3_empty, (eight_hours_ago.timestamp(), eight_hours_ago.timestamp()))
 
-    return data_dir, data_subdir1, data_subdir2, data_subdir3
+    return data_dir, subdir1_old_png_file, subdir2_old_tif_file, subdir3_empty
 
 
 @pytest.fixture
