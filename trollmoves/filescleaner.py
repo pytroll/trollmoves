@@ -41,6 +41,7 @@ class FilesCleaner():
         self.recursive = self.info.get("recursive", False)
         self.stat_time_method = self.info.get("stat_time_method", "st_ctime")
 
+
     def clean_dir(self, ref_time, pathname_template, **kwargs):
         """Clean directory of files given a path name and a time threshold.
 
@@ -63,19 +64,54 @@ class FilesCleaner():
             if not os.path.isdir(base_dir):
                 continue
 
-            for dirpath, _dirnames, _ in os.walk(base_dir, followlinks=True):
-                files_in_dir = glob(os.path.join(dirpath, file_pattern))
+            s_size, s_files, removed_files = self._clean_recursive_base_dir(base_dir, file_pattern, ref_time)
 
-                s_size, s_files, removed_files = self.clean_files_and_dirs(files_in_dir, ref_time)
-                section_files += s_files
-                section_size += s_size
-                removed.extend(removed_files)
+            section_files += s_files
+            section_size += s_size
+            removed.extend(removed_files)
 
-                # Do not remove the configured/base directory itself
-                if Path(dirpath) != Path(base_dir) and not os.listdir(dirpath):
-                    self._remove_empty_directory(dirpath)
+        return section_size, section_files, removed
 
-        return (section_size, section_files, removed)
+
+    def _clean_recursive_base_dir(self, base_dir, file_pattern, ref_time):
+        """Clean matching files recursively below one base directory.
+
+        Empty subdirectories may be removed, but the base directory itself is
+        never removed.
+        """
+        section_files = 0
+        section_size = 0
+        removed = []
+
+        base_dir = Path(base_dir)
+
+        for dirpath, _dirnames, _filenames in os.walk(base_dir, followlinks=True):
+            dirpath = Path(dirpath)
+            files_in_dir = glob(str(dirpath / file_pattern))
+
+            s_size, s_files, removed_files = self.clean_files_and_dirs(files_in_dir, ref_time)
+
+            section_files += s_files
+            section_size += s_size
+            removed.extend(removed_files)
+
+            if dirpath != base_dir and self._is_empty_dir(dirpath):
+                self._remove_empty_directory(dirpath)
+
+        return section_size, section_files, removed
+
+
+    @staticmethod
+    def _is_empty_dir(path):
+        """Return True if path is an empty directory.
+
+        Using iterdir instead of glob will make sure dot files are also counted.
+        """
+        try:
+            return path.is_dir() and not any(path.iterdir())
+        except OSError:
+            return False
+
 
     def clean_files_and_dirs(self, filepaths, ref_time):
         """Clean files and directories defined by a list of file paths and a reference time."""
@@ -103,6 +139,7 @@ class FilesCleaner():
                     LOGGER.info(f"Would remove {str(filepath)}")
 
         return (section_size, section_files, removed)
+
 
     def clean_section(self):
         """Do the files cleaning given a list of directory paths and time thresholds.
