@@ -248,6 +248,29 @@ def test_remove_files_using_wildcard_in_template_dirs(file_structure_with_some_o
     assert sub_dir3.exists()
 
 
+def test_remove_nested_empty_dirs(tmp_path):
+    """Test that a nested tree of empty directories is removed all the way up."""
+    pub = FakePublisher()
+    basedir = tmp_path / "mydata"
+    (basedir / "sub" / "subsub").mkdir(parents=True)
+
+    section = "mytest_files1"
+    info = {"mailhost": "localhost",
+            "to": "some_users@xxx.yy",
+            "subject": "Cleanup Error on {hostname}",
+            "base_dir": f"{basedir}",
+            "stat_time_method": "st_mtime",
+            "recursive": True,
+            "templates": f"{basedir}/*",
+            "hours": "3"}
+
+    fcleaner = FilesCleaner(pub, section, info, dry_run=False)
+    fcleaner.clean_section()
+
+    assert not (basedir / "sub").exists()
+    assert basedir.exists()
+
+
 def test_remove_files_empty_dir_atime(file_structure_with_some_old_files_and_empty_dir, caplog):
     """Test remove files."""
     pub = FakePublisher()

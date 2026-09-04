@@ -86,7 +86,7 @@ class FilesCleaner():
 
         base_dir = Path(base_dir)
 
-        for dirpath, _dirnames, _filenames in os.walk(base_dir, followlinks=True):
+        for dirpath, _dirnames, _filenames in os.walk(base_dir, topdown=False, followlinks=True):
             dirpath = Path(dirpath)
             files_in_dir = glob(str(dirpath / file_pattern), include_hidden=self.include_hidden)
 
