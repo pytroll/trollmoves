@@ -32,10 +32,12 @@ S3_ALLOWED_SETTINGS = ["anon", "endpoint_url", "key", "secret",
                        "asynchronous", "config_kwargs", "kwargs", "session",
                        "max_concurrency", "fixed_upload_size", "profile",
                        # allow our atomic-transfer and multipart options to pass through sanitize
-                       "s3_use_multipart", "s3_use_copy", "tmp_prefix", "s3_multipart_chunksize"]
+                       "use_tmp_on_transfer", "s3_use_multipart", "s3_use_copy", "tmp_prefix",
+                       "s3_multipart_chunksize"]
 
 # Keys consumed by S3Mover logic; must not be forwarded to S3FileSystem or boto3 client
-_S3_MOVER_INTERNAL_KEYS = frozenset({"s3_use_multipart", "s3_use_copy", "tmp_prefix", "s3_multipart_chunksize"})
+_S3_MOVER_INTERNAL_KEYS = frozenset({"use_tmp_on_transfer", "s3_use_multipart", "s3_use_copy",
+                                     "tmp_prefix", "s3_multipart_chunksize"})
 
 LOGGER = logging.getLogger(__name__)
 
@@ -100,7 +102,9 @@ class Mover:
 
         LOGGER.debug("Destination: %s", str(destination))
         self.origin = origin
-        self.attrs = attrs or {}
+        # Copy: callers (e.g. Trollmoves Server) reuse one connection_parameters dict for
+        # every transfer, so a mover must never mutate what it was handed.
+        self.attrs = dict(attrs) if attrs else {}
         self.backup_targets = backup_targets
 
         self._final_dest = self.destination

@@ -209,3 +209,43 @@ def _s3mover_with_attrs(attrs):
 def test_s3_mover_supports_atomic(attrs, expected):
     """S3Mover.supports_atomic reflects s3_use_multipart / s3_use_copy from attrs."""
     assert _s3mover_with_attrs(attrs).supports_atomic is expected
+
+
+def test_s3_mover_does_not_mutate_caller_attrs():
+    """S3Mover must not delete keys from the caller's shared connection_parameters dict.
+
+    Trollmoves Server passes the same long-lived ``connection_parameters`` dict for
+    every transfer, so in-place sanitizing would disable options after the first file.
+    """
+    connection_parameters = {"use_tmp_on_transfer": True, "s3_use_copy": True,
+                             "endpoint_url": "http://endpoint", "not_an_s3_setting": "x"}
+    expected = dict(connection_parameters)
+
+    S3Mover("/local/file.txt", "s3://bucket/dir/file.txt", attrs=connection_parameters)
+
+    assert connection_parameters == expected
+
+
+def test_s3_mover_use_tmp_survives_repeated_transfers():
+    """``use_tmp_on_transfer`` must still take effect on the second and later transfers."""
+    connection_parameters = {"use_tmp_on_transfer": True, "s3_use_copy": True}
+
+    first = S3Mover("/local/f.nc", "s3://bucket/dir/f.nc", attrs=connection_parameters)
+    second = S3Mover("/local/g.nc", "s3://bucket/dir/g.nc", attrs=connection_parameters)
+
+    assert first._tmp_dest.path == "/dir/.f.nc"
+    assert second._tmp_dest.path == "/dir/.g.nc"
+
+
+def test_use_tmp_on_transfer_is_an_allowed_s3_setting():
+    """``use_tmp_on_transfer`` must survive attribute sanitizing."""
+    from trollmoves.movers import S3_ALLOWED_SETTINGS
+
+    assert "use_tmp_on_transfer" in S3_ALLOWED_SETTINGS
+
+
+def test_s3_internal_keys_are_not_forwarded_to_backend():
+    """Mover-internal options must not be passed on to S3FileSystem/boto3."""
+    from trollmoves.movers import _S3_MOVER_INTERNAL_KEYS
+
+    assert "use_tmp_on_transfer" in _S3_MOVER_INTERNAL_KEYS
