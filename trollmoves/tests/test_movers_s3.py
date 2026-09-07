@@ -249,3 +249,46 @@ def test_s3_internal_keys_are_not_forwarded_to_backend():
     from trollmoves.movers import _S3_MOVER_INTERNAL_KEYS
 
     assert "use_tmp_on_transfer" in _S3_MOVER_INTERNAL_KEYS
+
+
+@patch("trollmoves.movers.boto3")
+def test_multipart_keeps_filename_when_not_using_tmp(mock_boto3):
+    """Without use_tmp_on_transfer, a filename starting with tmp_prefix must be kept intact."""
+    client = MagicMock()
+    client.create_multipart_upload.return_value = {"UploadId": "u1"}
+    client.upload_part.return_value = {"ETag": "e1"}
+    mock_boto3.client.return_value = client
+
+    with tempfile.NamedTemporaryFile("wb", delete=False) as f:
+        f.write(b"payload")
+        tmpname = f.name
+
+    mover = S3Mover(tmpname, "s3://bucket/dir/.hidden.nc", attrs={"s3_use_multipart": True})
+    mover.copy()
+
+    assert client.create_multipart_upload.call_args.kwargs["Key"] == "dir/.hidden.nc"
+    assert mover.destination.path == "/dir/.hidden.nc"
+
+    os.remove(tmpname)
+
+
+@patch("trollmoves.movers.boto3")
+def test_multipart_strips_tmp_prefix_when_using_tmp(mock_boto3):
+    """With use_tmp_on_transfer, multipart uploads straight to the final key."""
+    client = MagicMock()
+    client.create_multipart_upload.return_value = {"UploadId": "u1"}
+    client.upload_part.return_value = {"ETag": "e1"}
+    mock_boto3.client.return_value = client
+
+    with tempfile.NamedTemporaryFile("wb", delete=False) as f:
+        f.write(b"payload")
+        tmpname = f.name
+
+    mover = S3Mover(tmpname, "s3://bucket/dir/hidden.nc",
+                    attrs={"s3_use_multipart": True, "use_tmp_on_transfer": True})
+    mover.copy()
+
+    assert client.create_multipart_upload.call_args.kwargs["Key"] == "dir/hidden.nc"
+    assert mover.destination.path == "/dir/hidden.nc"
+
+    os.remove(tmpname)

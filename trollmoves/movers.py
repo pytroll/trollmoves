@@ -673,7 +673,10 @@ class S3Mover(Mover):
         LOGGER.debug("destination_file_path = %s", destination_file_path)
 
         if bool(self.attrs.get("s3_use_multipart", False)) and boto3 is not None:
-            self._multipart_upload(destination_file_path)
+            # A multipart upload is atomic in itself: the object only becomes visible on
+            # CompleteMultipartUpload. Upload straight to the final key, skipping any
+            # temporary key an atomic transfer may have staged.
+            self._multipart_upload(self._get_destination(self._final_dest))
             return
 
         # Fallback: use s3fs put to destination_file_path (tmp or final)
@@ -744,28 +747,13 @@ class S3Mover(Mover):
                     pass
             raise
 
-    def _multipart_upload(self, destination_file_path):
-        """Orchestrate a boto3 multipart upload.
-
-        Parses destination_file_path into bucket and key, strips the tmp_prefix from the
-        basename if present to derive the final key, then uploads and updates self.destination.
-        """
-        tmp_prefix = self.attrs.get("tmp_prefix", ".")
-        path_parts = destination_file_path.split("/")
-        bucket = path_parts[0]
-        key = "/".join(path_parts[1:]) if len(path_parts) > 1 else ""
-
-        basename = key.split("/")[-1] if key else ""
-        if basename.startswith(tmp_prefix):
-            final_basename = basename[len(tmp_prefix):]
-            final_key = key.rsplit("/", 1)[0] + "/" + final_basename if "/" in key else final_basename
-        else:
-            final_key = key
+    def _multipart_upload(self, final_file_path):
+        """Orchestrate a boto3 multipart upload to *final_file_path* (``bucket/key``)."""
+        bucket, _, final_key = final_file_path.partition("/")
 
         client = self._build_boto3_client()
         self._do_multipart_upload(client, bucket, final_key)
         self.destination = urlparse("s3://" + bucket + "/" + final_key)
-
 
     def _sanitize_attrs(self):
         keys = list(self.attrs.keys())
@@ -773,13 +761,17 @@ class S3Mover(Mover):
             if key not in S3_ALLOWED_SETTINGS:
                 del self.attrs[key]
 
-    def _get_destination(self):
-        bucket_parts = []
-        bucket_parts.append(self.destination.netloc)
+    def _get_destination(self, destination=None):
+        """Return the ``bucket/key`` path for *destination*, defaulting to self.destination."""
+        if destination is None:
+            destination = self.destination
 
-        if self.destination.path != "/":
-            bucket_parts.append(self.destination.path.strip("/"))
-        if self.destination.path.endswith("/"):
+        bucket_parts = []
+        bucket_parts.append(destination.netloc)
+
+        if destination.path != "/":
+            bucket_parts.append(destination.path.strip("/"))
+        if destination.path.endswith("/"):
             bucket_parts.append(os.path.basename(self.origin))
 
         return "/".join(bucket_parts)
