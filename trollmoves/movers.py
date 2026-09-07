@@ -107,8 +107,23 @@ class Mover:
         self.attrs = dict(attrs) if attrs else {}
         self.backup_targets = backup_targets
 
-        self._final_dest = self.destination
+        self._final_dest = self._resolve_destination_filename(self.destination)
         self._tmp_dest = self._compute_tmp_dest()
+
+    def _resolve_destination_filename(self, destination):
+        """Return *destination* with the origin filename appended if it names a directory.
+
+        A destination path ending in "/" means "keep the original filename". That name
+        has to be resolved before a temporary destination can be derived from it, or the
+        tmp name would be built from an empty basename and lose the filename entirely.
+        """
+        try:
+            path = destination.path
+        except AttributeError:
+            return destination
+        if not path.endswith("/"):
+            return destination
+        return destination._replace(path=path + os.path.basename(self.origin))
 
     def _compute_tmp_dest(self):
         """Compute the temporary destination URL if atomic transfer is requested.

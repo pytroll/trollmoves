@@ -441,3 +441,18 @@ def test_move_it_falls_back_when_atomic_not_supported(tmp_path, monkeypatch, cap
     assert not (tmp_path / "dest" / ".data.txt").exists()
     # An error must have been logged about the fallback
     assert any("does not support atomic" in record.message for record in caplog.records)
+
+
+def test_move_it_use_tmp_directory_destination(tmp_path, source_file):
+    """A local destination naming a directory keeps the origin filename."""
+    from trollmoves.movers import move_it
+
+    dest_dir = tmp_path / "dest"
+    dest_dir.mkdir()
+    attrs = {"use_tmp_on_transfer": True}
+
+    returned = move_it(str(source_file), str(dest_dir) + "/", attrs=attrs)
+
+    assert (dest_dir / "data.txt").read_text() == "hello atomic transfer"
+    assert not (dest_dir / ".data.txt").exists()
+    assert returned.path == str(dest_dir / "data.txt")

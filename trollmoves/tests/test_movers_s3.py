@@ -292,3 +292,46 @@ def test_multipart_strips_tmp_prefix_when_using_tmp(mock_boto3):
     assert mover.destination.path == "/dir/hidden.nc"
 
     os.remove(tmpname)
+
+
+@patch("trollmoves.movers.S3FileSystem")
+def test_s3_use_tmp_with_directory_destination(mock_s3fs):
+    """A destination ending in '/' keeps the origin filename, also for atomic transfers."""
+    mock_s3 = MagicMock()
+    mock_s3.exists.return_value = True
+    mock_s3fs.return_value = mock_s3
+
+    mover = S3Mover("/local/data/myfile.nc", "s3://bucket/prefix/dir/",
+                    attrs={"use_tmp_on_transfer": True, "s3_use_copy": True})
+
+    assert mover._tmp_dest.path == "/prefix/dir/.myfile.nc"
+
+    mover.copy()
+
+    mock_s3.put.assert_called_once_with("/local/data/myfile.nc", "bucket/prefix/dir/.myfile.nc")
+    mock_s3.copy.assert_called_once_with("bucket/prefix/dir/.myfile.nc", "bucket/prefix/dir/myfile.nc")
+    mock_s3.rm.assert_called_once_with("bucket/prefix/dir/.myfile.nc")
+    assert mover.destination.path == "/prefix/dir/myfile.nc"
+
+
+@patch("trollmoves.movers.boto3")
+def test_s3_multipart_with_directory_destination(mock_boto3):
+    """Multipart uploads to a directory destination keep the origin filename."""
+    client = MagicMock()
+    client.create_multipart_upload.return_value = {"UploadId": "u1"}
+    client.upload_part.return_value = {"ETag": "e1"}
+    mock_boto3.client.return_value = client
+
+    with tempfile.NamedTemporaryFile("wb", suffix=".nc", delete=False) as f:
+        f.write(b"payload")
+        tmpname = f.name
+
+    mover = S3Mover(tmpname, "s3://bucket/prefix/dir/",
+                    attrs={"s3_use_multipart": True, "use_tmp_on_transfer": True})
+    mover.copy()
+
+    expected_key = "prefix/dir/" + os.path.basename(tmpname)
+    assert client.create_multipart_upload.call_args.kwargs["Key"] == expected_key
+    assert mover.destination.path == "/" + expected_key
+
+    os.remove(tmpname)
