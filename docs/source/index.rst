@@ -14,6 +14,7 @@ These include:
   - Move_it_server and move_it_client
   - Trollstalker (Pytroll-watchers should be prefered if possible)
   - S3downloader
+  - Remove_it
 
 
 .. toctree::
@@ -23,7 +24,7 @@ These include:
    fetcher
    s3downloader
    atomic_transfers
-
+   remove_it
 
 Indices and tables
 ==================
