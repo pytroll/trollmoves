@@ -140,7 +140,7 @@ class Mover:
         if not self.attrs.get("use_tmp_on_transfer"):
             return None
         if not self.supports_atomic:
-            LOGGER.error(
+            LOGGER.warning(
                 "Mover '%s' does not support atomic transfers. "
                 "Falling back to transfer without temporary files.",
                 self.__class__.__name__,
@@ -832,9 +832,9 @@ class S3Mover(Mover):
         self.destination = urlparse("s3://" + bucket + "/" + final_key)
 
     def _sanitize_attrs(self):
-        keys = list(self.attrs.keys())
-        for key in keys:
+        for key in list(self.attrs):
             if key not in S3_ALLOWED_SETTINGS:
+                LOGGER.debug("S3 keyword '%s' not allowed - removed from attributes.", key)
                 del self.attrs[key]
 
     def _get_destination(self, destination=None):

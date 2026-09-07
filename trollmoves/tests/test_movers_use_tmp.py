@@ -419,7 +419,7 @@ def test_supports_atomic(mover_class, expected):
 
 def test_move_it_falls_back_when_atomic_not_supported(tmp_path, monkeypatch, caplog):
     """When use_tmp_on_transfer=True but supports_atomic returns False, move_it
-    falls back to a direct transfer and logs an error."""
+    falls back to a direct transfer and logs a warning."""
     import logging
 
     from trollmoves.movers import FileMover, move_it
@@ -433,7 +433,7 @@ def test_move_it_falls_back_when_atomic_not_supported(tmp_path, monkeypatch, cap
     source.write_text("fallback content")
     dest = tmp_path / "dest" / "data.txt"
 
-    with caplog.at_level(logging.ERROR, logger="trollmoves.movers"):
+    with caplog.at_level(logging.WARNING, logger="trollmoves.movers"):
         move_it(str(source), str(dest), attrs={"use_tmp_on_transfer": True})
 
     # Final file must exist (transfer succeeded via direct path)
@@ -441,8 +441,9 @@ def test_move_it_falls_back_when_atomic_not_supported(tmp_path, monkeypatch, cap
     assert dest.read_text() == "fallback content"
     # Tmp file must NOT exist
     assert not (tmp_path / "dest" / ".data.txt").exists()
-    # An error must have been logged about the fallback
-    assert any("does not support atomic" in record.message for record in caplog.records)
+    # A warning must have been logged about the fallback
+    assert any("does not support atomic" in record.message and record.levelno == logging.WARNING
+               for record in caplog.records)
 
 
 def test_move_it_use_tmp_directory_destination(tmp_path, source_file):
