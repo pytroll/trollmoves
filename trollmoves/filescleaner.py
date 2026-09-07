@@ -39,6 +39,7 @@ class FilesCleaner():
         self.info = info
         self.dry_run = dry_run
         self.recursive = self.info.get("recursive", False)
+        self.include_hidden = self.info.get("include_hidden", False)
         self.stat_time_method = self.info.get("stat_time_method", "st_ctime")
 
 
@@ -50,7 +51,7 @@ class FilesCleaner():
         LOGGER.info("Cleaning under %s", pathname_template)
 
         if not self.recursive:
-            filepaths = glob(pathname_template)
+            filepaths = glob(pathname_template, include_hidden=self.include_hidden)
             return self.clean_files_and_dirs(filepaths, ref_time)
 
         section_files = 0
@@ -60,7 +61,7 @@ class FilesCleaner():
         base_template = str(Path(pathname_template).parent)
         file_pattern = Path(pathname_template).name
 
-        for base_dir in glob(base_template):
+        for base_dir in glob(base_template, include_hidden=self.include_hidden):
             if not os.path.isdir(base_dir):
                 continue
 
@@ -85,9 +86,9 @@ class FilesCleaner():
 
         base_dir = Path(base_dir)
 
-        for dirpath, _dirnames, _filenames in os.walk(base_dir, followlinks=True):
+        for dirpath, _dirnames, _filenames in os.walk(base_dir, topdown=False, followlinks=True):
             dirpath = Path(dirpath)
-            files_in_dir = glob(str(dirpath / file_pattern))
+            files_in_dir = glob(str(dirpath / file_pattern), include_hidden=self.include_hidden)
 
             s_size, s_files, removed_files = self.clean_files_and_dirs(files_in_dir, ref_time)
 
@@ -125,6 +126,8 @@ class FilesCleaner():
                 stat = os.stat(filepath)
             except OSError:
                 LOGGER.warning("Couldn't stat path=%s", str(filepath))
+                continue
+            if filepath.endswith(".keep"):
                 continue
 
             if dt.datetime.fromtimestamp(getattr(stat, self.stat_time_method), tz=dt.timezone.utc) < ref_time:

@@ -248,6 +248,29 @@ def test_remove_files_using_wildcard_in_template_dirs(file_structure_with_some_o
     assert sub_dir3.exists()
 
 
+def test_remove_nested_empty_dirs(tmp_path):
+    """Test that a nested tree of empty directories is removed all the way up."""
+    pub = FakePublisher()
+    basedir = tmp_path / "mydata"
+    (basedir / "sub" / "subsub").mkdir(parents=True)
+
+    section = "mytest_files1"
+    info = {"mailhost": "localhost",
+            "to": "some_users@xxx.yy",
+            "subject": "Cleanup Error on {hostname}",
+            "base_dir": f"{basedir}",
+            "stat_time_method": "st_mtime",
+            "recursive": True,
+            "templates": f"{basedir}/*",
+            "hours": "3"}
+
+    fcleaner = FilesCleaner(pub, section, info, dry_run=False)
+    fcleaner.clean_section()
+
+    assert not (basedir / "sub").exists()
+    assert basedir.exists()
+
+
 def test_remove_files_empty_dir_atime(file_structure_with_some_old_files_and_empty_dir, caplog):
     """Test remove files."""
     pub = FakePublisher()
@@ -311,18 +334,31 @@ def dummy_tree_of_some_files(request, tmp_path_factory) -> list[str]:
     os.utime(fn.parent, times=(atime, mtime))
     filepaths.append(fn)
 
+    # create …/data/another_subdir/subsubdir2/subsubsub/dummy5.dat
+    # where …/data/another_subdir/subsubdir2 symlinks to …/data_to_link
 
     real_dir = tmp_path_factory.mktemp("data_to_link")
-    fn = basedir / "another_subdir" / "subsubdir2"
-    os.symlink(real_dir, fn)
-    # fn.mkdir()
-    symfn = fn / "dummy5.dat"
-    fn = real_dir / "dummy5.dat"
+    dir_name = basedir / "another_subdir" / "subsubdir2"
+    os.symlink(real_dir, dir_name)
+    symfn = dir_name / "subsubsub" / "dummy5.dat"
+    file5 = real_dir / "subsubsub" / "dummy5.dat"
+    file6 = real_dir / "subsubsub" / ".dummy6.dat"
+    file5.parent.mkdir()
+    file5.write_text(DUMMY_CONTENT)
+    os.utime(file5, times=(atime, mtime))
+    os.utime(file5.parent, times=(atime, mtime))
+    file6.write_text(DUMMY_CONTENT)
+    os.utime(file6, times=(atime, mtime))
+    os.utime(file6.parent, times=(atime, mtime))
+    filepaths.append(symfn)
+
+    # Make a sub-directory to keep:
+    fn = basedir / "subdir_to_keep" / ".keep"
+    fn.parent.mkdir()
     fn.write_text(DUMMY_CONTENT)
     os.utime(fn, times=(atime, mtime))
     os.utime(fn.parent, times=(atime, mtime))
-    filepaths.append(symfn)
-
+    filepaths.append(fn)
     return filepaths
 
 
@@ -452,14 +488,72 @@ def test_clean_follows_links(dummy_tree_of_some_files, tmp_path):
             "to": "some_users@xxx.yy",
             "subject": "Cleanup Error on {hostname}",
             "base_dir": f"{basedir}",
-            "templates": f"{basedir}/*",
+            "templates": "*",
             "stat_time_method": "st_mtime",
             "recursive": True,
             "hours": "1"}
 
-    fcleaner = FilesCleaner(pub, section, info, dry_run=True)
+    fcleaner = FilesCleaner(pub, section, info, dry_run=False)
 
     res = fcleaner.clean_section()
 
     section_size, section_files, removed_files = res
-    assert str(basedir / "another_subdir" / "subsubdir2" / "dummy5.dat") in removed_files
+    assert str(basedir / "another_subdir" / "subsubdir2" / "subsubsub" / "dummy5.dat") in removed_files
+    # non-empty subdir
+    assert (basedir / "another_subdir" / "subsubdir2" / "subsubsub").exists()
+
+
+def test_clean_removes_hidden_files(dummy_tree_of_some_files, tmp_path):
+    """Test that cleaning follows links."""
+    pub = FakePublisher()
+    list_of_files_to_clean = dummy_tree_of_some_files
+
+    basedir = list_of_files_to_clean[0].parent
+
+    section = "mytest_files1"
+    info = {"mailhost": "localhost",
+            "to": "some_users@xxx.yy",
+            "subject": "Cleanup Error on {hostname}",
+            "base_dir": f"{basedir}",
+            "templates": "*",
+            "stat_time_method": "st_mtime",
+            "recursive": True,
+            "include_hidden": True,
+            "hours": "1"}
+
+    fcleaner = FilesCleaner(pub, section, info, dry_run=False)
+
+    res = fcleaner.clean_section()
+
+    section_size, section_files, removed_files = res
+    assert str(basedir / "another_subdir" / "subsubdir2" / "subsubsub" / ".dummy6.dat") in removed_files
+    # empty subdir, remove
+    assert not (basedir / "another_subdir" / "subsubdir2" / "subsubsub").exists()
+    # link, should not be removed
+    assert (basedir / "another_subdir" / "subsubdir2").exists()
+
+
+def test_clean_keeps_keep_files(dummy_tree_of_some_files, tmp_path):
+
+    pub = FakePublisher()
+    list_of_files_to_clean = dummy_tree_of_some_files
+
+    basedir = list_of_files_to_clean[0].parent
+
+    section = "mytest_files1"
+    info = {"mailhost": "localhost",
+            "to": "some_users@xxx.yy",
+            "subject": "Cleanup Error on {hostname}",
+            "base_dir": f"{basedir}",
+            "templates": "*",
+            "stat_time_method": "st_mtime",
+            "recursive": True,
+            "include_hidden": True,
+            "hours": "1"}
+
+    fcleaner = FilesCleaner(pub, section, info, dry_run=False)
+
+    res = fcleaner.clean_section()
+
+    section_size, section_files, removed_files = res
+    assert (basedir / "subdir_to_keep").exists()

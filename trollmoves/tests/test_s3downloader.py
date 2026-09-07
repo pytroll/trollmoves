@@ -1,12 +1,25 @@
 """Test the s3downloader."""
 
 import os
+from contextlib import contextmanager
 from logging import StreamHandler
 from tempfile import NamedTemporaryFile
-from unittest.mock import PropertyMock, patch
+from unittest import mock
+from unittest.mock import patch
 
 import pytest
 from posttroll.message import Message
+from posttroll.testing import patched_publisher
+
+
+@contextmanager
+def _patched_subscriber_recv(messages):
+    """Like posttroll.testing.patched_subscriber_recv but accepts keyword arguments (e.g. timeout)."""
+    def recv(self, **kwargs):
+        yield from messages
+
+    with mock.patch("posttroll.subscriber.Subscriber.recv", recv):
+        yield
 
 CONFIG_YAML = """
 logging:
@@ -120,14 +133,15 @@ def test_generate_message_if_file_does_not_exists_after_download(patch_os_path_e
 
 @patch("trollmoves.s3downloader.S3Downloader._download_from_s3")
 @patch("trollmoves.s3downloader.S3Downloader._get_basename")
-@patch("queue.Queue")
-def test_get_one_message(patch_subscribe, patch_get_basename, patch_download_from_s3, s3dl):
+def test_get_one_message(patch_get_basename, patch_download_from_s3, s3dl):
+    import queue
+
     s3dl.read_config()
     s3dl.setup_logging()
     to_send = {"some_key": "with_a_value", "uri": "now-this-is-a-uri"}
     msg = Message("/publish-topic", "file", to_send)
-    s3dl.listener_queue = patch_subscribe
-    s3dl.listener_queue.get.return_value = msg
+    s3dl.listener_queue = queue.Queue()
+    s3dl.listener_queue.put(msg)
     patch_get_basename.return_value = "filename-basename"
     patch_download_from_s3.return_value = True
     result = s3dl._get_one_message()
@@ -136,40 +150,43 @@ def test_get_one_message(patch_subscribe, patch_get_basename, patch_download_fro
 
 @patch("trollmoves.s3downloader.S3Downloader._download_from_s3")
 @patch("trollmoves.s3downloader.S3Downloader._get_basename")
-@patch("queue.Queue")
-def test_get_one_message_none(patch_sub_q, patch_get_basename, patch_download_from_s3, s3dl):
+def test_get_one_message_none(patch_get_basename, patch_download_from_s3, s3dl):
+    import queue
+
     s3dl.read_config()
     s3dl.setup_logging()
-    s3dl.listener_queue = patch_sub_q
-    s3dl.listener_queue.get.return_value = None
-    patch_get_basename.return_value = "filename-basename"
-    patch_download_from_s3.return_value = True
+    s3dl.listener_queue = queue.Queue()
+    s3dl.listener_queue.put(None)
     result = s3dl._get_one_message()
     assert result is True
 
 
 @patch("trollmoves.s3downloader.S3Downloader._download_from_s3")
 @patch("trollmoves.s3downloader.S3Downloader._get_basename")
-@patch("queue.Queue")
-def test_get_one_message_download_false(patch_sub_q, patch_get_bn, patch_dl_s3, caplog, s3dl):
+def test_get_one_message_download_false(patch_get_bn, patch_dl_s3, caplog, s3dl):
     import logging
+    import queue
+
     s3dl.read_config()
     s3dl.setup_logging()
     patch_get_bn.return_value = "filename-basename"
     patch_dl_s3.return_value = False
     caplog.set_level(logging.DEBUG)
-    s3dl.listener_queue = patch_sub_q
+    s3dl.listener_queue = queue.Queue()
+    s3dl.listener_queue.put(Message("/publish-topic", "file", {"uri": "some-uri"}))
     result = s3dl._get_one_message()
     assert "Could not download file filename-basename for some reason. SKipping this." in caplog.text
     assert result is True
 
 
-@patch("queue.Queue")
-def test_get_one_message_keyboardinterrupt(patch_subscribe, s3dl):
+def test_get_one_message_keyboardinterrupt(s3dl):
+    class _KeyboardInterruptQueue:
+        def get(self, **kwargs):
+            raise KeyboardInterrupt
+
     s3dl.read_config()
     s3dl.setup_logging()
-    s3dl.listener_queue = patch_subscribe
-    s3dl.listener_queue.get.side_effect = KeyboardInterrupt
+    s3dl.listener_queue = _KeyboardInterruptQueue()
     result = s3dl._get_one_message()
     assert result is False
 
@@ -245,144 +262,140 @@ def test_setup_logging_file(config_yaml):
     assert handler.backupCount == 30
 
 
-@patch("posttroll.publisher.Publish")
-@patch("queue.Queue")
-def test_file_publisher_init(patch_publish_queue, patch_publish):
-    from trollmoves.s3downloader import FilePublisher
-    nameservers = None
-    fp = FilePublisher(patch_publish_queue, nameservers)
-    assert fp.loop is True
-    assert fp.service_name == "s3downloader"
-    assert fp.nameservers == nameservers
-    assert fp.queue == patch_publish_queue
-
-
-MSG_1 = Message("/topic", "file", data={"uid": "file1"})
-
-
-@patch("trollmoves.s3downloader.Publish")
-@patch("queue.Queue")
-def test_file_publisher_break(patch_publish_queue, patch_publish):
-    from trollmoves.s3downloader import FilePublisher
-    nameservers = None
-    patch_publish_queue.get = PropertyMock(side_effect=[[MSG_1.encode(), None], ])
-    fp = FilePublisher(patch_publish_queue, nameservers)
-    fp.loop = False
-    fp.run()
-    patch_publish().__enter__().send.assert_not_called()
-
-
-@patch("trollmoves.s3downloader.Publish")
-@patch("queue.Queue")
-def test_file_publisher_publish_message(patch_publish_queue, patch_publish):
-    from trollmoves.s3downloader import FilePublisher
-    nameservers = None
-    patch_publish_queue.get = PropertyMock(side_effect=[[MSG_1.encode()]])
-    fp = FilePublisher(patch_publish_queue, nameservers)
-    fp._publish_message(patch_publish)
-    patch_publish.send.assert_called_once()
-
-
-@patch("trollmoves.s3downloader.Publish")
-@patch("queue.Queue")
-def test_file_publisher_message_is_none(patch_publish_queue, patch_publish):
-    from trollmoves.s3downloader import FilePublisher
-    nameservers = None
-    patch_publish_queue.get = PropertyMock(side_effect=[None, ])
-    fp = FilePublisher(patch_publish_queue, nameservers)
-    fp._publish_message(patch_publish)
-    patch_publish.send.assert_not_called()
-
-
-@patch("trollmoves.s3downloader.Publish")
-def test_file_publisher_stop_loop(patch_publish):
+def test_file_publisher_init():
     import queue
 
     from trollmoves.s3downloader import FilePublisher
     nameservers = None
     pqueue = queue.Queue()
     fp = FilePublisher(pqueue, nameservers)
+    assert fp.loop is True
+    assert fp.service_name == "s3downloader"
+    assert fp.nameservers == nameservers
+    assert fp.queue is pqueue
+
+
+MSG_1 = Message("/topic", "file", data={"uid": "file1"})
+
+
+def test_file_publisher_break():
+    import queue
+
+    from trollmoves.s3downloader import FilePublisher
+    fp = FilePublisher(queue.Queue(), None)
+    fp.loop = False
+    with patched_publisher() as published:
+        fp.run()
+    assert published == []
+
+
+def test_file_publisher_publish_message():
+    import queue
+
+    from trollmoves.s3downloader import FilePublisher, Publish
+    pqueue = queue.Queue()
+    pqueue.put(MSG_1.encode())
+    fp = FilePublisher(pqueue, None)
+    with patched_publisher() as published:
+        with Publish("s3downloader", nameservers=None) as publisher:
+            fp._publish_message(publisher)
+    assert published == [MSG_1.encode()]
+
+
+def test_file_publisher_message_is_none():
+    import queue
+
+    from trollmoves.s3downloader import FilePublisher, Publish
+    pqueue = queue.Queue()
+    pqueue.put(None)
+    fp = FilePublisher(pqueue, None)
+    with patched_publisher() as published:
+        with Publish("s3downloader", nameservers=None) as publisher:
+            fp._publish_message(publisher)
+    assert published == []
+
+
+def test_file_publisher_stop_loop():
+    import queue
+
+    from trollmoves.s3downloader import FilePublisher
+    fp = FilePublisher(queue.Queue(), None)
     fp.stop()
     assert fp.loop is False
 
 
-@patch("trollmoves.s3downloader.Publish")
-@patch("queue.Queue")
-def test_file_publisher_queue_timeout(patch_publish_queue, patch_publish):
+def test_file_publisher_queue_timeout():
     import queue
 
-    from trollmoves.s3downloader import FilePublisher
-    nameservers = None
-    patch_publish_queue.get.side_effect = queue.Empty
-    fp = FilePublisher(patch_publish_queue, nameservers)
-    fp._publish_message(patch_publish)
-    patch_publish.send.assert_not_called()
+    from trollmoves.s3downloader import FilePublisher, Publish
+    fp = FilePublisher(queue.Queue(), None)  # empty queue → get() times out
+    with patched_publisher() as published:
+        with Publish("s3downloader", nameservers=None) as publisher:
+            fp._publish_message(publisher)
+    assert published == []
 
 
-@patch("trollmoves.s3downloader.Publish")
-@patch("queue.Queue")
-def test_file_publisher_exception_1(patch_publish_queue, patch_publish):
+def test_file_publisher_exception_1():
+
+    class _KeyboardInterruptQueue:
+        def get(self, **kwargs):
+            raise KeyboardInterrupt
+
     from trollmoves.s3downloader import FilePublisher
-    nameservers = None
-    patch_publish_queue.get.side_effect = KeyboardInterrupt
-    fp = FilePublisher(patch_publish_queue, nameservers)
-    with pytest.raises(KeyboardInterrupt):
-        fp.run()
+    fp = FilePublisher(_KeyboardInterruptQueue(), None)
+    with patched_publisher():
+        with pytest.raises(KeyboardInterrupt):
+            fp.run()
 
 
 posttroll_config = {"subscribe-topic": "/yuhu"}
 
 
-@patch("queue.Queue")
-def test_listener_init(patch_listener_queue):
+def test_listener_init():
+    import queue
+
     from trollmoves.s3downloader import Listener
-    subscribe_nameserver = "localhost"
-    listenr = Listener(patch_listener_queue, posttroll_config, subscribe_nameserver)
+    lqueue = queue.Queue()
+    listenr = Listener(lqueue, posttroll_config, "localhost")
     assert listenr.loop is True
-    assert listenr.queue == patch_listener_queue
+    assert listenr.queue is lqueue
     assert listenr.config == posttroll_config
-    assert listenr.subscribe_nameserver == subscribe_nameserver
+    assert listenr.subscribe_nameserver == "localhost"
 
 
-@patch("posttroll.subscriber.Subscriber")
-@patch("posttroll.ns.get_pub_address")
-def test_listener_message(patch_get_pub_address, patch_subscriber, caplog):
+def test_listener_message(caplog):
     """Test listener push message."""
     import logging
     import queue
 
     from trollmoves.s3downloader import Listener
-    subscribe_nameserver = "localhost"
     caplog.set_level(logging.DEBUG)
 
-    patch_subscriber.return_value.recv = PropertyMock(side_effect=[[MSG_1, None], ])
     lqueue = queue.Queue()
-    listener = Listener(lqueue, posttroll_config, subscribe_nameserver)
-    listener.run()
+    listener = Listener(lqueue, {**posttroll_config, "subscriber_addresses": "ipc://bla"}, False)
+    with _patched_subscriber_recv([MSG_1, None]):
+        listener.run()
 
-    assert "Starting FileListener." in caplog.text
     assert lqueue.qsize() == 1
 
     message = lqueue.get()
     assert message.type == "file"
 
 
-@patch("posttroll.subscriber.Subscriber")
-@patch("posttroll.ns.get_pub_address")
-@patch("queue.Queue")
-def test_listener_message_break(patch_listener_queue, patch_get_pub_address, patch_subscriber, caplog):
+def test_listener_message_break(caplog):
     """Test listener push message."""
     import logging
+    import queue
 
     from trollmoves.s3downloader import Listener
     caplog.set_level(logging.DEBUG)
-    subscribe_nameserver = "localhost"
 
-    patch_subscriber.return_value.recv = PropertyMock(side_effect=[[MSG_1, None], ])
-    listener = Listener(patch_listener_queue, posttroll_config, subscribe_nameserver)
+    lqueue = queue.Queue()
+    listener = Listener(lqueue, {**posttroll_config, "subscriber_addresses": "ipc://bla"}, False)
     listener.loop = False
-    listener.run()
-    patch_listener_queue().put.assert_not_called()
+    with _patched_subscriber_recv([MSG_1, None]):
+        listener.run()
+    assert lqueue.qsize() == 0
 
 
 MSG_ACK = Message("/topic", "ack", data={"uid": "file1"})
@@ -418,37 +431,30 @@ def test_listener_message_stop():
     assert message is None
 
 
-@patch("posttroll.subscriber.Subscriber")
-@patch("posttroll.ns.get_pub_address")
-def test_listener_message_check_config(patch_get_pub_address, patch_subscriber):
+def test_listener_message_check_config():
     """Test listener push message."""
     import queue
 
     from trollmoves.s3downloader import Listener
-    posttroll_config["subscribe-topic"] = "is-a-string-topic"
-    posttroll_config["subscriber_addresses"] = "first_address, second_address"
-    subscribe_nameserver = "localhost"
-
+    config = {**posttroll_config, "subscribe-topic": "is-a-string-topic", "subscriber_addresses": "ipc://bla"}
     lqueue = queue.Queue()
-    listener = Listener(lqueue, posttroll_config, subscribe_nameserver)
-    listener.run()
+    listener = Listener(lqueue, config, False)
+    with _patched_subscriber_recv([]):
+        listener.run()
     assert isinstance(listener.config["subscribe-topic"], list) is True
     assert listener.config["services"] == ""
 
 
-@patch("posttroll.subscriber.Subscriber")
-@patch("posttroll.ns.get_pub_address")
-def test_listener_message_check_message_and_put(patch_get_pub_address, patch_subscriber):
+def test_listener_message_check_message_and_put():
     """Test listener push message."""
     import queue
 
     from trollmoves.s3downloader import Listener
-    posttroll_config["subscribe-topic"] = "is-a-string-topic"
-    posttroll_config["subscriber_addresses"] = "first_address, second_address"
-    subscribe_nameserver = "localhost"
-
+    config = {**posttroll_config,
+              "subscribe-topic": "is-a-string-topic",
+              "subscriber_addresses": "first_address, second_address"}
     lqueue = queue.Queue()
-    listener = Listener(lqueue, posttroll_config, subscribe_nameserver)
+    listener = Listener(lqueue, config, False)
     assert listener._check_and_put_message_to_queue(MSG_1) is True
     assert listener._check_and_put_message_to_queue(None) is True
 
@@ -456,32 +462,28 @@ def test_listener_message_check_message_and_put(patch_get_pub_address, patch_sub
     assert listener._check_and_put_message_to_queue(MSG_1) is False
 
 
-@patch("posttroll.subscriber.Subscriber")
-@patch("posttroll.ns.get_pub_address")
-def test_listener_message_exception_1(patch_get_pub_address, patch_subscriber):
+@patch("trollmoves.s3downloader.Subscribe")
+def test_listener_message_exception_1(patch_subscribe):
     """Test listener push message."""
     import queue
 
     from trollmoves.s3downloader import Listener
-    subscribe_nameserver = "localhost"
     lqueue = queue.Queue()
-    listener = Listener(lqueue, posttroll_config, subscribe_nameserver)
-    patch_subscriber.side_effect = KeyError
+    listener = Listener(lqueue, posttroll_config, "localhost")
+    patch_subscribe.side_effect = KeyError
     with pytest.raises(KeyError):
         listener.run()
 
 
-@patch("posttroll.subscriber.Subscriber")
-@patch("posttroll.ns.get_pub_address")
-def test_listener_message_exception_2(patch_get_pub_address, patch_subscriber):
+@patch("trollmoves.s3downloader.Subscribe")
+def test_listener_message_exception_2(patch_subscribe):
     """Test listener push message."""
     import queue
 
     from trollmoves.s3downloader import Listener
-    subscribe_nameserver = "localhost"
     lqueue = queue.Queue()
-    listener = Listener(lqueue, posttroll_config, subscribe_nameserver)
-    patch_subscriber.side_effect = KeyboardInterrupt
+    listener = Listener(lqueue, posttroll_config, "localhost")
+    patch_subscribe.side_effect = KeyboardInterrupt
     with pytest.raises(KeyboardInterrupt):
         listener.run()
 
