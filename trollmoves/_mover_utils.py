@@ -56,14 +56,16 @@ def _ftp_dir_exists(connection, path):
 
 
 def _ftp_mkd(connection, full_path, part):
-    """Create an FTP directory, trying *full_path* first then the relative *part*."""
+    """Create an FTP directory, trying *full_path* first then the relative *part*.
+
+    Some servers reject absolute paths in MKD, hence the second attempt. If both
+    fail the error is raised: a directory that cannot be created would otherwise
+    surface much later as a confusing STOR failure.
+    """
     try:
         connection.mkd(full_path)
     except (ftplib.Error, OSError):
-        try:
-            connection.mkd(part)
-        except (ftplib.Error, OSError):
-            pass
+        connection.mkd(part)
 
 
 def _ftp_cwd_into(connection, full_path, part):
@@ -71,10 +73,7 @@ def _ftp_cwd_into(connection, full_path, part):
     try:
         connection.cwd(full_path)
     except (ftplib.Error, OSError):
-        try:
-            connection.cwd(part)
-        except (ftplib.Error, OSError):
-            pass
+        connection.cwd(part)
 
 
 def _restore_cwd(connection, original_cwd):
@@ -89,8 +88,9 @@ def _restore_cwd(connection, original_cwd):
 def _ensure_remote_dirs_sftp(connection, parts):
     """Handle SFTP-like directory creation (internal helper).
 
-    For SFTP connections: iterate through path parts, stat each path segment
-    and create with mkdir if it doesn't exist. Silently ignore all errors.
+    Iterates through the path parts, stats each segment and creates it with mkdir
+    if it is missing. A segment that cannot be created raises, rather than leaving
+    the caller to fail later with a less informative error.
     """
     current = ""
     for part in parts:
@@ -98,13 +98,7 @@ def _ensure_remote_dirs_sftp(connection, parts):
         try:
             connection.stat(current)
         except OSError:
-            try:
-                connection.mkdir(current)
-            except OSError:
-                try:
-                    connection.mkdir(part)
-                except OSError:
-                    pass
+            connection.mkdir(current)
 
 
 def ensure_remote_dirs(connection, path):
@@ -137,27 +131,9 @@ def ensure_remote_dirs(connection, path):
 
 
 def ensure_final_directory_for_rename(sftp_connection, final_destination_path):
-    """Ensure final directory exists for a rename operation on SFTP.
+    """Ensure the directory of *final_destination_path* exists on an SFTP connection.
 
-    Used in finalize_atomic_transfer operations to ensure the target directory
-    exists before renaming a temporary file to its final location. Attempts to
-    stat each path segment; creates with mkdir if it doesn't exist. Silently
-    ignores all errors to match existing SFTP behavior in movers.
+    Used by finalize_atomic_transfer to make sure the target directory exists
+    before renaming a temporary file to its final location.
     """
-    final_dir = os.path.dirname(final_destination_path)
-    if not final_dir:
-        return
-
-    parts = final_dir.split("/")
-    path = ""
-    for p in parts:
-        if not p:
-            continue
-        path = path + "/" + p
-        try:
-            sftp_connection.stat(path)
-        except OSError:
-            try:
-                sftp_connection.mkdir(path)
-            except OSError:
-                pass
+    ensure_remote_dirs(sftp_connection, os.path.dirname(final_destination_path))

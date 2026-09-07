@@ -273,3 +273,33 @@ def tmp_file(tmp_path):
     with open(path, mode="w") as fd:
         fd.write("dummy file")
     return path
+
+
+def test_ensure_remote_dirs_ftp_raises_when_directory_cannot_be_created():
+    """A directory that can neither be entered nor created must raise, not be ignored."""
+    import ftplib
+    from unittest.mock import MagicMock
+
+    from trollmoves._mover_utils import _ensure_remote_dirs_ftp
+
+    conn = MagicMock()
+    conn.pwd.return_value = "/original"
+    conn.cwd.side_effect = ftplib.error_perm("550 Failed to change directory")
+    conn.mkd.side_effect = ftplib.error_perm("550 Permission denied")
+
+    with pytest.raises(ftplib.error_perm, match="Permission denied"):
+        _ensure_remote_dirs_ftp(conn, ["data", "archive"])
+
+
+def test_ensure_remote_dirs_sftp_raises_when_directory_cannot_be_created():
+    """SFTP directory creation failures must surface instead of being swallowed."""
+    from unittest.mock import MagicMock
+
+    from trollmoves._mover_utils import _ensure_remote_dirs_sftp
+
+    conn = MagicMock()
+    conn.stat.side_effect = OSError("No such file")
+    conn.mkdir.side_effect = PermissionError("Permission denied")
+
+    with pytest.raises(OSError, match="Permission denied"):
+        _ensure_remote_dirs_sftp(conn, ["data", "archive"])
