@@ -43,6 +43,13 @@ START_TIME = datetime.datetime.now(datetime.timezone.utc)
 
 CONNECTION_CONFIG_ITEMS = ["connection_uptime", "ssh_key_filename", "ssh_connection_timeout", "ssh_private_key_file"]
 
+#: Default number of seconds between two checks that the chains are still working.
+CHAIN_CHECK_INTERVAL = 30
+#: Default number of consecutive failed attempts to get a chain working again before giving up.
+MAX_NOTIFIER_RESTARTS = 10
+#: Number of seconds to wait for a notifier to stop before moving on.
+NOTIFIER_JOIN_TIMEOUT = 5
+
 
 class RequestManager(Thread):
     """Manage requests."""
@@ -280,6 +287,14 @@ class RequestManager(Thread):
 class AbstractMoveItServer(MoveItBase):
     """Abstract base class for the move it server."""
 
+    def __init__(self, cmd_args, publisher=None):
+        """Initialize the server."""
+        super().__init__(cmd_args, publisher=publisher)
+        self._chain_check_interval = float(getattr(cmd_args, "chain_check_interval", CHAIN_CHECK_INTERVAL))
+        self._max_notifier_restarts = int(getattr(cmd_args, "max_notifier_restarts", MAX_NOTIFIER_RESTARTS))
+        self._disable_backlog = bool(getattr(cmd_args, "disable_backlog", False))
+        self._next_chain_check = time.monotonic() + self._chain_check_interval
+
     def terminate(self, publisher=None):
         """Terminate the given *chains* and stop the *publisher*."""
         for chain in self.chains.values():
@@ -316,6 +331,63 @@ class AbstractMoveItServer(MoveItBase):
                 raise
         except AttributeError:
             pass
+        self.check_chains()
+
+    def check_chains(self):
+        """Check that all the chains are still working, and restart the broken ones.
+
+        A chain can stop working without the process noticing it: the thread watching the files can
+        die on an unexpected error, and the watchdog emitter watching a directory dies silently when
+        that directory becomes unavailable, for example when a network filesystem is disconnected.
+        Neither of these situations is fixed by the affected thread itself, so they are checked for
+        here and the notifier is recreated when needed.
+        """
+        if time.monotonic() < self._next_chain_check:
+            return
+        self._next_chain_check = time.monotonic() + self._chain_check_interval
+        for chain in list(self.chains.values()):
+            self._check_chain(chain)
+
+    def _check_chain(self, chain):
+        problem = chain.check_health()
+        if problem is None:
+            chain.restarts = 0
+            return
+        LOGGER.error("Chain %s is not working: %s", chain.name, problem)
+        chain.restarts += 1
+        try:
+            chain.restart_notifier()
+        except Exception as err:
+            LOGGER.error("Could not restart the notifier of chain %s (attempt %d): %s",
+                         chain.name, chain.restarts, str(err))
+        else:
+            LOGGER.info("Restarted the notifier of chain %s (attempt %d)", chain.name, chain.restarts)
+            self._process_backlog(chain)
+        self._check_restart_count(chain)
+
+    def _process_backlog(self, chain):
+        """Handle the files that arrived while the chain was not working."""
+        if self._disable_backlog:
+            return
+        try:
+            chain.process_backlog()
+        except Exception:
+            # The chain itself is working again, so a failure here should not bring the server down
+            LOGGER.exception("Could not handle the backlog of chain %s", chain.name)
+
+    def _check_restart_count(self, chain):
+        """Give up if a chain has needed too many consecutive restarts.
+
+        Exiting with an error is left to the caller, so that a process manager such as Supervisord
+        can restart the whole server, which is the only way to recover from some situations.
+        """
+        if not self._max_notifier_restarts:
+            return
+        if chain.restarts < self._max_notifier_restarts:
+            return
+        LOGGER.critical("Chain %s could not be brought back to a working state in %d attempts, giving up.",
+                        chain.name, chain.restarts)
+        raise ChainRecoveryError(f"Chain {chain.name} could not be restarted in {chain.restarts} attempts")
 
 
 class MoveItServer(AbstractMoveItServer):
@@ -343,6 +415,12 @@ class MoveItServer(AbstractMoveItServer):
 
 class ConfigError(Exception):
     """Configuration error."""
+
+    pass
+
+
+class ChainRecoveryError(Exception):
+    """A chain could not be brought back to a working state."""
 
     pass
 
@@ -389,18 +467,26 @@ class Deleter(Thread):
 
         If the file is not present, this function does *not* raise an error.
         """
-        try:
-            os.remove(filename)
-        except OSError as err:
-            if err.errno != errno.ENOENT:
-                raise
-            LOGGER.debug("File already deleted: %s", filename)
+        delete_file(filename)
 
     def stop(self):
         """Stop the deleter."""
         self.loop = False
         if self.timer:
             self.timer.cancel()
+
+
+def delete_file(filename):
+    """Delete the given file.
+
+    If the file is not present, this function does *not* raise an error.
+    """
+    try:
+        os.remove(filename)
+    except OSError as err:
+        if err.errno != errno.ENOENT:
+            raise
+        LOGGER.debug("File already deleted: %s", filename)
 
 
 def _get_push_message_type(message):
@@ -655,10 +741,7 @@ def _update_chains(chains, new_chain_configs, manager, use_polling, notifier_bui
             chain.start()
         except FileNotFoundError as err:
             LOGGER.error(f"Error starting chain {chain_name}: {str(err)}")
-            LOGGER.warning(f"Remove and skip {chain_name}")
-            chains[chain_name].request_manager.stop()
-            del chains[chain_name]
-            del chain
+            LOGGER.warning(f"Keeping {chain_name}, it will be started when the directory to watch is available")
             continue
 
         if "origin" in chain_config:
@@ -690,8 +773,10 @@ class Chain:
         self.config = config.copy()
         self.request_manager = None
         self.notifier = None
+        self.notifier_builder = None
         self.needs_manager = "request_port" in self.config
         self.function_to_run = None
+        self.restarts = 0
 
     def create_manager(self, manager):
         """Create a request manager."""
@@ -712,6 +797,7 @@ class Chain:
         if notifier_builder is None:
             notifier_builder = _get_notifier_builder(use_polling, self.config)
 
+        self.notifier_builder = notifier_builder
         self.function_to_run = partial(function_to_run_on_matching_files, chain_config=self.config)
         self.notifier = notifier_builder(self.function_to_run)
 
@@ -723,12 +809,75 @@ class Chain:
 
     def stop(self):
         """Stop the chain."""
-        self.notifier.stop()
-        with suppress(AttributeError):
-            self.notifier.join()
+        self._stop_notifier()
         if self.request_manager is not None:
             self.request_manager.stop()
             LOGGER.debug("Stopped the request manager")
+
+    def _stop_notifier(self):
+        """Stop the notifier, whatever state it is in."""
+        if self.notifier is None:
+            return
+        try:
+            self.notifier.stop()
+        except Exception:
+            LOGGER.exception("Could not stop the notifier of chain %s", self.name)
+        # A notifier that never started can not be joined, and one that is not a thread has no join()
+        with suppress(AttributeError, RuntimeError):
+            self.notifier.join(NOTIFIER_JOIN_TIMEOUT)
+
+    @property
+    def origin_directory(self):
+        """Return the directory this chain is watching, or None if it does not watch a directory."""
+        try:
+            return os.path.dirname(globify(self.config["origin"]))
+        except KeyError:
+            return None
+
+    def check_health(self):
+        """Return a description of what is wrong with the chain, or None if it looks healthy."""
+        directory = self.origin_directory
+        if directory is not None and not os.path.isdir(directory):
+            return f"the directory to watch ({directory}) is not accessible"
+        if self.notifier is None:
+            return "there is no notifier"
+        return _check_notifier_health(self.notifier)
+
+    def restart_notifier(self):
+        """Recreate and restart the notifier.
+
+        The request manager is left alone so that it keeps serving the files it has already
+        announced, and so that the port it is bound to does not need to be rebound.
+        """
+        self._stop_notifier()
+        self.notifier = self.notifier_builder(self.function_to_run)
+        self.notifier.start()
+
+    def process_backlog(self):
+        """Process the files that are already in the watched directory.
+
+        This is needed after a restart of the notifier, as the files that arrived while the notifier
+        was not working have not been noticed by anyone.
+        """
+        origin = self.config.get("origin")
+        if origin is None:
+            return
+        process_old_files(globify(origin), self.function_to_run)
+
+
+def _check_notifier_health(notifier):
+    """Return a description of what is wrong with *notifier*, or None if it looks healthy."""
+    is_alive = getattr(notifier, "is_alive", None)
+    if is_alive is None:
+        # Not a thread, so there is no way to check it
+        return None
+    if not is_alive():
+        return "the notifier thread is not running"
+    for emitter in getattr(notifier, "emitters", ()):
+        if not emitter.is_alive():
+            # Watchdog emitters die silently when the directory they watch disappears
+            return "a filesystem watch thread is not running"
+    return None
 
 
 def _add_chain(chains, chain_name, chain_config, manager):
@@ -815,7 +964,14 @@ def _add_files_to_cache(msg, config):
 
 def process_path(chain_config, path, publisher):
     """Create a message and publish a file."""
-    if os.stat(path).st_size == 0:
+    try:
+        file_size = os.stat(path).st_size
+    except OSError as err:
+        # The file can disappear between the notification and this call, for example when it is
+        # removed by an external process or when a network filesystem gets disconnected.
+        LOGGER.warning("Could not check %s, skipping it: %s", path, str(err))
+        return
+    if file_size == 0:
         LOGGER.debug("Ignoring empty file: %s", path)
     else:
         LOGGER.debug("We have a match: %s", path)
@@ -891,7 +1047,11 @@ def process_old_files(pattern, fun):
         LOGGER.debug("Touching old files")
         for fname in fnames:
             if os.path.exists(fname):
-                fun(fname)
+                try:
+                    fun(fname)
+                except OSError as err:
+                    # The file can be gone by the time it is handled
+                    LOGGER.warning("Could not handle %s: %s", fname, str(err))
 
 
 def xrit(pathname, destination=None, cmd="./xRITDecompress"):
@@ -952,7 +1112,7 @@ def unpack(pathname,
             LOGGER.exception("Could not decompress %s", pathname)
         else:
             if delete:
-                os.remove(pathname)
+                delete_file(pathname)
             return new_path
     return pathname
 
@@ -970,5 +1130,12 @@ def parse_args(args=None, default_port=9010):
                         action="store_true")
     parser.add_argument("-w", "--watchdog", default=False, action="store_true",
                         help="Use Watchdog polling instead of os-based notifying")
+    parser.add_argument("--chain-check-interval", type=float, default=CHAIN_CHECK_INTERVAL,
+                        help="Number of seconds between the checks that the chains are still "
+                             f"working. Default: {CHAIN_CHECK_INTERVAL}")
+    parser.add_argument("--max-notifier-restarts", type=int, default=MAX_NOTIFIER_RESTARTS,
+                        help="Exit with an error after this many consecutive failed attempts to get "
+                             "a chain working again, so that a process manager can restart the "
+                             f"server. Use 0 to never exit. Default: {MAX_NOTIFIER_RESTARTS}")
     add_logging_options_to_parser(parser, legacy=True)
     return parser.parse_args(args)
