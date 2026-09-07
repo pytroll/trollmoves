@@ -11,7 +11,6 @@ Build, test, and lint commands
 - Run full test suite: pytest
 - Run a single test: pytest path/to/test_file.py::test_function (e.g. pytest trollmoves/tests/test_example.py::test_xyz)
 - Run tests matching name: pytest -k <expr>
-- Skip the tests that need a live localhost SSH/FTP server: pytest -m "not slow"
 - Lint: ruff check . (configured in pyproject.toml; line-length 120)
 - Hooks: pre-commit run --all-files (ruff, trailing whitespace, end-of-file fixer)
 
