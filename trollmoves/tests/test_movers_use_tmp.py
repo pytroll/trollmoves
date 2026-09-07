@@ -508,3 +508,74 @@ def test_move_it_use_tmp_reports_backup_target_destination(tmp_path, source_file
     assert returned.netloc == "backup-host"
     assert returned.path == str(tmp_path / "dest" / "data.txt")
     assert (tmp_path / "dest" / "data.txt").read_text() == "hello atomic transfer"
+
+
+def test_ftp_mover_removes_remote_tmp_file_on_failure(tmp_path, source_file):
+    """A failed FTP transfer deletes the temporary file it left on the server."""
+    from trollmoves.movers import FtpMover
+
+    connection = MagicMock()
+    connection.storbinary.side_effect = OSError("connection reset")
+
+    mover = FtpMover(str(source_file), "ftp://ftphost/remote/dir/data.txt",
+                     attrs={"use_tmp_on_transfer": True})
+    with patch.object(mover, "get_connection", return_value=connection):
+        with pytest.raises(OSError, match="connection reset"):
+            mover.copy()
+
+    connection.delete.assert_called_once_with("/remote/dir/.data.txt")
+
+
+def test_ftp_mover_cleanup_failure_does_not_mask_transfer_error(tmp_path, source_file):
+    """A failing cleanup must not hide why the transfer failed."""
+    from trollmoves.movers import FtpMover
+
+    connection = MagicMock()
+    connection.storbinary.side_effect = OSError("connection reset")
+    connection.delete.side_effect = OSError("no such file")
+
+    mover = FtpMover(str(source_file), "ftp://ftphost/remote/dir/data.txt",
+                     attrs={"use_tmp_on_transfer": True})
+    with patch.object(mover, "get_connection", return_value=connection):
+        with pytest.raises(OSError, match="connection reset"):
+            mover.copy()
+
+
+def test_mover_does_not_remove_local_file_shadowing_a_remote_tmp_path(tmp_path, source_file):
+    """A remote tmp path must never be removed from the local filesystem."""
+    from trollmoves.movers import FtpMover
+
+    # A local file that happens to sit at the same absolute path as the remote tmp file
+    shadow_dir = tmp_path / "remote" / "dir"
+    shadow_dir.mkdir(parents=True)
+    shadow = shadow_dir / ".data.txt"
+    shadow.write_text("precious local data")
+
+    connection = MagicMock()
+    connection.storbinary.side_effect = OSError("connection reset")
+
+    mover = FtpMover(str(source_file), f"ftp://ftphost{shadow_dir}/data.txt",
+                     attrs={"use_tmp_on_transfer": True})
+    with patch.object(mover, "get_connection", return_value=connection):
+        with pytest.raises(OSError):
+            mover.copy()
+
+    assert shadow.read_text() == "precious local data"
+
+
+@patch("trollmoves.movers.S3FileSystem")
+def test_s3_mover_removes_tmp_key_on_failure(mock_s3fs, source_file):
+    """A failed S3 copy+delete transfer removes the temporary key."""
+    from trollmoves.movers import S3Mover
+
+    mock_s3 = MagicMock()
+    mock_s3.exists.return_value = True
+    mock_s3.put.side_effect = OSError("upload failed")
+    mock_s3fs.return_value = mock_s3
+
+    mover = S3Mover(str(source_file), "s3://bucket/dir/data.txt",
+                    attrs={"use_tmp_on_transfer": True, "s3_use_copy": True})
+    with pytest.raises(OSError, match="upload failed"):
+        mover.copy()
+
+    mock_s3.rm.assert_called_once_with("bucket/dir/.data.txt")

@@ -8,6 +8,7 @@ import socket
 import sys
 import time
 import traceback
+from contextlib import contextmanager
 from ftplib import FTP, all_errors
 from threading import Event, Lock, Thread, current_thread
 from urllib.parse import urlparse
@@ -166,10 +167,29 @@ class Mover:
             self.finalize_atomic_transfer(*self._destinations_on_current_host())
         except Exception:
             try:
-                if hasattr(self._tmp_dest, "path") and os.path.exists(self._tmp_dest.path):
-                    os.remove(self._tmp_dest.path)
+                self._clean_up_tmp_file(self._destinations_on_current_host()[0])
             finally:
                 raise
+
+    def _clean_up_tmp_file(self, tmp_destination):
+        """Remove a leftover temporary file, without masking why the transfer failed."""
+        try:
+            self.remove_tmp_file(tmp_destination)
+        except Exception:
+            # Intentionally broad: cleanup is best-effort and must never replace the
+            # original transfer error, whatever the protocol backend raises here.
+            LOGGER.warning("Could not remove temporary file %s", clean_url(tmp_destination),
+                           exc_info=True)
+
+    def remove_tmp_file(self, tmp_destination):
+        """Remove the temporary file left behind by a failed transfer.
+
+        The default implementation removes a local file. Movers for remote schemes
+        must override this, or the temporary file is orphaned on the remote side.
+        """
+        path = getattr(tmp_destination, "path", None)
+        if path and os.path.exists(path):
+            os.remove(path)
 
     def _destinations_on_current_host(self):
         """Return the (tmp, final) destinations on the host the transfer actually used.
@@ -423,6 +443,11 @@ class FtpMover(Mover):
         with open(self.origin, "rb") as file_obj:
             connection.storbinary("STOR " + destination_path, file_obj)
 
+    def remove_tmp_file(self, tmp_destination):
+        """Delete the temporary file from the FTP server."""
+        connection = self.get_connection(self.destination.hostname, self.destination.port, self._dest_username)
+        connection.delete(tmp_destination.path)
+
     def finalize_atomic_transfer(self, tmp_destination, final_destination):
         """Finalize atomic transfer by renaming tmp -> final on FTP server."""
         connection = self.get_connection(self.destination.hostname, self.destination.port, self._dest_username)
@@ -568,6 +593,14 @@ class ScpMover(Mover):
         _rename_over_sftp(ssh_connection, tmp_destination, final_destination)
         self.destination = final_destination
 
+    def remove_tmp_file(self, tmp_destination):
+        """Delete the temporary file from the remote host over SFTP."""
+        ssh_connection = self.get_connection(self.destination.hostname,
+                                             self.destination.port or 22,
+                                             self._dest_username)
+        with ssh_connection.open_sftp() as sftp:
+            sftp.remove(tmp_destination.path)
+
 
 def _rename_over_sftp(ssh_connection, tmp_destination, final_destination):
     """Rename tmp_destination to final_destination on remote host via SFTP."""
@@ -589,35 +622,39 @@ class SftpMover(Mover):
         self.copy()
         os.remove(self.origin)
 
+    @contextmanager
+    def _connected_ssh_client(self):
+        """Yield a connected paramiko SSHClient, closed again on exit."""
+        import paramiko
+        with paramiko.SSHClient() as ssh:
+            ssh.load_system_host_keys()
+            ssh.connect(self.destination.hostname,
+                        port=self.destination.port or 22,
+                        username=self._dest_username,
+                        allow_agent=True,
+                        key_filename=self.attrs.get("ssh_private_key_file"))
+            yield ssh
+
     def _copy(self):
         """Copy the file to self.destination via SFTP.
 
         Uses high level paramiko functions.
         """
-        import paramiko
-        with paramiko.SSHClient() as ssh:
-            ssh.load_system_host_keys()
-            ssh.connect(self.destination.hostname,
-                        port=self.destination.port or 22,
-                        username=self._dest_username,
-                        allow_agent=True,
-                        key_filename=self.attrs.get("ssh_private_key_file"))
+        with self._connected_ssh_client() as ssh:
             with ssh.open_sftp() as sftp:
                 sftp.put(self.origin, self.destination.path)
 
     def finalize_atomic_transfer(self, tmp_destination, final_destination):
         """Finalize atomic transfer for SFTP by renaming tmp -> final on remote host."""
-        import paramiko
-        with paramiko.SSHClient() as ssh:
-            ssh.load_system_host_keys()
-            ssh.connect(self.destination.hostname,
-                        port=self.destination.port or 22,
-                        username=self._dest_username,
-                        allow_agent=True,
-                        key_filename=self.attrs.get("ssh_private_key_file"))
-
+        with self._connected_ssh_client() as ssh:
             _rename_over_sftp(ssh, tmp_destination, final_destination)
         self.destination = final_destination
+
+    def remove_tmp_file(self, tmp_destination):
+        """Delete the temporary file from the remote host over SFTP."""
+        with self._connected_ssh_client() as ssh:
+            with ssh.open_sftp() as sftp:
+                sftp.remove(tmp_destination.path)
 
 
 class S3Mover(Mover):
@@ -718,12 +755,15 @@ class S3Mover(Mover):
         # Fallback: use s3fs put to destination_file_path (tmp or final)
         if S3FileSystem is None:
             raise ImportError("S3Mover requires 's3fs' to be installed for non-multipart operations.")
-        s3_attrs = {k: v for k, v in self.attrs.items() if k not in _S3_MOVER_INTERNAL_KEYS}
-        s3 = S3FileSystem(**s3_attrs)
+        s3 = S3FileSystem(**self._backend_attrs())
         LOGGER.debug("Before call to put: destination_file_path = %s", destination_file_path)
         LOGGER.debug("self.origin = %s", self.origin)
         _create_s3_destination_path(s3, destination_file_path)
         s3.put(self.origin, destination_file_path)
+
+    def _backend_attrs(self):
+        """Return the attrs to hand to S3FileSystem, minus the mover's own options."""
+        return {key: value for key, value in self.attrs.items() if key not in _S3_MOVER_INTERNAL_KEYS}
 
     def _build_boto3_client(self):
         """Build and return a boto3 S3 client from attrs.
@@ -817,6 +857,25 @@ class S3Mover(Mover):
         self.copy()
         os.remove(self.origin)
 
+    def remove_tmp_file(self, tmp_destination):
+        """Delete the temporary object from the bucket.
+
+        Multipart uploads write straight to the final key and abort themselves on
+        failure, so there is no temporary object to remove in that mode.
+        """
+        if bool(self.attrs.get("s3_use_multipart", False)) and boto3 is not None:
+            return
+
+        tmp_path = self._get_destination(tmp_destination)
+        if S3FileSystem is not None:
+            s3 = S3FileSystem(**self._backend_attrs())
+            if s3.exists(tmp_path):
+                s3.rm(tmp_path)
+            return
+        if boto3 is not None:
+            bucket, _, key = tmp_path.partition("/")
+            self._build_boto3_client().delete_object(Bucket=bucket, Key=key)
+
     def finalize_atomic_transfer(self, tmp_destination, final_destination):
         """Finalize atomic transfer for S3.
 
@@ -851,11 +910,9 @@ class S3Mover(Mover):
         if not use_copy:
             raise NotImplementedError("S3 atomic finalize requires either multipart uploads or copy+delete fallback")
 
-        s3_attrs = {k: v for k, v in self.attrs.items() if k not in _S3_MOVER_INTERNAL_KEYS}
-
         # use s3fs or boto3 to copy and delete tmp key
         if S3FileSystem is not None:
-            s3 = S3FileSystem(**s3_attrs)
+            s3 = S3FileSystem(**self._backend_attrs())
             s3.copy(tmp_path, final_path)
             s3.rm(tmp_path)
             self.destination = final_destination
