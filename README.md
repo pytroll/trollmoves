@@ -43,7 +43,7 @@ to use `fsspec` to read and process the remote files.
 
 To avoid exposing partially-uploaded files, movers can be configured to upload
 first to a temporary name and be renamed/activated only after the transfer
-completes. See [the mover section](#Using temporary-initial-filenames-in-transfers)
+completes. See [the mover section](#using-temporary-initial-filenames-in-transfers)
 and `examples/move_it_server.ini` for details and examples.
 
 

@@ -188,8 +188,10 @@ Instantiate a mover with ``attrs`` containing the transfer options and call ``co
    # mover.destination now points to the final path
 
 The temporary name and finalization are handled entirely inside ``mover.copy()``.
-If an error occurs during transfer or during the rename, the temporary file is
-cleaned up automatically before the exception is re-raised.
+If an error occurs during transfer or during the rename, the mover removes the
+temporary file -- locally or on the remote side, depending on the protocol --
+before the exception is re-raised. A cleanup that fails is logged as a warning
+and does not replace the original transfer error.
 
 
 .. _s3-notes:
