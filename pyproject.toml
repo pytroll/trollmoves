@@ -30,6 +30,7 @@ dependencies = [
 
 [project.optional-dependencies]
 all = [
+    "boto3",
     "fsspec",
     "paramiko",
     "pytroll-collectors>=0.16.0",
@@ -46,6 +47,7 @@ remote_fs = [
     "pytroll-collectors>=0.16.0",
 ]
 s3 = [
+    "boto3",
     "s3fs",
 ]
 server = [
@@ -98,3 +100,8 @@ convention = "google"
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]

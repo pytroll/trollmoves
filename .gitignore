@@ -65,3 +65,6 @@ CHANGELOG.temp
 
 # vi / vim swp files
 *.swp
+
+# AI reviews
+reviews/
