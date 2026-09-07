@@ -1,27 +1,12 @@
 """Helper utilities for movers to reduce duplication.
 
-Contains functions to ensure local and remote directories exist. Designed to be small
+Contains functions to ensure remote directories exist. Designed to be small
 and dependency-free; supports FTP-like objects (ftplib.FTP) and SFTP-like
 (paramiko SFTPClient) objects by duck-typing.
 """
 
 import ftplib
 import os
-
-
-def ensure_local_dir(path):
-    """Ensure local directory exists for given path.
-
-    If path is a file path, its directory is created. If path is a directory,
-    it is created. No exception is raised if it already exists.
-    """
-    if not path:
-        return
-    dirname = path
-    if os.path.isfile(path) or os.path.splitext(path)[1]:
-        dirname = os.path.dirname(path) or "."
-    os.makedirs(dirname, exist_ok=True)
-
 
 
 def _ensure_remote_dirs_ftp(connection, parts):
