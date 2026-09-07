@@ -1,5 +1,7 @@
 """Tests for the use_tmp workflow and finalize_atomic_transfer methods in movers."""
 
+import os
+import shutil
 from unittest.mock import MagicMock, patch
 from urllib.parse import urlparse
 
@@ -456,3 +458,53 @@ def test_move_it_use_tmp_directory_destination(tmp_path, source_file):
     assert (dest_dir / "data.txt").read_text() == "hello atomic transfer"
     assert not (dest_dir / ".data.txt").exists()
     assert returned.path == str(dest_dir / "data.txt")
+
+
+@pytest.fixture
+def failover_mover_scheme(tmp_path):
+    """Register a mover that fails over to a backup host mid-transfer, like ScpMover does."""
+    from trollmoves.movers import MOVERS, Mover
+
+    class _FailoverMover(Mover):
+        """Writes locally, but rewrites its own netloc to a backup host while copying."""
+
+        @property
+        def supports_atomic(self):
+            return True
+
+        def _copy(self):
+            self.destination = self.destination._replace(netloc="backup-host")
+            path = self.destination.path
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            shutil.copy(self.origin, path)
+
+    MOVERS["failover"] = _FailoverMover
+    yield "failover"
+    del MOVERS["failover"]
+
+
+def test_move_it_reports_backup_target_destination(tmp_path, source_file, failover_mover_scheme):
+    """move_it must report the host the file actually landed on, not the primary."""
+    from trollmoves.movers import move_it
+
+    hook_destinations = []
+    destination = f"{failover_mover_scheme}://primary-host{tmp_path}/dest/data.txt"
+
+    returned = move_it(str(source_file), destination,
+                       hook=lambda _, dest: hook_destinations.append(dest))
+
+    assert returned.netloc == "backup-host"
+    assert hook_destinations == [returned]
+
+
+def test_move_it_use_tmp_reports_backup_target_destination(tmp_path, source_file, failover_mover_scheme):
+    """The finalized destination of an atomic transfer keeps the backup host too."""
+    from trollmoves.movers import move_it
+
+    destination = f"{failover_mover_scheme}://primary-host{tmp_path}/dest/data.txt"
+
+    returned = move_it(str(source_file), destination, attrs={"use_tmp_on_transfer": True})
+
+    assert returned.netloc == "backup-host"
+    assert returned.path == str(tmp_path / "dest" / "data.txt")
+    assert (tmp_path / "dest" / "data.txt").read_text() == "hello atomic transfer"

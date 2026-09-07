@@ -72,6 +72,11 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None, backup_
     try:
         mover = mover_cls(pathname, new_dest, attrs=attrs, backup_targets=backup_targets)
         mover.copy()
+        if mover.destination != new_dest:
+            # The mover may have failed over to a backup host, or resolved a directory
+            # destination into a filename. Report where the file actually landed.
+            new_dest = mover.destination
+            fake_dest = clean_url(new_dest)
         if hook:
             hook(pathname, new_dest)
     except Exception as err:
@@ -151,19 +156,35 @@ class Mover:
         renamed to the final destination via :meth:`finalize_atomic_transfer`.
         Subclasses must implement :meth:`_copy` for the actual transfer.
         """
-        if self._tmp_dest:
-            self.destination = self._tmp_dest
-            try:
-                self._copy()
-                self.finalize_atomic_transfer(self._tmp_dest, self._final_dest)
-            except Exception:
-                try:
-                    if hasattr(self._tmp_dest, "path") and os.path.exists(self._tmp_dest.path):
-                        os.remove(self._tmp_dest.path)
-                finally:
-                    raise
-        else:
+        if not self._tmp_dest:
             self._copy()
+            return
+
+        self.destination = self._tmp_dest
+        try:
+            self._copy()
+            self.finalize_atomic_transfer(*self._destinations_on_current_host())
+        except Exception:
+            try:
+                if hasattr(self._tmp_dest, "path") and os.path.exists(self._tmp_dest.path):
+                    os.remove(self._tmp_dest.path)
+            finally:
+                raise
+
+    def _destinations_on_current_host(self):
+        """Return the (tmp, final) destinations on the host the transfer actually used.
+
+        A mover may fail over to a backup host while copying (see
+        :meth:`ScpMover.open_connection`), which rewrites the netloc of
+        ``self.destination``. The rename has to happen on that host, and the
+        finalized destination has to name it too.
+        """
+        try:
+            netloc = self.destination.netloc
+            return (self._tmp_dest._replace(netloc=netloc),
+                    self._final_dest._replace(netloc=netloc))
+        except AttributeError:
+            return self._tmp_dest, self._final_dest
 
     def _copy(self):
         """Perform the actual file transfer to self.destination.
