@@ -1,7 +1,9 @@
 """Test Trollmoves server."""
 
 import datetime as dt
+import logging
 import os
+import shutil
 import time
 import unittest
 from collections import deque
@@ -405,3 +407,250 @@ def test_unpack_with_delete(tmp_path):
     res = unpack(zipped_file, delete=True, working_directory=tmp_path, compression="bzip")
     assert not os.path.exists(zipped_file)
     assert res == os.path.splitext(zipped_file)[0]
+
+
+def _create_chain(directory, function_to_run=None, **extra_config):
+    """Create a started chain watching *directory* with a polling notifier."""
+    from trollmoves.server import Chain
+
+    config = {"origin": os.path.join(str(directory), "{product}.tif"),
+              "topic": "/topic",
+              "watchdog_timeout": 0.1}
+    config.update(extra_config)
+    chain = Chain("some_chain", config)
+    chain.create_notifier(notifier_builder=None,
+                          use_polling=True,
+                          function_to_run_on_matching_files=function_to_run or MagicMock())
+    return chain
+
+
+def _break_the_watch(directory):
+    """Make the watchdog watch on *directory* die, and put the directory back in place."""
+    shutil.rmtree(directory)
+    # Wait for the watchdog emitter to notice that the directory is gone
+    time.sleep(.5)
+    directory.mkdir()
+
+
+def _create_server(tmp_path, directory, *extra_args):
+    """Create a server with a single chain watching *directory*."""
+    config_file = "[test_chain]\n"
+    config_file += "origin=" + os.path.join(str(directory), "{product}.tif") + "\n"
+    config_file += "topic=/topic\n"
+    config_file += "watchdog_timeout=0.1\n"
+    config_path = tmp_path / "config.ini"
+    with open(config_path, "w") as fd:
+        fd.write(config_file)
+
+    cmd_args = parse_args([str(config_path), "--watchdog", *extra_args])
+    server = MoveItServer(cmd_args)
+    server.reload_cfg_file(cmd_args.config_file)
+    return server
+
+
+def test_process_path_skips_a_file_that_has_disappeared(tmp_path, caplog):
+    """Test that a file that is gone when it is handled is skipped instead of raising."""
+    from trollmoves.server import process_path
+
+    publisher = MagicMock()
+    config = {"origin": str(tmp_path / "{product}.tif"), "topic": "/topic", "request_port": "9001"}
+
+    with caplog.at_level(logging.WARNING):
+        process_path(config, str(tmp_path / "gone.tif"), publisher)
+
+    publisher.send.assert_not_called()
+    assert "gone.tif" in caplog.text
+
+
+def test_process_old_files_survives_a_disappearing_file(tmp_path):
+    """Test that the backlog handling survives a file that is removed while it is processed."""
+    from trollmoves.server import process_old_files
+
+    (tmp_path / "foo.tif").write_text("hello")
+
+    def function_to_run(fname):
+        raise FileNotFoundError(2, "No such file or directory", fname)
+
+    process_old_files(str(tmp_path / "*.tif"), function_to_run)
+
+
+def test_delete_file_that_is_already_gone(tmp_path):
+    """Test that removing a file that does not exist is not an error."""
+    from trollmoves.server import delete_file
+
+    delete_file(str(tmp_path / "not_here.txt"))
+
+
+def test_chain_health_check_passes_for_a_working_chain(tmp_path):
+    """Test that a working chain is reported as healthy."""
+    chain = _create_chain(tmp_path)
+    chain.start()
+    try:
+        assert chain.check_health() is None
+    finally:
+        chain.stop()
+
+
+def test_chain_health_check_detects_a_missing_directory(tmp_path):
+    """Test that a chain watching a directory that is gone is reported as broken."""
+    watched = tmp_path / "watched"
+    watched.mkdir()
+    chain = _create_chain(watched)
+    chain.start()
+    try:
+        shutil.rmtree(watched)
+        problem = chain.check_health()
+        assert problem is not None
+        assert str(watched) in problem
+    finally:
+        chain.stop()
+
+
+def test_chain_health_check_detects_a_dead_watch_thread(tmp_path):
+    """Test that a chain is reported as broken when the thread watching the files has died."""
+    watched = tmp_path / "watched"
+    watched.mkdir()
+    chain = _create_chain(watched)
+    chain.start()
+    try:
+        _break_the_watch(watched)
+        assert chain.check_health() == "a filesystem watch thread is not running"
+    finally:
+        chain.stop()
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_chain_health_check_detects_a_crashed_notifier_thread(tmp_path):
+    """Test that a chain is reported as broken when its notifier thread has crashed."""
+    watched = tmp_path / "watched"
+    watched.mkdir()
+    function_to_run = MagicMock(side_effect=FileNotFoundError(2, "No such file or directory"))
+    chain = _create_chain(watched, function_to_run=function_to_run)
+    chain.start()
+    try:
+        (watched / "foo.tif").write_text("hello")
+        # Wait for the watchdog to notice the file and for the handler to blow up
+        time.sleep(.5)
+        assert chain.check_health() == "the notifier thread is not running"
+    finally:
+        chain.stop()
+
+
+def test_restarting_a_chain_handles_the_files_that_arrived_meanwhile(tmp_path):
+    """Test that restarting a chain makes it work again and picks up the files that were missed."""
+    watched = tmp_path / "watched"
+    watched.mkdir()
+    function_to_run = MagicMock()
+    chain = _create_chain(watched, function_to_run=function_to_run)
+    chain.start()
+    try:
+        _break_the_watch(watched)
+        missed_file = watched / "foo.tif"
+        missed_file.write_text("hello")
+
+        chain.restart_notifier()
+        chain.process_backlog()
+
+        assert chain.check_health() is None
+        function_to_run.assert_called_once_with(str(missed_file), chain_config=chain.config)
+    finally:
+        chain.stop()
+
+
+def test_server_restarts_a_chain_that_stopped_working(tmp_path):
+    """Test that the server notices a broken chain and gets it working again."""
+    from posttroll.testing import patched_publisher
+
+    watched = tmp_path / "watched"
+    watched.mkdir()
+    with patched_publisher():
+        server = _create_server(tmp_path, watched, "--chain-check-interval", "0")
+        try:
+            _break_the_watch(watched)
+            chain = server.chains["test_chain"]
+            assert chain.check_health() is not None
+
+            server.check_chains()
+
+            assert chain.check_health() is None
+            assert chain.restarts == 1
+            # The counter is only reset once the chain has been seen working again
+            server.check_chains()
+            assert chain.restarts == 0
+        finally:
+            server.chains_stop()
+
+
+def test_server_keeps_a_chain_whose_directory_is_missing_at_startup(tmp_path):
+    """Test that a chain is kept and started later when its directory shows up."""
+    from posttroll.testing import patched_publisher
+
+    watched = tmp_path / "watched"
+    with patched_publisher():
+        server = _create_server(tmp_path, watched, "--chain-check-interval", "0")
+        try:
+            assert "test_chain" in server.chains
+
+            watched.mkdir()
+            server.check_chains()
+
+            assert server.chains["test_chain"].check_health() is None
+        finally:
+            server.chains_stop()
+
+
+def test_server_gives_up_after_too_many_failed_restarts(tmp_path):
+    """Test that the server raises an error when a chain can not be brought back to life."""
+    from posttroll.testing import patched_publisher
+
+    from trollmoves.server import ChainRecoveryError
+
+    watched = tmp_path / "watched"
+    watched.mkdir()
+    with patched_publisher():
+        server = _create_server(tmp_path, watched,
+                                "--chain-check-interval", "0",
+                                "--max-notifier-restarts", "3")
+        try:
+            shutil.rmtree(watched)
+            with pytest.raises(ChainRecoveryError):
+                for _ in range(3):
+                    server.check_chains()
+        finally:
+            server.chains_stop()
+
+
+def test_server_never_gives_up_when_restarts_are_unlimited(tmp_path):
+    """Test that the server keeps trying when the maximum number of restarts is disabled."""
+    from posttroll.testing import patched_publisher
+
+    watched = tmp_path / "watched"
+    watched.mkdir()
+    with patched_publisher():
+        server = _create_server(tmp_path, watched,
+                                "--chain-check-interval", "0",
+                                "--max-notifier-restarts", "0")
+        try:
+            shutil.rmtree(watched)
+            for _ in range(5):
+                server.check_chains()
+            assert server.chains["test_chain"].restarts == 5
+        finally:
+            server.chains_stop()
+
+
+def test_server_run_exits_when_a_chain_can_not_be_recovered(tmp_path):
+    """Test that the server stops with an error so that a process manager can restart it."""
+    from posttroll.testing import patched_publisher
+
+    from trollmoves.server import ChainRecoveryError
+
+    with patched_publisher():
+        server = _create_server(tmp_path, tmp_path / "watched",
+                                "--chain-check-interval", "0",
+                                "--max-notifier-restarts", "1")
+        try:
+            with pytest.raises(ChainRecoveryError):
+                server.run()
+        finally:
+            server.chains_stop()

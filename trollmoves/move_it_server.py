@@ -58,6 +58,20 @@ For example::
 * 'topic', 'publish_port', and 'info' define the messaging behaviour using posttroll. 'info' being a ';' separated
   list of 'key=value' items that has to be added to the message info.
 
+Recovering from broken chains
+-----------------------------
+
+A chain can stop working without the process noticing it: the thread watching the files can die on
+an unexpected error, and the thread watchdog uses to watch a directory dies silently when that
+directory becomes unavailable, for example when a network filesystem is disconnected. The server
+therefore checks every ``--chain-check-interval`` seconds that each chain is still working, and
+recreates the notifier of the chains that are not. After a successful restart the files that arrived
+while the chain was not working are handled, unless ``--disable-backlog`` is used.
+
+If a chain can not be brought back to a working state in ``--max-notifier-restarts`` consecutive
+attempts, the server exits with an error so that a process manager such as Supervisord can restart
+it. Use ``--max-notifier-restarts 0`` to keep retrying forever instead.
+
 Logging
 -------
 
