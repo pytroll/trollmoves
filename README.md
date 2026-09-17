@@ -192,22 +192,29 @@ Behavior notes
 ### Retrying failed SSH transfers
 
 `ScpMover` retries both opening the SSH connection and the SCP transfer itself
-when they fail with a transient error. This option is passed via the mover's
+when they fail with a transient error. These options are passed via the mover's
 connection_parameters or attrs dictionary.
 
 - num_ssh_retries: integer (default: 3)
     How many times opening the connection and running the transfer are
     attempted before giving up, with a short pause between the attempts. When
     backup targets are configured, each host gets this many attempts.
+- scpclient_timeout_seconds: number (default: 10)
+    How long a single read or write on the SSH channel may stall before the
+    transfer attempt is given up and retried. Raise this for transfers to a
+    slow or heavily loaded host, which fail either with "Timeout waiting for
+    scp response" or with a bare "timed out".
 
-In an ini config for Move_it_server this is set as
+In an ini config for Move_it_server these are set as
 
 ```ini
 connection_parameters__num_ssh_retries = 5
+connection_parameters__scpclient_timeout_seconds = 30
 ```
 
-and in a Dispatcher YAML config as a `num_ssh_retries` key under the target's
-`connection_parameters` block.
+and in a Dispatcher YAML config as `num_ssh_retries` and
+`scpclient_timeout_seconds` keys under the target's `connection_parameters`
+block.
 
 
 ## s3downloader

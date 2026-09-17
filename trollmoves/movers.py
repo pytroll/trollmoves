@@ -44,6 +44,10 @@ _S3_MOVER_INTERNAL_KEYS = frozenset({"use_tmp_on_transfer", "s3_use_multipart", 
 DEFAULT_NUM_SSH_RETRIES = 3
 #: Number of seconds to wait between two ssh attempts.
 SSH_RETRY_SLEEP = 2
+#: Default number of seconds the scp client waits for a response from the remote host.
+DEFAULT_SCPCLIENT_TIMEOUT = 10
+#: The message scp uses when the remote host did not answer within the socket timeout.
+SCP_RESPONSE_TIMEOUT_MESSAGE = "Timeout waiting for scp response"
 
 LOGGER = logging.getLogger(__name__)
 
@@ -553,6 +557,20 @@ class ScpMover(Mover):
         except TypeError:
             return None
 
+    def _scpclient_timeout(self):
+        """Return how many seconds a single read or write on the scp channel may stall.
+
+        Values coming from an ini config file reach the mover as strings, so the
+        configured value is converted rather than used as-is.
+        """
+        return float(self.attrs.get("scpclient_timeout_seconds", DEFAULT_SCPCLIENT_TIMEOUT))
+
+    def _log_scpclient_timeout_hint(self):
+        """Point the user at the setting that would give a slow remote host more time."""
+        LOGGER.error("The scp client gave up after %s seconds of waiting for the remote host. Increase "
+                     "scpclient_timeout_seconds in the configuration if the remote host needs longer.",
+                     self._scpclient_timeout())
+
     def _switch_to_backup_target(self, backup_target):
         """Point the destination at *backup_target* so the next attempt uses that host."""
         self.destination = self.destination._replace(netloc=f"{self.destination.username}@{backup_target}")
@@ -601,14 +619,16 @@ class ScpMover(Mover):
     def _copy(self):
         """Upload the file to self.destination via SCP, retrying transient failures.
 
-        A dropped connection or a remote hiccup mid-transfer is not a reason to lose
-        the file, so those are retried. A failure that retrying cannot fix, such as
-        the origin file not existing, is reported straight away.
+        A dropped connection, a remote hiccup mid-transfer or a channel that stalled
+        past the socket timeout is not a reason to lose the file, so those are retried.
+        A failure that retrying cannot fix, such as the origin file not existing, is
+        reported straight away.
         """
         from paramiko import SSHException
         from scp import SCPException
 
-        self._run_with_retries(self._put_over_scp, "SCP transfer", (SCPException, SSHException))
+        transient_errors = (SCPException, SSHException, TimeoutError)
+        self._run_with_retries(self._put_over_scp, "SCP transfer", transient_errors)
 
     def _put_over_scp(self):
         """Upload the file to self.destination over a single SCP connection."""
@@ -619,7 +639,7 @@ class ScpMover(Mover):
                                              self.destination.port or 22,
                                              self._dest_username)
         try:
-            scp = SCPClient(ssh_connection.get_transport())
+            scp = SCPClient(ssh_connection.get_transport(), socket_timeout=self._scpclient_timeout())
         except (TypeError, SSHException, OSError) as err:
             LOGGER.error("Failed to initiate SCPClient: %s", str(err))
             ssh_connection.close()
@@ -627,6 +647,13 @@ class ScpMover(Mover):
 
         try:
             scp.put(self.origin, self.destination.path)
+        except TimeoutError as timeout_error:
+            # paramiko raises a bare socket.timeout when a channel read or write stalls,
+            # and socket.timeout is TimeoutError, an OSError subclass, so this handler has
+            # to come before the OSError one below to see it at all.
+            LOGGER.error("The scp transfer timed out: %s", str(timeout_error))
+            self._log_scpclient_timeout_hint()
+            raise
         except OSError as osex:
             if osex.errno == 2:
                 LOGGER.error("No such file or directory. File not transfered: "
@@ -638,6 +665,8 @@ class ScpMover(Mover):
                 raise
         except (SCPException, SSHException) as err:
             LOGGER.error("Something went wrong with scp: %s", str(err))
+            if SCP_RESPONSE_TIMEOUT_MESSAGE in str(err):
+                self._log_scpclient_timeout_hint()
             LOGGER.error("Exception name %s", type(err).__name__)
             LOGGER.error("Exception args %s", str(err.args))
             raise
