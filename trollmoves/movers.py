@@ -1,5 +1,6 @@
 """Movers for the move_it scripts."""
 
+import errno
 import logging
 import netrc
 import os
@@ -655,14 +656,13 @@ class ScpMover(Mover):
             self._log_scpclient_timeout_hint()
             raise
         except OSError as osex:
-            if osex.errno == 2:
+            if osex.errno == errno.ENOENT:
                 LOGGER.error("No such file or directory. File not transfered: "
                              "%s. Original error message: %s",
                              self.origin, str(osex))
-                return
             else:
                 LOGGER.error("OSError in scp.put: %s", str(osex))
-                raise
+            raise
         except (SCPException, SSHException) as err:
             LOGGER.error("Something went wrong with scp: %s", str(err))
             if SCP_RESPONSE_TIMEOUT_MESSAGE in str(err):
