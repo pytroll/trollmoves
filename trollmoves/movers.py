@@ -40,6 +40,11 @@ S3_ALLOWED_SETTINGS = ["anon", "endpoint_url", "key", "secret",
 _S3_MOVER_INTERNAL_KEYS = frozenset({"use_tmp_on_transfer", "s3_use_multipart", "s3_use_copy",
                                      "tmp_prefix", "s3_multipart_chunksize"})
 
+#: Default number of times an ssh operation is attempted before giving up.
+DEFAULT_NUM_SSH_RETRIES = 3
+#: Number of seconds to wait between two ssh attempts.
+SSH_RETRY_SLEEP = 2
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -474,57 +479,99 @@ class ScpMover(Mover):
         return True
 
     def open_connection(self):
-        """Open a connection."""
-        import copy
-
-        from paramiko import SSHClient, SSHException
-        retries = 3
-        ssh_key_filename = self.attrs.get("ssh_key_filename", None)
-        try:
-            timeout = float(self.attrs.get("ssh_connection_timeout", None))
-        except TypeError:
-            timeout = None
-        backup_targets = copy.deepcopy(self.backup_targets)
-        backup_targets_message = ""
-        try:
-            num_backup_targets = len(backup_targets)
-        except TypeError:
-            num_backup_targets = None
-        while retries > 0:
-            retries -= 1
+        """Open an ssh connection, falling back to the backup targets if the primary fails."""
+        backup_targets = list(self.backup_targets or [])
+        while True:
             try:
-                ssh_connection = SSHClient()
-                ssh_connection.load_system_host_keys()
-                ssh_connection.connect(self.destination.hostname,
-                                       username=self._dest_username,
-                                       port=self.destination.port or 22,
-                                       key_filename=ssh_key_filename,
-                                       timeout=timeout)
-                LOGGER.debug("Successfully connected to %s:%s as %s",
-                             self.destination.hostname,
-                             self.destination.port or 22,
-                             self._dest_username)
-            except SSHException as sshe:
-                LOGGER.exception("Failed to init SSHClient: %s", str(sshe))
-            except socket.timeout as sto:
-                LOGGER.exception("SSH connection timed out: %s", str(sto))
+                return self._run_with_retries(self._connect, "ssh connect", Exception)
             except Exception as err:
-                # Intentionally broad: SSHClient.connect() may raise unexpected exceptions
-                # (e.g. from underlying transport or third-party SSH agents).
-                LOGGER.exception("Unknown exception at init SSHClient: %s", str(err))
-            else:
-                return ssh_connection
+                if not backup_targets:
+                    raise IOError(self._failed_to_connect_message()) from err
+                self._switch_to_backup_target(backup_targets.pop(0))
 
+    def _run_with_retries(self, attempt, description, transient_errors):
+        """Call *attempt*, retrying it while it raises one of *transient_errors*.
+
+        The number of attempts comes from the num_ssh_retries connection parameter.
+        The error from the last attempt is re-raised, so the caller still learns why
+        the operation really failed. *attempt* is expected to log the cause itself;
+        only the decision to try again is logged here.
+        """
+        num_attempts = self._num_ssh_retries()
+        for attempt_number in range(1, num_attempts + 1):
+            try:
+                return attempt()
+            except transient_errors:
+                if attempt_number == num_attempts:
+                    raise
+                time.sleep(SSH_RETRY_SLEEP)
+                LOGGER.debug("Retrying %s ...", description)
+
+    def _connect(self):
+        """Open a new ssh connection, logging why it failed before letting the caller retry."""
+        from paramiko import SSHException
+
+        try:
+            return self._create_ssh_connection()
+        except SSHException as sshe:
+            LOGGER.exception("Failed to init SSHClient: %s", str(sshe))
+            raise
+        except socket.timeout as sto:
+            LOGGER.exception("SSH connection timed out: %s", str(sto))
+            raise
+        except Exception as err:
+            # Intentionally broad: SSHClient.connect() may raise unexpected exceptions
+            # (e.g. from underlying transport or third-party SSH agents).
+            LOGGER.exception("Unknown exception at init SSHClient: %s", str(err))
+            raise
+
+    def _create_ssh_connection(self):
+        """Create an SSHClient connected to the current destination."""
+        from paramiko import SSHClient
+
+        ssh_connection = SSHClient()
+        try:
+            ssh_connection.load_system_host_keys()
+            ssh_connection.connect(self.destination.hostname,
+                                   username=self._dest_username,
+                                   port=self.destination.port or 22,
+                                   key_filename=self.attrs.get("ssh_key_filename", None),
+                                   timeout=self._ssh_connection_timeout())
+        except Exception:
             ssh_connection.close()
-            time.sleep(2)
-            LOGGER.debug("Retrying ssh connect ...")
-            if retries == 0 and backup_targets:
-                backup_target = backup_targets.pop(0)
-                self.destination = self.destination._replace(netloc=f"{self.destination.username}@{backup_target}")
-                LOGGER.info("Changing destination to backup target: %s", self.destination.hostname)
-                retries = 3
-                backup_targets_message = f" to primary and {num_backup_targets} backup host(s)"
-        raise IOError(f"Failed to ssh connect after 3 attempts{backup_targets_message}.")
+            raise
+        LOGGER.debug("Successfully connected to %s:%s as %s",
+                     self.destination.hostname,
+                     self.destination.port or 22,
+                     self._dest_username)
+        return ssh_connection
+
+    def _ssh_connection_timeout(self):
+        """Return the ssh connection timeout in seconds, or None when it is not configured."""
+        try:
+            return float(self.attrs.get("ssh_connection_timeout", None))
+        except TypeError:
+            return None
+
+    def _switch_to_backup_target(self, backup_target):
+        """Point the destination at *backup_target* so the next attempt uses that host."""
+        self.destination = self.destination._replace(netloc=f"{self.destination.username}@{backup_target}")
+        LOGGER.info("Changing destination to backup target: %s", self.destination.hostname)
+
+    def _num_ssh_retries(self):
+        """Return how many times an ssh operation is attempted before giving up.
+
+        Values coming from an ini config file reach the mover as strings, so the
+        configured value is converted rather than used as-is.
+        """
+        return int(self.attrs.get("num_ssh_retries", DEFAULT_NUM_SSH_RETRIES))
+
+    def _failed_to_connect_message(self):
+        """Describe how hard we tried before giving up, for the error raised to the caller."""
+        message = f"Failed to ssh connect after {self._num_ssh_retries()} attempts"
+        if self.backup_targets:
+            message += f" to primary and {len(self.backup_targets)} backup host(s)"
+        return message + "."
 
     @staticmethod
     def is_connected(connection):
@@ -552,7 +599,19 @@ class ScpMover(Mover):
         os.remove(self.origin)
 
     def _copy(self):
-        """Upload the file to self.destination via SCP."""
+        """Upload the file to self.destination via SCP, retrying transient failures.
+
+        A dropped connection or a remote hiccup mid-transfer is not a reason to lose
+        the file, so those are retried. A failure that retrying cannot fix, such as
+        the origin file not existing, is reported straight away.
+        """
+        from paramiko import SSHException
+        from scp import SCPException
+
+        self._run_with_retries(self._put_over_scp, "SCP transfer", (SCPException, SSHException))
+
+    def _put_over_scp(self):
+        """Upload the file to self.destination over a single SCP connection."""
         from paramiko import SSHException
         from scp import SCPClient, SCPException
 

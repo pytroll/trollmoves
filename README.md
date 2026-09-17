@@ -189,6 +189,26 @@ Behavior notes
 - The tmp_prefix and use_tmp_on_transfer options are intentionally opt-in to
   preserve existing behavior by default.
 
+### Retrying failed SSH transfers
+
+`ScpMover` retries both opening the SSH connection and the SCP transfer itself
+when they fail with a transient error. This option is passed via the mover's
+connection_parameters or attrs dictionary.
+
+- num_ssh_retries: integer (default: 3)
+    How many times opening the connection and running the transfer are
+    attempted before giving up, with a short pause between the attempts. When
+    backup targets are configured, each host gets this many attempts.
+
+In an ini config for Move_it_server this is set as
+
+```ini
+connection_parameters__num_ssh_retries = 5
+```
+
+and in a Dispatcher YAML config as a `num_ssh_retries` key under the target's
+`connection_parameters` block.
+
 
 ## s3downloader
 

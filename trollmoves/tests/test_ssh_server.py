@@ -194,6 +194,36 @@ class TestSSHMovers(unittest.TestCase):
         with pytest.raises(IOError, match="Failed to ssh connect after 3 attempts"):
             scp_mover.open_connection()
 
+    @patch("paramiko.SSHClient", autospec=True)
+    def test_scp_open_connection_honours_configured_number_of_retries(self, mock_sshclient):
+        """Check that num_ssh_retries decides how many times connecting is attempted."""
+        from trollmoves.movers import ScpMover
+
+        mock_sshclient.return_value.connect.side_effect = socket.timeout
+
+        scp_mover = ScpMover(self.origin, self.destination_no_port,
+                             attrs={"num_ssh_retries": 2, "ssh_connection_timeout": 1})
+
+        with pytest.raises(IOError, match="Failed to ssh connect after 2 attempts"):
+            scp_mover.open_connection()
+
+        assert mock_sshclient.return_value.connect.call_count == 2
+
+    @patch("paramiko.SSHClient", autospec=True)
+    def test_scp_open_connection_number_of_retries_given_as_string(self, mock_sshclient):
+        """Check that num_ssh_retries works when read from an ini config file as a string."""
+        from trollmoves.movers import ScpMover
+
+        mock_sshclient.return_value.connect.side_effect = socket.timeout
+
+        scp_mover = ScpMover(self.origin, self.destination_no_port,
+                             attrs={"num_ssh_retries": "2", "ssh_connection_timeout": 1})
+
+        with pytest.raises(IOError, match="Failed to ssh connect after 2 attempts"):
+            scp_mover.open_connection()
+
+        assert mock_sshclient.return_value.connect.call_count == 2
+
     @patch("paramiko.SSHClient.connect", autospec=True)
     def test_scp_is_connected_exception(self, mock_sshclient_connect):
         """Check scp is_connected() exception resulting in no connection."""
@@ -272,6 +302,51 @@ class TestSSHMovers(unittest.TestCase):
 
         with pytest.raises(Exception):
             scp_mover.copy()
+
+    @patch("paramiko.SSHClient", autospec=True)
+    @patch("scp.SCPClient", autospec=True)
+    def test_scp_copy_retries_transient_failure(self, mock_scp_client, mock_sshclient):
+        """Check that a transfer failing with a transient error is retried."""
+        from scp import SCPException
+
+        from trollmoves.movers import ScpMover
+
+        mock_scp_client.return_value.put.side_effect = [SCPException("Connection lost"), None]
+
+        scp_mover = ScpMover(self.origin, self.destination_no_port, attrs={"num_ssh_retries": 2})
+        scp_mover.copy()
+
+        assert mock_scp_client.return_value.put.call_count == 2
+
+    @patch("paramiko.SSHClient", autospec=True)
+    @patch("scp.SCPClient", autospec=True)
+    def test_scp_copy_raises_when_every_retry_fails(self, mock_scp_client, mock_sshclient):
+        """Check that a transfer failing on every attempt raises the error from the last one."""
+        from scp import SCPException
+
+        from trollmoves.movers import ScpMover
+
+        mock_scp_client.return_value.put.side_effect = SCPException("Connection lost")
+
+        scp_mover = ScpMover(self.origin, self.destination_no_port, attrs={"num_ssh_retries": 2})
+
+        with pytest.raises(SCPException):
+            scp_mover.copy()
+
+        assert mock_scp_client.return_value.put.call_count == 2
+
+    @patch("paramiko.SSHClient", autospec=True)
+    @patch("scp.SCPClient", autospec=True)
+    def test_scp_copy_missing_origin_file_is_not_retried(self, mock_scp_client, mock_sshclient):
+        """Check that a missing origin file is reported at once, as retrying cannot help."""
+        from trollmoves.movers import ScpMover
+
+        mock_scp_client.return_value.put.side_effect = OSError(errno.ENOENT, "message")
+
+        scp_mover = ScpMover(self.origin, self.destination_no_port, attrs={"num_ssh_retries": 2})
+        scp_mover.copy()
+
+        assert mock_scp_client.return_value.put.call_count == 1
 
     @patch("paramiko.SSHClient", autospec=True)
     @patch("scp.SCPClient", autospec=True)
