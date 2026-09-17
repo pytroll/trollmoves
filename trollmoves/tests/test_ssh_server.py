@@ -237,8 +237,9 @@ class TestSSHMovers(unittest.TestCase):
         with pytest.raises(Exception):
             scp_mover.copy()
 
+    @patch("paramiko.SSHClient", autospec=True)
     @patch("scp.SCPClient", autospec=True)
-    def test_scp_copy_oserror_exception(self, mock_scp_client):
+    def test_scp_copy_oserror_exception(self, mock_scp_client, mock_sshclient):
         """Check scp copy for OSError."""
         from trollmoves.movers import ScpMover
 
@@ -248,8 +249,9 @@ class TestSSHMovers(unittest.TestCase):
         with pytest.raises(OSError):
             scp_mover.copy()
 
+    @patch("paramiko.SSHClient", autospec=True)
     @patch("scp.SCPClient", autospec=True)
-    def test_scp_copy_oserror_exception_errno_2(self, mock_scp_client):
+    def test_scp_copy_oserror_exception_errno_2(self, mock_scp_client, mock_sshclient):
         """Check scp copy OSError errno 2."""
         from trollmoves.movers import ScpMover
 
