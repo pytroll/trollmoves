@@ -1,6 +1,5 @@
 """Trollmoves client."""
 import argparse
-import bz2
 import hashlib
 import logging
 import os
@@ -10,7 +9,7 @@ import tarfile
 import time
 from collections import deque
 from configparser import ConfigParser
-from contextlib import closing, suppress
+from contextlib import suppress
 from threading import Event, Lock, Thread
 from urllib.parse import urlparse, urlunparse
 
@@ -26,6 +25,7 @@ from trollmoves.logging import add_logging_options_to_parser
 from trollmoves.move_it_base import MoveItBase
 from trollmoves.movers import CTimer
 from trollmoves.utils import (
+    bunzip_to,
     decompression_directory,
     decompression_target,
     gen_dict_extract,
@@ -373,20 +373,9 @@ def unpack_bzip(filename, **kwargs):
     if os.path.exists(out_fname):
         return out_fname
     with decompression_target(out_fname) as tmp_fname:
-        _bunzip_to(filename, tmp_fname, block_size)
+        bunzip_to(filename, tmp_fname, block_size)
     LOGGER.debug("Bunzipped %s to %s", filename, out_fname)
     return out_fname
-
-
-def _bunzip_to(filename, out_fname, block_size):
-    """Decompress the bzip2 file *filename* into *out_fname*, one block at a time."""
-    with closing(bz2.BZ2File(filename, "r")) as orig, open(out_fname, "wb") as dest:
-        while True:
-            block = orig.read(block_size)
-
-            if not block:
-                break
-            dest.write(block)
 
 
 def check_output(*popenargs, **kwargs):

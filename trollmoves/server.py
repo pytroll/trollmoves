@@ -1,6 +1,5 @@
 """Classes and functions for Trollmoves server."""
 import argparse
-import bz2
 import datetime
 import errno
 import fnmatch
@@ -33,12 +32,12 @@ from trollmoves.logging import add_logging_options_to_parser
 from trollmoves.move_it_base import MoveItBase, WatchdogChangeHandler, WatchdogCreationHandler, create_publisher
 from trollmoves.movers import move_it
 from trollmoves.utils import (
+    bunzip_to,
     clean_url,
-    decompression_directory,
+    decompression_target,
     gen_dict_contains,
     gen_dict_extract,
     is_file_local,
-    move_into_place,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -1068,9 +1067,8 @@ def xrit(pathname, destination=None, cmd="./xRITDecompress"):
     dest_url = urlparse(destination)
     expected = os.path.join((destination or opath), ofile[:-2] + "__")
     if dest_url.scheme in ("", "file"):
-        with decompression_directory(destination or opath) as tmp_directory:
-            subprocess.check_output([cmd, pathname], cwd=tmp_directory)
-            move_into_place(os.path.join(tmp_directory, os.path.basename(expected)), expected)
+        with decompression_target(expected) as tmp_pathname:
+            subprocess.check_output([cmd, pathname], cwd=os.path.dirname(tmp_pathname))
     else:
         LOGGER.exception("Can not extract file %s to %s, destination "
                          "has to be local.", pathname, destination)
@@ -1088,21 +1086,9 @@ def bzip(origin, destination=None):
     destfile = os.path.join(destination, ofile[:-4])
     if os.path.exists(destfile):
         return destfile
-    with decompression_directory(destination) as tmp_directory:
-        tmp_destfile = os.path.join(tmp_directory, os.path.basename(destfile))
-        with open(tmp_destfile, "wb") as dest:
-            try:
-                orig = bz2.BZ2File(origin, "r")
-                while True:
-                    block = orig.read(BLOCK_SIZE)
-
-                    if not block:
-                        break
-                    dest.write(block)
-                LOGGER.debug("Bunzipped %s to %s", origin, destfile)
-            finally:
-                orig.close()
-        move_into_place(tmp_destfile, destfile)
+    with decompression_target(destfile) as tmp_destfile:
+        bunzip_to(origin, tmp_destfile, BLOCK_SIZE)
+    LOGGER.debug("Bunzipped %s to %s", origin, destfile)
     return destfile
 
 

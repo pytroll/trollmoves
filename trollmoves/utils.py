@@ -1,10 +1,11 @@
 """Utility functions for Trollmoves."""
 
+import bz2
 import os
 import shutil
 import socket
 import tempfile
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from urllib.parse import urlparse, urlunparse
 
 
@@ -37,6 +38,17 @@ def decompression_target(out_fname):
         tmp_fname = os.path.join(tmp_directory, os.path.basename(out_fname))
         yield tmp_fname
         move_into_place(tmp_fname, out_fname)
+
+
+def bunzip_to(compressed_filename, out_fname, block_size):
+    """Decompress the bzip2 file *compressed_filename* into *out_fname*, one block at a time."""
+    with closing(bz2.BZ2File(compressed_filename, "r")) as orig, open(out_fname, "wb") as dest:
+        while True:
+            block = orig.read(block_size)
+
+            if not block:
+                break
+            dest.write(block)
 
 
 def move_into_place(source, destination):

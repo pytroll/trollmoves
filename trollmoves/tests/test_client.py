@@ -376,7 +376,7 @@ def test_unpack_bzip():
         # Mock things so we know what has been called
 
         # When the file exists, don't run decompression
-        with patch("trollmoves.client.open") as opn:
+        with patch("trollmoves.utils.open") as opn:
             res = unpack_bzip(fname_bz2, **kwargs)
         opn.assert_not_called()
 
@@ -384,10 +384,10 @@ def test_unpack_bzip():
         kwargs["block_size"] = "2048"
         with patch("os.path.exists") as exists, patch("trollmoves.utils.move_into_place"):
             exists.return_value = False
-            with patch("trollmoves.client.open") as opn:
+            with patch("trollmoves.utils.open") as opn:
                 mock_bz2_fid = MagicMock()
                 mock_bz2_fid.read.return_value = False
-                with patch("trollmoves.client.bz2.BZ2File") as bz2file:
+                with patch("trollmoves.utils.bz2.BZ2File") as bz2file:
                     bz2file.return_value = mock_bz2_fid
                     res = unpack_bzip(fname_bz2, **kwargs)
         mock_bz2_fid.read.assert_called_with(2048)
