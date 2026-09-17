@@ -483,23 +483,29 @@ class ScpMover(Mover):
         backup_targets = list(self.backup_targets or [])
         while True:
             try:
-                return self._connect_with_retries()
+                return self._run_with_retries(self._connect, "ssh connect", Exception)
             except Exception as err:
                 if not backup_targets:
                     raise IOError(self._failed_to_connect_message()) from err
                 self._switch_to_backup_target(backup_targets.pop(0))
 
-    def _connect_with_retries(self):
-        """Open an ssh connection to the current destination, retrying a few times first."""
+    def _run_with_retries(self, attempt, description, transient_errors):
+        """Call *attempt*, retrying it while it raises one of *transient_errors*.
+
+        The number of attempts comes from the num_ssh_retries connection parameter.
+        The error from the last attempt is re-raised, so the caller still learns why
+        the operation really failed. *attempt* is expected to log the cause itself;
+        only the decision to try again is logged here.
+        """
         num_attempts = self._num_ssh_retries()
-        for attempt in range(1, num_attempts + 1):
+        for attempt_number in range(1, num_attempts + 1):
             try:
-                return self._connect()
-            except Exception:
-                if attempt == num_attempts:
+                return attempt()
+            except transient_errors:
+                if attempt_number == num_attempts:
                     raise
                 time.sleep(SSH_RETRY_SLEEP)
-                LOGGER.debug("Retrying ssh connect ...")
+                LOGGER.debug("Retrying %s ...", description)
 
     def _connect(self):
         """Open a new ssh connection, logging why it failed before letting the caller retry."""
@@ -593,7 +599,19 @@ class ScpMover(Mover):
         os.remove(self.origin)
 
     def _copy(self):
-        """Upload the file to self.destination via SCP."""
+        """Upload the file to self.destination via SCP, retrying transient failures.
+
+        A dropped connection or a remote hiccup mid-transfer is not a reason to lose
+        the file, so those are retried. A failure that retrying cannot fix, such as
+        the origin file not existing, is reported straight away.
+        """
+        from paramiko import SSHException
+        from scp import SCPException
+
+        self._run_with_retries(self._put_over_scp, "SCP transfer", (SCPException, SSHException))
+
+    def _put_over_scp(self):
+        """Upload the file to self.destination over a single SCP connection."""
         from paramiko import SSHException
         from scp import SCPClient, SCPException
 

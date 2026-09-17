@@ -305,6 +305,51 @@ class TestSSHMovers(unittest.TestCase):
 
     @patch("paramiko.SSHClient", autospec=True)
     @patch("scp.SCPClient", autospec=True)
+    def test_scp_copy_retries_transient_failure(self, mock_scp_client, mock_sshclient):
+        """Check that a transfer failing with a transient error is retried."""
+        from scp import SCPException
+
+        from trollmoves.movers import ScpMover
+
+        mock_scp_client.return_value.put.side_effect = [SCPException("Connection lost"), None]
+
+        scp_mover = ScpMover(self.origin, self.destination_no_port, attrs={"num_ssh_retries": 2})
+        scp_mover.copy()
+
+        assert mock_scp_client.return_value.put.call_count == 2
+
+    @patch("paramiko.SSHClient", autospec=True)
+    @patch("scp.SCPClient", autospec=True)
+    def test_scp_copy_raises_when_every_retry_fails(self, mock_scp_client, mock_sshclient):
+        """Check that a transfer failing on every attempt raises the error from the last one."""
+        from scp import SCPException
+
+        from trollmoves.movers import ScpMover
+
+        mock_scp_client.return_value.put.side_effect = SCPException("Connection lost")
+
+        scp_mover = ScpMover(self.origin, self.destination_no_port, attrs={"num_ssh_retries": 2})
+
+        with pytest.raises(SCPException):
+            scp_mover.copy()
+
+        assert mock_scp_client.return_value.put.call_count == 2
+
+    @patch("paramiko.SSHClient", autospec=True)
+    @patch("scp.SCPClient", autospec=True)
+    def test_scp_copy_missing_origin_file_is_not_retried(self, mock_scp_client, mock_sshclient):
+        """Check that a missing origin file is reported at once, as retrying cannot help."""
+        from trollmoves.movers import ScpMover
+
+        mock_scp_client.return_value.put.side_effect = OSError(errno.ENOENT, "message")
+
+        scp_mover = ScpMover(self.origin, self.destination_no_port, attrs={"num_ssh_retries": 2})
+        scp_mover.copy()
+
+        assert mock_scp_client.return_value.put.call_count == 1
+
+    @patch("paramiko.SSHClient", autospec=True)
+    @patch("scp.SCPClient", autospec=True)
     def test_scp_move(self, mock_scp_client, mock_sshclient):
         """Check scp move."""
         from trollmoves.movers import ScpMover
