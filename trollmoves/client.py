@@ -1,6 +1,5 @@
 """Trollmoves client."""
 import argparse
-import bz2
 import hashlib
 import logging
 import os
@@ -25,7 +24,15 @@ from trollmoves import heartbeat_monitor
 from trollmoves.logging import add_logging_options_to_parser
 from trollmoves.move_it_base import MoveItBase
 from trollmoves.movers import CTimer
-from trollmoves.utils import gen_dict_extract, get_local_ips, translate_dict
+from trollmoves.utils import (
+    bunzip_to,
+    decompression_directory,
+    decompression_target,
+    gen_dict_extract,
+    get_local_ips,
+    move_into_place,
+    translate_dict,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -315,16 +322,33 @@ def clean_ongoing_transfer(uid):
 def unpack_tar(filename, **kwargs):
     """Unpack tar files."""
     destdir = os.path.dirname(filename)
-    try:
-        with tarfile.open(filename) as tar:
-            tar.extractall(destdir)
-            members = tar.getmembers()
-    except tarfile.ReadError as err:
-        raise IOError(str(err))
+    with decompression_directory(destdir) as tmp_directory:
+        members = _extract_tar(filename, tmp_directory)
+        for member in members:
+            _move_member_into_place(member, tmp_directory, destdir)
     fnames = tuple(os.path.join(destdir, member.name) for member in members)
     if len(fnames) == 1:
         return fnames[0]
     return fnames
+
+
+def _extract_tar(filename, destination_directory):
+    """Extract every member of the tar file *filename* into *destination_directory*."""
+    try:
+        with tarfile.open(filename) as tar:
+            tar.extractall(destination_directory)
+            return tar.getmembers()
+    except tarfile.ReadError as err:
+        raise IOError(str(err))
+
+
+def _move_member_into_place(member, tmp_directory, destdir):
+    """Move an extracted tar *member* to its final place under *destdir*."""
+    destination = os.path.join(destdir, member.name)
+    if member.isdir():
+        os.makedirs(destination, exist_ok=True)
+    elif member.isfile():
+        move_into_place(os.path.join(tmp_directory, member.name), destination)
 
 
 def unpack_xrit(filename, **kwargs):
@@ -337,7 +361,8 @@ def unpack_xrit(filename, **kwargs):
                       "Set it with 'xritdecompressor' config option.")
     destdir = os.path.dirname(filename)
     out_fname = os.path.join(destdir, os.path.basename(filename)[:-2] + "__")
-    check_output([cmd, filename], cwd=(destdir))
+    with decompression_target(out_fname) as tmp_fname:
+        check_output([cmd, filename], cwd=os.path.dirname(tmp_fname))
     return out_fname
 
 
@@ -347,18 +372,9 @@ def unpack_bzip(filename, **kwargs):
     out_fname = filename[:-4]
     if os.path.exists(out_fname):
         return out_fname
-    with open(out_fname, "wb") as dest:
-        try:
-            orig = bz2.BZ2File(filename, "r")
-            while True:
-                block = orig.read(block_size)
-
-                if not block:
-                    break
-                dest.write(block)
-            LOGGER.debug("Bunzipped %s to %s", filename, out_fname)
-        finally:
-            orig.close()
+    with decompression_target(out_fname) as tmp_fname:
+        bunzip_to(filename, tmp_fname, block_size)
+    LOGGER.debug("Bunzipped %s to %s", filename, out_fname)
     return out_fname
 
 
@@ -1020,8 +1036,8 @@ class MoveItClient(MoveItBase):
 
     def signal_reload_cfg_file(self, *args):
         """Handle reload signal."""
-        reload_config(self.cmd_args.config_file, self.chains,
-                      publisher=self.publisher)
+        del args
+        self.reload_cfg_file(self.cmd_args.config_file)
 
     def _run(self):
         for chain_name in self.chains:

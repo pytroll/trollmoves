@@ -1,7 +1,62 @@
 """Utility functions for Trollmoves."""
 
+import bz2
+import os
+import shutil
 import socket
+import tempfile
+from contextlib import closing, contextmanager
 from urllib.parse import urlparse, urlunparse
+
+
+@contextmanager
+def decompression_directory(destination_directory):
+    """Provide a temporary directory to decompress into, inside *destination_directory*.
+
+    Decompressing straight to the final filename lets consumers that watch the
+    destination directory without listening to Posttroll pick up a file that is not
+    written yet. Doing the work out of sight and moving the results in afterwards makes
+    every file appear complete at once. The directory is created inside the destination
+    so that the move stays on the same filesystem and is therefore a rename.
+    """
+    tmp_directory = tempfile.mkdtemp(prefix=".trollmoves_", dir=destination_directory or ".")
+    try:
+        yield tmp_directory
+    finally:
+        shutil.rmtree(tmp_directory, ignore_errors=True)
+
+
+@contextmanager
+def decompression_target(out_fname):
+    """Provide a temporary path to decompress to, and move it to *out_fname* afterwards.
+
+    This is the single-file shortcut through :func:`decompression_directory`: the file is
+    moved to its final name when the block finishes, and left behind in the temporary
+    directory, to be cleaned up, if the block raises.
+    """
+    with decompression_directory(os.path.dirname(out_fname)) as tmp_directory:
+        tmp_fname = os.path.join(tmp_directory, os.path.basename(out_fname))
+        yield tmp_fname
+        move_into_place(tmp_fname, out_fname)
+
+
+def bunzip_to(compressed_filename, out_fname, block_size):
+    """Decompress the bzip2 file *compressed_filename* into *out_fname*, one block at a time."""
+    with closing(bz2.BZ2File(compressed_filename, "r")) as orig, open(out_fname, "wb") as dest:
+        while True:
+            block = orig.read(block_size)
+
+            if not block:
+                break
+            dest.write(block)
+
+
+def move_into_place(source, destination):
+    """Move a decompressed file from *source* to its final name *destination*."""
+    destination_directory = os.path.dirname(destination)
+    if destination_directory:
+        os.makedirs(destination_directory, exist_ok=True)
+    os.replace(source, destination)
 
 
 def clean_url(url):

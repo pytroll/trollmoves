@@ -340,16 +340,17 @@ def test_unpack_xrit_compressed_no_config(check_output):
         pass
 
 
+@patch("trollmoves.utils.move_into_place")
 @patch("trollmoves.client.check_output")
-def test_unpack_xrit_compressed_xritdecompressor(check_output):
+def test_unpack_xrit_compressed_xritdecompressor(check_output, move_into_place, tmp_path):
     """Test unpacking of xrit segments when xritdecompressor is defined."""
     from trollmoves.client import unpack_xrit
 
     kwargs = {"xritdecompressor": "/path/to/xRITDecompress"}
-    fname_in = "/data_dir/H-000-MSG4__-MSG4________-IR_134___-000003___-201909031245-C_"
+    fname_in = str(tmp_path / "H-000-MSG4__-MSG4________-IR_134___-000003___-201909031245-C_")
     _ = unpack_xrit(fname_in, **kwargs)
-    check_output.assert_called_once_with(
-        ["/path/to/xRITDecompress", fname_in], cwd=("/data_dir"))
+    assert check_output.call_args.args == (["/path/to/xRITDecompress", fname_in],)
+    assert os.path.dirname(check_output.call_args.kwargs["cwd"]) == str(tmp_path)
 
 
 def test_unpack_bzip():
@@ -375,24 +376,141 @@ def test_unpack_bzip():
         # Mock things so we know what has been called
 
         # When the file exists, don't run decompression
-        with patch("trollmoves.client.open") as opn:
+        with patch("trollmoves.utils.open") as opn:
             res = unpack_bzip(fname_bz2, **kwargs)
         opn.assert_not_called()
 
         # Custom block size is as a string in the config
         kwargs["block_size"] = "2048"
-        with patch("os.path.exists") as exists:
+        with patch("os.path.exists") as exists, patch("trollmoves.utils.move_into_place"):
             exists.return_value = False
-            with patch("trollmoves.client.open") as opn:
+            with patch("trollmoves.utils.open") as opn:
                 mock_bz2_fid = MagicMock()
                 mock_bz2_fid.read.return_value = False
-                with patch("trollmoves.client.bz2.BZ2File") as bz2file:
+                with patch("trollmoves.utils.bz2.BZ2File") as bz2file:
                     bz2file.return_value = mock_bz2_fid
                     res = unpack_bzip(fname_bz2, **kwargs)
         mock_bz2_fid.read.assert_called_with(2048)
     finally:
         os.remove(fname)
         os.remove(fname_bz2)
+
+
+def _names_in(directory):
+    return sorted(os.path.basename(str(path)) for path in directory.iterdir())
+
+
+def test_unpack_bzip_does_not_use_the_final_name_before_the_file_is_complete(tmp_path, monkeypatch):
+    """Test that a consumer watching the directory never sees a partial decompressed file."""
+    import bz2
+
+    from trollmoves.client import unpack_bzip
+
+    compressed_file = tmp_path / "my_file.txt.bz2"
+    compressed_file.write_bytes(bz2.compress(b"hello world"))
+
+    names_while_decompressing = []
+    real_bz2_file = bz2.BZ2File
+
+    class SpyingBZ2File(real_bz2_file):
+        """A bzip2 file that records what the destination directory looks like while reading."""
+
+        def read(self, *args, **kwargs):
+            names_while_decompressing.append(_names_in(tmp_path))
+            return super().read(*args, **kwargs)
+
+    monkeypatch.setattr(bz2, "BZ2File", SpyingBZ2File)
+
+    out_fname = unpack_bzip(str(compressed_file))
+
+    assert names_while_decompressing
+    for names in names_while_decompressing:
+        assert "my_file.txt" not in names
+    with open(out_fname, "rb") as fd_:
+        assert fd_.read() == b"hello world"
+
+
+def test_unpack_bzip_leaves_nothing_behind_when_decompression_fails(tmp_path):
+    """Test that a failed decompression does not leave a file under the final name."""
+    from trollmoves.client import unpack_bzip
+
+    corrupted_file = tmp_path / "my_file.txt.bz2"
+    corrupted_file.write_bytes(b"this is not bzip2 data")
+
+    with pytest.raises(OSError):
+        unpack_bzip(str(corrupted_file))
+
+    assert _names_in(tmp_path) == ["my_file.txt.bz2"]
+
+
+def test_unpack_bzip_handles_a_filename_without_a_directory(tmp_path, monkeypatch):
+    """Test that a file named relative to the working directory is still decompressed."""
+    import bz2
+
+    from trollmoves.client import unpack_bzip
+
+    (tmp_path / "my_file.txt.bz2").write_bytes(bz2.compress(b"hello world"))
+    monkeypatch.chdir(tmp_path)
+
+    out_fname = unpack_bzip("my_file.txt.bz2")
+
+    assert out_fname == "my_file.txt"
+    with open(tmp_path / "my_file.txt", "rb") as fd_:
+        assert fd_.read() == b"hello world"
+
+
+def test_unpack_tar_does_not_use_the_final_names_before_the_files_are_complete(tmp_path, monkeypatch):
+    """Test that a consumer watching the directory never sees a partially extracted member."""
+    import tarfile as tarfile_module
+
+    from trollmoves.client import unpack_tar
+
+    member = tmp_path / "member.txt"
+    member.write_text("hello world")
+    tar_path = tmp_path / "my_files.tar"
+    with tarfile_module.open(tar_path, "w") as tar:
+        tar.add(str(member), arcname="member.txt")
+    member.unlink()
+
+    names_while_extracting = []
+    real_extractall = tarfile_module.TarFile.extractall
+
+    def spying_extractall(self, path, *args, **kwargs):
+        result = real_extractall(self, path, *args, **kwargs)
+        names_while_extracting.extend(_names_in(tmp_path))
+        return result
+
+    monkeypatch.setattr(tarfile_module.TarFile, "extractall", spying_extractall)
+
+    new_files = unpack_tar(str(tar_path))
+
+    assert "member.txt" not in names_while_extracting
+    assert new_files == str(tmp_path / "member.txt")
+    with open(new_files) as fd_:
+        assert fd_.read() == "hello world"
+
+
+def test_unpack_xrit_does_not_use_the_final_name_before_the_file_is_complete(tmp_path):
+    """Test that the decompressor writes out of sight of the destination directory."""
+    from trollmoves.client import unpack_xrit
+
+    compressed_file = tmp_path / "H-000-MSG4__-MSG4________-IR_134___-000003___-201909031245-C_"
+    compressed_file.write_text("compressed")
+    out_fname = str(compressed_file)[:-2] + "__"
+
+    def fake_decompressor(args, cwd):
+        assert cwd != str(tmp_path)
+        with open(os.path.join(cwd, os.path.basename(out_fname)), "w") as fd_:
+            fd_.write("decompressed")
+
+    with patch("trollmoves.client.check_output", new=fake_decompressor):
+        res = unpack_xrit(str(compressed_file), xritdecompressor="/path/to/xRITDecompress")
+
+    assert res == out_fname
+    with open(res) as fd_:
+        assert fd_.read() == "decompressed"
+    assert _names_in(tmp_path) == sorted([os.path.basename(str(compressed_file)),
+                                          os.path.basename(out_fname)])
 
 
 def test_unpack_tar(test_txt_file_1, test_txt_file_2):
@@ -1598,6 +1716,21 @@ class TestMoveItClient:
             client = MoveItClient(cmd_args)
             client.signal_reload_cfg_file()
             mock_reload_config.assert_called_once()
+
+    @patch("trollmoves.move_it_base.Publisher")
+    def test_signal_reloads_config_on_example_config(self, fake_publisher, tmp_path):
+        """Test that the reload signal handler works with the real reload_config."""
+        config_filename = tmp_path / "my_config_file.ini"
+        with open(config_filename, "wb") as fd:
+            fd.write(config_without_nameservers)
+        cmd_args = parse_args([os.fspath(config_filename)])
+        with patch("trollmoves.client.Listener"):
+            client = MoveItClient(cmd_args)
+            try:
+                client.signal_reload_cfg_file()
+                assert "eumetcast_hrit_0deg_ftp" in client.chains
+            finally:
+                client.terminate()
 
     def test_reloads_config_on_newly_written_config_file(self, tmp_path):
         """Test that config can be reloaded with basic example."""
