@@ -657,7 +657,7 @@ def _request_files(hashed_uid, destination, login, publisher, **kwargs):
         response, hostname = send_request(msg, req, float(kwargs["transfer_req_timeout"]))
 
         if response and response.type in ["file", "collection", "dataset"]:
-            LOGGER.debug("Server done sending file")
+            _log_transfer_source(hostname, msg)
             add_to_file_cache(msg)
             _send_ack_message(msg, publisher)
 
@@ -679,6 +679,18 @@ def _request_files(hashed_uid, destination, login, publisher, **kwargs):
         LOGGER.warning("Could not get a working source for requesting %s",
                        str(msg))
         terminate_transfers(hashed_uid, float(kwargs["req_timeout"]))
+
+
+def _log_transfer_source(hostname, msg):
+    """Log which host each of the files in *msg* was transferred from.
+
+    Knowing which of the configured providers actually served a file is what makes it
+    possible to tell how much each of them is used, and to diagnose a source that has
+    gone quiet, so this is logged at INFO level. The host is the one the file was
+    requested from, without any credentials used for the transfer.
+    """
+    for uri in gen_dict_extract(msg.data, "uri"):
+        LOGGER.info("'%s' done sending file '%s'", hostname, uri)
 
 
 def _compose_destination(destination, msg):
