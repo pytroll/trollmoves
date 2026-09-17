@@ -776,6 +776,7 @@ class Chain:
         self.notifier_builder = None
         self.needs_manager = "request_port" in self.config
         self.function_to_run = None
+        self.unpacked_file_deleter = None
         self.restarts = 0
 
     def create_manager(self, manager):
@@ -798,18 +799,30 @@ class Chain:
             notifier_builder = _get_notifier_builder(use_polling, self.config)
 
         self.notifier_builder = notifier_builder
-        self.function_to_run = partial(function_to_run_on_matching_files, chain_config=self.config)
+        self.unpacked_file_deleter = self._create_unpacked_file_deleter()
+        self.function_to_run = partial(function_to_run_on_matching_files, chain_config=self.config,
+                                       deleter=self.unpacked_file_deleter)
         self.notifier = notifier_builder(self.function_to_run)
+
+    def _create_unpacked_file_deleter(self):
+        """Create the deleter for the files this chain decompresses, if it decompresses any."""
+        if not self.config.get("compression"):
+            return None
+        return Deleter(self.config)
 
     def start(self):
         """Start the chain."""
         if self.request_manager is not None:
             self.request_manager.start()
+        if self.unpacked_file_deleter is not None:
+            self.unpacked_file_deleter.start()
         self.notifier.start()
 
     def stop(self):
         """Stop the chain."""
         self._stop_notifier()
+        if self.unpacked_file_deleter is not None:
+            self.unpacked_file_deleter.stop()
         if self.request_manager is not None:
             self.request_manager.stop()
             LOGGER.debug("Stopped the request manager")
@@ -930,12 +943,12 @@ def create_watchdog_notifier(pattern, function_to_run_on_matching_files, observe
     return observer
 
 
-def process_notification(notification, publisher, chain_config):
+def process_notification(notification, publisher, chain_config, deleter=None):
     """Publish what we have."""
     if isinstance(notification, Message):
         process_message(chain_config, notification, publisher)
     else:
-        process_path(chain_config, notification, publisher)
+        process_path(chain_config, notification, publisher, deleter=deleter)
 
 
 def process_message(chain_config, msg, publisher):
@@ -962,7 +975,7 @@ def _add_files_to_cache(msg, config):
             file_cache.appendleft(config["topic"] + "/" + filename)
 
 
-def process_path(chain_config, path, publisher):
+def process_path(chain_config, path, publisher, deleter=None):
     """Create a message and publish a file."""
     try:
         file_size = os.stat(path).st_size
@@ -977,6 +990,28 @@ def process_path(chain_config, path, publisher):
         LOGGER.debug("We have a match: %s", path)
         pathname = unpack(path, **chain_config)
         publish_file(path, publisher, chain_config, pathname)
+        schedule_decompressed_file_for_removal(deleter, path, pathname)
+
+
+def schedule_decompressed_file_for_removal(deleter, original_path, unpacked_path):
+    """Schedule a file created by decompressing *original_path* for removal.
+
+    The request manager only schedules the files it has actually served, so files
+    decompressed for clients that never ask for them - because they are stopped, or
+    because another server answered first - would otherwise pile up in the working
+    directory for good.
+    """
+    if deleter is None or unpacked_path == original_path:
+        return
+    for filename in _as_filenames(unpacked_path):
+        deleter.add(filename)
+
+
+def _as_filenames(unpacked_path):
+    """Return the unpacking result as a tuple of filenames, as it can hold several."""
+    if isinstance(unpacked_path, (list, tuple)):
+        return tuple(unpacked_path)
+    return (unpacked_path,)
 
 
 def publish_file(orig_pathname, publisher, attrs, unpacked_pathname):
