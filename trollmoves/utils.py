@@ -25,6 +25,20 @@ def decompression_directory(destination_directory):
         shutil.rmtree(tmp_directory, ignore_errors=True)
 
 
+@contextmanager
+def decompression_target(out_fname):
+    """Provide a temporary path to decompress to, and move it to *out_fname* afterwards.
+
+    This is the single-file shortcut through :func:`decompression_directory`: the file is
+    moved to its final name when the block finishes, and left behind in the temporary
+    directory, to be cleaned up, if the block raises.
+    """
+    with decompression_directory(os.path.dirname(out_fname)) as tmp_directory:
+        tmp_fname = os.path.join(tmp_directory, os.path.basename(out_fname))
+        yield tmp_fname
+        move_into_place(tmp_fname, out_fname)
+
+
 def move_into_place(source, destination):
     """Move a decompressed file from *source* to its final name *destination*."""
     destination_directory = os.path.dirname(destination)

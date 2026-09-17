@@ -340,7 +340,7 @@ def test_unpack_xrit_compressed_no_config(check_output):
         pass
 
 
-@patch("trollmoves.client.move_into_place")
+@patch("trollmoves.utils.move_into_place")
 @patch("trollmoves.client.check_output")
 def test_unpack_xrit_compressed_xritdecompressor(check_output, move_into_place, tmp_path):
     """Test unpacking of xrit segments when xritdecompressor is defined."""
@@ -382,7 +382,7 @@ def test_unpack_bzip():
 
         # Custom block size is as a string in the config
         kwargs["block_size"] = "2048"
-        with patch("os.path.exists") as exists, patch("trollmoves.client.move_into_place"):
+        with patch("os.path.exists") as exists, patch("trollmoves.utils.move_into_place"):
             exists.return_value = False
             with patch("trollmoves.client.open") as opn:
                 mock_bz2_fid = MagicMock()
