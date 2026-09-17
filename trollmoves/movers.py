@@ -491,7 +491,7 @@ class ScpMover(Mover):
 
     def _connect_with_retries(self):
         """Open an ssh connection to the current destination, retrying a few times first."""
-        num_attempts = DEFAULT_NUM_SSH_RETRIES
+        num_attempts = self._num_ssh_retries()
         for attempt in range(1, num_attempts + 1):
             try:
                 return self._connect()
@@ -552,9 +552,17 @@ class ScpMover(Mover):
         self.destination = self.destination._replace(netloc=f"{self.destination.username}@{backup_target}")
         LOGGER.info("Changing destination to backup target: %s", self.destination.hostname)
 
+    def _num_ssh_retries(self):
+        """Return how many times an ssh operation is attempted before giving up.
+
+        Values coming from an ini config file reach the mover as strings, so the
+        configured value is converted rather than used as-is.
+        """
+        return int(self.attrs.get("num_ssh_retries", DEFAULT_NUM_SSH_RETRIES))
+
     def _failed_to_connect_message(self):
         """Describe how hard we tried before giving up, for the error raised to the caller."""
-        message = f"Failed to ssh connect after {DEFAULT_NUM_SSH_RETRIES} attempts"
+        message = f"Failed to ssh connect after {self._num_ssh_retries()} attempts"
         if self.backup_targets:
             message += f" to primary and {len(self.backup_targets)} backup host(s)"
         return message + "."

@@ -194,6 +194,36 @@ class TestSSHMovers(unittest.TestCase):
         with pytest.raises(IOError, match="Failed to ssh connect after 3 attempts"):
             scp_mover.open_connection()
 
+    @patch("paramiko.SSHClient", autospec=True)
+    def test_scp_open_connection_honours_configured_number_of_retries(self, mock_sshclient):
+        """Check that num_ssh_retries decides how many times connecting is attempted."""
+        from trollmoves.movers import ScpMover
+
+        mock_sshclient.return_value.connect.side_effect = socket.timeout
+
+        scp_mover = ScpMover(self.origin, self.destination_no_port,
+                             attrs={"num_ssh_retries": 2, "ssh_connection_timeout": 1})
+
+        with pytest.raises(IOError, match="Failed to ssh connect after 2 attempts"):
+            scp_mover.open_connection()
+
+        assert mock_sshclient.return_value.connect.call_count == 2
+
+    @patch("paramiko.SSHClient", autospec=True)
+    def test_scp_open_connection_number_of_retries_given_as_string(self, mock_sshclient):
+        """Check that num_ssh_retries works when read from an ini config file as a string."""
+        from trollmoves.movers import ScpMover
+
+        mock_sshclient.return_value.connect.side_effect = socket.timeout
+
+        scp_mover = ScpMover(self.origin, self.destination_no_port,
+                             attrs={"num_ssh_retries": "2", "ssh_connection_timeout": 1})
+
+        with pytest.raises(IOError, match="Failed to ssh connect after 2 attempts"):
+            scp_mover.open_connection()
+
+        assert mock_sshclient.return_value.connect.call_count == 2
+
     @patch("paramiko.SSHClient.connect", autospec=True)
     def test_scp_is_connected_exception(self, mock_sshclient_connect):
         """Check scp is_connected() exception resulting in no connection."""

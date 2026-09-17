@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from trollsift import globify
 
-from trollmoves.server import MoveItServer, parse_args
+from trollmoves.server import DEFAULT_REQ_TIMEOUT, MoveItServer, parse_args
 
 tmp_dir = gettempdir()
 
@@ -267,6 +267,54 @@ def test_read_config_ini_with_dicts():
             "ssh_connection_timeout": "30",
         }
         assert eumetcast["connection_parameters"] == expected_conn_params
+
+
+CONFIG_INI_MINIMAL = b"""
+[eumetcast-hrit-0deg]
+origin = /local_disk/received/H-000-{nominal_time:%Y%m%d%H%M}
+topic = /1b/hrit-segment/0deg
+"""
+
+CONFIG_INI_NUM_SSH_RETRIES = CONFIG_INI_MINIMAL + b"""
+connection_parameters__num_ssh_retries = 5
+"""
+
+
+def test_read_config_ini_defaults():
+    """Test that the default settings are filled in for a minimal config."""
+    from trollmoves.server import read_config
+
+    with NamedTemporaryFile(suffix=".ini") as config_file:
+        config_file.write(CONFIG_INI_MINIMAL)
+        config_file.flush()
+
+        with pytest.warns(UserWarning, match="Consider using connection_parameters__"):
+            config = read_config(config_file.name)["eumetcast-hrit-0deg"]
+
+        assert config["working_directory"] is None
+        assert config["compression"] is False
+        assert config["req_timeout"] == DEFAULT_REQ_TIMEOUT
+        assert config["transfer_req_timeout"] == 10 * DEFAULT_REQ_TIMEOUT
+        assert config["delete"] is False
+        assert config["nameserver"] is None
+        assert config["addresses"] is None
+        # The ssh_key_filename default is moved into connection_parameters, where the
+        # movers look for it; no retry count is set, so the movers use their own default.
+        assert config["connection_parameters"] == {"ssh_key_filename": None}
+
+
+def test_read_config_ini_num_ssh_retries():
+    """Test that the number of ssh retries is passed on to the movers."""
+    from trollmoves.server import read_config
+
+    with NamedTemporaryFile(suffix=".ini") as config_file:
+        config_file.write(CONFIG_INI_NUM_SSH_RETRIES)
+        config_file.flush()
+
+        with pytest.warns(UserWarning, match="Consider using connection_parameters__"):
+            config = read_config(config_file.name)["eumetcast-hrit-0deg"]
+
+        assert config["connection_parameters"]["num_ssh_retries"] == "5"
 
 
 class TestMoveItServer:
