@@ -200,9 +200,10 @@ connection_parameters or attrs dictionary.
     attempted before giving up, with a short pause between the attempts. When
     backup targets are configured, each host gets this many attempts.
 - scpclient_timeout_seconds: number (default: 10)
-    How long the scp client waits for a response from the remote host before
-    giving up on an attempt. Raise this when transfers to a slow or heavily
-    loaded host fail with "Timeout waiting for scp response".
+    How long a single read or write on the SSH channel may stall before the
+    transfer attempt is given up and retried. Raise this for transfers to a
+    slow or heavily loaded host, which fail either with "Timeout waiting for
+    scp response" or with a bare "timed out".
 
 In an ini config for Move_it_server these are set as
 

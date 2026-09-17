@@ -258,13 +258,13 @@ class TestSSHMovers(unittest.TestCase):
     @patch("paramiko.SSHClient", autospec=True)
     @patch("scp.SCPClient", autospec=True)
     def test_scp_copy_uses_the_default_scpclient_timeout(self, mock_scp_client, mock_sshclient):
-        """Check that the scp client waits the default time for a response when nothing is configured."""
-        from trollmoves.movers import DEFAULT_SCPCLIENT_TIMEOUT, ScpMover
+        """Check the timeout used when nothing is configured against the documented default."""
+        from trollmoves.movers import ScpMover
 
         scp_mover = ScpMover(self.origin, self.destination_no_port, attrs=self._attrs_empty)
         scp_mover.copy()
 
-        assert mock_scp_client.call_args.kwargs["socket_timeout"] == DEFAULT_SCPCLIENT_TIMEOUT
+        assert mock_scp_client.call_args.kwargs["socket_timeout"] == 10
 
     @patch("paramiko.SSHClient", autospec=True)
     @patch("scp.SCPClient", autospec=True)
@@ -384,18 +384,58 @@ class TestSSHMovers(unittest.TestCase):
     @patch("paramiko.SSHClient", autospec=True)
     @patch("scp.SCPClient", autospec=True)
     def test_scp_copy_response_timeout_suggests_a_longer_timeout(self, mock_scp_client, mock_sshclient):
-        """Check that a timed-out transfer points the user at the setting that would give it more time."""
+        """Check that a timed-out scp response points the user at the setting that would help."""
         from scp import SCPException
 
-        from trollmoves.movers import SCP_RESPONSE_TIMEOUT_MESSAGE, ScpMover
+        from trollmoves.movers import ScpMover
 
-        mock_scp_client.return_value.put.side_effect = SCPException(SCP_RESPONSE_TIMEOUT_MESSAGE)
+        mock_scp_client.return_value.put.side_effect = SCPException("Timeout waiting for scp response")
 
         scp_mover = ScpMover(self.origin, self.destination_no_port, attrs={"num_ssh_retries": 1})
 
         with self.assertLogs("trollmoves.movers", level=logging.ERROR) as logs, pytest.raises(SCPException):
             scp_mover.copy()
 
+        assert any("scpclient_timeout_seconds" in message for message in logs.output)
+
+    def test_scp_response_timeout_message_still_matches_the_scp_library(self):
+        """Check the message the timeout hint keys on against what scp really raises.
+
+        The hint only fires when ScpMover recognises scp's own timeout message, and scp
+        is an unpinned dependency, so a reworded message there would silently disable the
+        hint. Driving _recv_confirm is the cheapest way to see the real message.
+        """
+        from scp import SCPClient, SCPException
+
+        from trollmoves.movers import SCP_RESPONSE_TIMEOUT_MESSAGE
+
+        scp_client = SCPClient(MagicMock())
+        scp_client.channel = MagicMock()
+        scp_client.channel.recv.side_effect = socket.timeout
+
+        with pytest.raises(SCPException) as raised:
+            scp_client._recv_confirm()
+
+        assert SCP_RESPONSE_TIMEOUT_MESSAGE in str(raised.value)
+
+    @patch("paramiko.SSHClient", autospec=True)
+    @patch("scp.SCPClient", autospec=True)
+    def test_scp_copy_retries_and_explains_a_stalled_transfer(self, mock_scp_client, mock_sshclient):
+        """Check that a transfer stalling past the socket timeout is retried and explained.
+
+        paramiko raises a bare socket.timeout when a channel read or write stalls, so
+        unlike the timeouts scp notices itself this one does not arrive as an SCPException.
+        """
+        from trollmoves.movers import ScpMover
+
+        mock_scp_client.return_value.put.side_effect = socket.timeout("timed out")
+
+        scp_mover = ScpMover(self.origin, self.destination_no_port, attrs={"num_ssh_retries": 2})
+
+        with self.assertLogs("trollmoves.movers", level=logging.ERROR) as logs, pytest.raises(TimeoutError):
+            scp_mover.copy()
+
+        assert mock_scp_client.return_value.put.call_count == 2
         assert any("scpclient_timeout_seconds" in message for message in logs.output)
 
     @patch("paramiko.SSHClient", autospec=True)
