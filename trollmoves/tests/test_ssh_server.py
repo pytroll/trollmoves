@@ -321,9 +321,19 @@ class TestSSHMovers(unittest.TestCase):
         scp_mover = ScpMover(self.origin, self.destination_no_port, attrs=self._attrs_empty)
         mock_scp_client.return_value.put.side_effect = OSError(errno.ENOENT, "message")
 
-        result = scp_mover.copy()
+        with pytest.raises(OSError):
+            scp_mover.copy()
 
-        assert result is None
+    @patch("paramiko.SSHClient", autospec=True)
+    @patch("scp.SCPClient", autospec=True)
+    def test_scp_copy_of_vanished_file_is_not_reported_as_success(self, mock_scp_client, mock_sshclient):
+        """Check that a file deleted before the transfer started is not reported as copied."""
+        mock_scp_client.return_value.put.side_effect = OSError(errno.ENOENT, "message")
+
+        with self.assertLogs("trollmoves.movers", level=logging.ERROR) as logs, pytest.raises(OSError):
+            trollmoves.movers.move_it(self.origin, self.destination_no_port, attrs=self._attrs_empty)
+
+        assert not any("Successfully copied" in message for message in logs.output)
 
     @patch("scp.SCPClient", autospec=True)
     def test_scp_copy_put_exception(self, mock_scp_client):
@@ -377,7 +387,9 @@ class TestSSHMovers(unittest.TestCase):
         mock_scp_client.return_value.put.side_effect = OSError(errno.ENOENT, "message")
 
         scp_mover = ScpMover(self.origin, self.destination_no_port, attrs={"num_ssh_retries": 2})
-        scp_mover.copy()
+
+        with pytest.raises(OSError):
+            scp_mover.copy()
 
         assert mock_scp_client.return_value.put.call_count == 1
 
