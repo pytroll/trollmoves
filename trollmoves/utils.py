@@ -1,7 +1,36 @@
 """Utility functions for Trollmoves."""
 
+import os
+import shutil
 import socket
+import tempfile
+from contextlib import contextmanager
 from urllib.parse import urlparse, urlunparse
+
+
+@contextmanager
+def decompression_directory(destination_directory):
+    """Provide a temporary directory to decompress into, inside *destination_directory*.
+
+    Decompressing straight to the final filename lets consumers that watch the
+    destination directory without listening to Posttroll pick up a file that is not
+    written yet. Doing the work out of sight and moving the results in afterwards makes
+    every file appear complete at once. The directory is created inside the destination
+    so that the move stays on the same filesystem and is therefore a rename.
+    """
+    tmp_directory = tempfile.mkdtemp(prefix=".trollmoves_", dir=destination_directory or ".")
+    try:
+        yield tmp_directory
+    finally:
+        shutil.rmtree(tmp_directory, ignore_errors=True)
+
+
+def move_into_place(source, destination):
+    """Move a decompressed file from *source* to its final name *destination*."""
+    destination_directory = os.path.dirname(destination)
+    if destination_directory:
+        os.makedirs(destination_directory, exist_ok=True)
+    os.replace(source, destination)
 
 
 def clean_url(url):

@@ -457,6 +457,81 @@ def test_unpack_with_delete(tmp_path):
     assert res == os.path.splitext(zipped_file)[0]
 
 
+def _names_in(directory):
+    return sorted(os.path.basename(str(path)) for path in directory.iterdir())
+
+
+def test_bzip_does_not_use_the_final_name_before_the_file_is_complete(tmp_path, monkeypatch):
+    """Test that the decompressed file appears under its final name only when it is complete."""
+    import bz2
+
+    from trollmoves.server import bzip
+
+    compressed_file = tmp_path / "my_file.txt.bz2"
+    compressed_file.write_bytes(bz2.compress(b"hello world", 5))
+    working_directory = tmp_path / "work"
+    working_directory.mkdir()
+
+    names_while_decompressing = []
+    real_bz2_file = bz2.BZ2File
+
+    class SpyingBZ2File(real_bz2_file):
+        """A bzip2 file that records what the working directory looks like while reading."""
+
+        def read(self, *args, **kwargs):
+            names_while_decompressing.append(_names_in(working_directory))
+            return super().read(*args, **kwargs)
+
+    monkeypatch.setattr(bz2, "BZ2File", SpyingBZ2File)
+
+    destfile = bzip(str(compressed_file), str(working_directory))
+
+    assert names_while_decompressing
+    for names in names_while_decompressing:
+        assert "my_file.txt" not in names
+    with open(destfile, "rb") as fd_:
+        assert fd_.read() == b"hello world"
+
+
+def test_bzip_leaves_nothing_behind_when_decompression_fails(tmp_path):
+    """Test that a failed decompression does not leave a file under the final name."""
+    from trollmoves.server import bzip
+
+    corrupted_file = tmp_path / "my_file.txt.bz2"
+    corrupted_file.write_bytes(b"this is not bzip2 data")
+    working_directory = tmp_path / "work"
+    working_directory.mkdir()
+
+    with pytest.raises(OSError):
+        bzip(str(corrupted_file), str(working_directory))
+
+    assert _names_in(working_directory) == []
+
+
+def test_xrit_does_not_use_the_final_name_before_the_file_is_complete(tmp_path):
+    """Test that the decompressor writes out of sight of the working directory."""
+    from trollmoves.server import xrit
+
+    compressed_file = tmp_path / "H-000-MSG4__-MSG4________-IR_134___-000003___-201909031245-C_"
+    compressed_file.write_text("compressed")
+    working_directory = tmp_path / "work"
+    working_directory.mkdir()
+    expected_name = os.path.basename(str(compressed_file))[:-2] + "__"
+
+    def fake_decompressor(args, cwd):
+        assert cwd != str(working_directory)
+        with open(os.path.join(cwd, expected_name), "w") as fd_:
+            fd_.write("decompressed")
+
+    with patch("trollmoves.server.subprocess.check_output", new=fake_decompressor):
+        expected = xrit(str(compressed_file), str(working_directory))
+
+    assert expected == str(working_directory / expected_name)
+    with open(expected) as fd_:
+        assert fd_.read() == "decompressed"
+    assert _names_in(working_directory) == [expected_name]
+
+
 def _create_chain(directory, function_to_run=None, **extra_config):
     """Create a started chain watching *directory* with a polling notifier."""
     from trollmoves.server import Chain

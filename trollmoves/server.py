@@ -32,7 +32,14 @@ from trollmoves.client import DEFAULT_REQ_TIMEOUT
 from trollmoves.logging import add_logging_options_to_parser
 from trollmoves.move_it_base import MoveItBase, WatchdogChangeHandler, WatchdogCreationHandler, create_publisher
 from trollmoves.movers import move_it
-from trollmoves.utils import clean_url, gen_dict_contains, gen_dict_extract, is_file_local
+from trollmoves.utils import (
+    clean_url,
+    decompression_directory,
+    gen_dict_contains,
+    gen_dict_extract,
+    is_file_local,
+    move_into_place,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -1061,7 +1068,9 @@ def xrit(pathname, destination=None, cmd="./xRITDecompress"):
     dest_url = urlparse(destination)
     expected = os.path.join((destination or opath), ofile[:-2] + "__")
     if dest_url.scheme in ("", "file"):
-        subprocess.check_output([cmd, pathname], cwd=(destination or opath))
+        with decompression_directory(destination or opath) as tmp_directory:
+            subprocess.check_output([cmd, pathname], cwd=tmp_directory)
+            move_into_place(os.path.join(tmp_directory, os.path.basename(expected)), expected)
     else:
         LOGGER.exception("Can not extract file %s to %s, destination "
                          "has to be local.", pathname, destination)
@@ -1075,21 +1084,25 @@ BLOCK_SIZE = 1024
 def bzip(origin, destination=None):
     """Unzip files."""
     ofile = os.path.split(origin)[1]
-    destfile = os.path.join(destination or tempfile.gettempdir(), ofile[:-4])
+    destination = destination or tempfile.gettempdir()
+    destfile = os.path.join(destination, ofile[:-4])
     if os.path.exists(destfile):
         return destfile
-    with open(destfile, "wb") as dest:
-        try:
-            orig = bz2.BZ2File(origin, "r")
-            while True:
-                block = orig.read(BLOCK_SIZE)
+    with decompression_directory(destination) as tmp_directory:
+        tmp_destfile = os.path.join(tmp_directory, os.path.basename(destfile))
+        with open(tmp_destfile, "wb") as dest:
+            try:
+                orig = bz2.BZ2File(origin, "r")
+                while True:
+                    block = orig.read(BLOCK_SIZE)
 
-                if not block:
-                    break
-                dest.write(block)
-            LOGGER.debug("Bunzipped %s to %s", origin, destfile)
-        finally:
-            orig.close()
+                    if not block:
+                        break
+                    dest.write(block)
+                LOGGER.debug("Bunzipped %s to %s", origin, destfile)
+            finally:
+                orig.close()
+        move_into_place(tmp_destfile, destfile)
     return destfile
 
 
