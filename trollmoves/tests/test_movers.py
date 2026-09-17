@@ -1,90 +1,217 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-#
-# Copyright (c) 2020 Pytroll
-#
-# Author(s):
-#
-#   Adam.Dybbroe <adam.dybbroe@smhi.se>
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-#
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 """Test the movers."""
 
+import os
+from contextlib import contextmanager
 from unittest.mock import patch
+from urllib.parse import urlparse, urlunparse
 
-ORIGIN = '/path/to/mydata/filename.ext'
-USERNAME = 'username'
-PASSWORD = 'passwd'
+import pytest
+import yaml
+
+ORIGIN_FILENAME = "filename.ext"
+
+ORIGIN = "/path/to/mydata/" + ORIGIN_FILENAME
+USERNAME = "username"
+PASSWORD = "passwd"
 ACCOUNT = None
 
+test_yaml_s3_connection_params = """
+target-s3-example1:
+  host: s3://my-fancy-bucket/
+  connection_parameters:
+    client_kwargs:
+      endpoint_url: 'https://minio-server.mydomain.se:9000'
+      verify: false
+    secret: "my-super-secret-key"
+    key: "my-access-key"
+    use_ssl: true
+  aliases:
+    platform_name:
+      Suomi-NPP: npp
+      NOAA-20: j01
+      NOAA-21: j02
+    variant:
+      DR: directreadout
 
-def _get_ftp(destination):
+  dispatch_configs:
+    - topics:
+        - /atms/sdr/1
+      conditions:
+        - sensor: [atms, [atms]]
+          format: SDR
+          variant: DR
+      directory: /upload/sdr
+"""
+
+
+@contextmanager
+def _get_ftp(destination, origin=ORIGIN):
     from trollmoves.movers import FtpMover
 
-    with patch('trollmoves.movers.FTP') as ftp:
-        ftp_mover = FtpMover(ORIGIN, destination)
-        ftp_mover.open_connection()
+    with patch("trollmoves.movers.FTP") as ftp:
+        ftp_mover = FtpMover(origin, destination)
+        connection = ftp_mover.open_connection()
 
-    return ftp
+        yield ftp, ftp_mover
+
+        ftp_mover.delete_connection(connection)
 
 
-@patch('netrc.netrc')
+@pytest.fixture
+def file_to_move(tmp_path):
+    """Create a file that can be moved."""
+    filename = tmp_path / ORIGIN_FILENAME
+    with open(filename, "w") as fd:
+        fd.write("Hej")
+    return filename
+
+
+@patch("netrc.netrc")
 def test_open_ftp_connection_with_netrc_no_netrc(netrc):
     """Check getting ftp connection when .netrc is missing."""
-    netrc.side_effect = FileNotFoundError('Failed retrieve authentification details from netrc file')
+    netrc.side_effect = FileNotFoundError("Failed retrieve authentification details from netrc file")
 
-    ftp = _get_ftp('ftp://localhost.smhi.se/data/satellite/archive/')
+    with _get_ftp("ftp://localhost.smhi.se/data/satellite/archive/") as (ftp, _):
+        ftp.return_value.login.assert_called_once_with()
 
-    ftp.return_value.login.assert_called_once_with()
 
-
-@patch('netrc.netrc')
+@patch("netrc.netrc")
 def test_open_ftp_connection_with_netrc(netrc):
     """Check getting the netrc authentication for ftp connection."""
-    netrc.return_value.hosts = {'localhost.smhi.se': (USERNAME, ACCOUNT, PASSWORD)}
+    netrc.return_value.hosts = {"localhost.smhi.se": (USERNAME, ACCOUNT, PASSWORD)}
     netrc.return_value.authenticators.return_value = (USERNAME, ACCOUNT, PASSWORD)
     netrc.side_effect = None
 
-    ftp = _get_ftp('ftp://localhost.smhi.se/data/satellite/archive/')
-
-    ftp.return_value.login.assert_called_once_with(USERNAME, PASSWORD)
+    with _get_ftp("ftp://localhost.smhi.se/data/satellite/archive/") as (ftp, _):
+        ftp.return_value.login.assert_called_once_with(USERNAME, PASSWORD)
 
 
 def test_open_ftp_connection_credentials_in_url():
     """Check getting ftp connection with credentials in the URL."""
-    ftp = _get_ftp('ftp://auser:apasswd@localhost.smhi.se/data/satellite/archive/')
+    with _get_ftp("ftp://auser:apasswd@localhost.smhi.se/data/satellite/archive/") as (ftp, _):
+        ftp.return_value.login.assert_called_once_with("auser", "apasswd")
 
-    ftp.return_value.login.assert_called_once_with('auser', 'apasswd')
+
+@pytest.mark.parametrize("destination,expected_stor",
+                         [("ftp://localhost.smhi.se/data/satellite/archive/somefile.ext",
+                          "STOR /data/satellite/archive/somefile.ext"),
+                          ("ftp://localhost.smhi.se/data/satellite/archive/",
+                          "STOR /data/satellite/archive/" + ORIGIN_FILENAME)])
+def test_ftp_mover_uses_destination_filename(file_to_move, destination, expected_stor):
+    """Check ftp movers uses requested destination filename when provided, origin filename otherwise."""
+    with _get_ftp(destination, file_to_move) as (ftp, ftp_mover):
+        ftp_mover.copy()
+        assert ftp.return_value.storbinary.call_args[0][0] == expected_stor
 
 
-def _get_s3_mover(origin, destination):
+def test_ensure_remote_dirs_ftp_restores_cwd_fast_path():
+    """_ensure_remote_dirs_ftp restores CWD when directory already exists (fast path)."""
+    from unittest.mock import MagicMock
+
+    from trollmoves._mover_utils import _ensure_remote_dirs_ftp
+
+    conn = MagicMock()
+    conn.pwd.return_value = "/original"
+    # Fast path: cwd(path) succeeds on first try
+    conn.cwd.return_value = None
+
+    _ensure_remote_dirs_ftp(conn, ["data", "archive"])
+
+    # CWD must be restored to the original value as the last cwd call
+    conn.cwd.assert_called_with("/original")
+
+
+def test_ensure_remote_dirs_ftp_restores_cwd_after_creation():
+    """_ensure_remote_dirs_ftp restores CWD after creating missing directories (fallback path)."""
+    import ftplib
+    from unittest.mock import MagicMock, call
+
+    from trollmoves._mover_utils import _ensure_remote_dirs_ftp
+
+    conn = MagicMock()
+    conn.pwd.return_value = "/original"
+    # First cwd (fast path for full path) fails; subsequent per-segment cwds succeed
+    conn.cwd.side_effect = [ftplib.Error("no such dir"), None, None, None]
+
+    _ensure_remote_dirs_ftp(conn, ["data", "archive"])
+
+    # Last cwd call must restore original CWD
+    assert conn.cwd.call_args_list[-1] == call("/original")
+
+
+def _get_s3_mover(origin, destination, **attrs):
     from trollmoves.movers import S3Mover
 
-    return S3Mover(origin, destination)
+    return S3Mover(origin, destination, attrs=attrs)
 
 
-@patch('trollmoves.movers.S3FileSystem')
+@patch("trollmoves.movers.S3FileSystem")
 def test_s3_copy_file_to_base(S3FileSystem):
     """Test copying to base of S3 bucket."""
     s3_mover = _get_s3_mover(ORIGIN, "s3://data-bucket/")
     s3_mover.copy()
 
-    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/filename.ext")
+    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/" + ORIGIN_FILENAME)
 
 
-@patch('trollmoves.movers.S3FileSystem')
+@patch("trollmoves.movers.S3FileSystem")
+def test_s3_attrs_are_sanitized(S3FileSystem):
+    """Test that only accepted attrs are passed to S3Filesystem."""
+    attrs = {"ssh_key_filename": "should_be_removed", "endpoint_url": "should_be_included"}
+    s3_mover = _get_s3_mover(ORIGIN, "s3://data-bucket/", **attrs)
+    s3_mover.copy()
+
+    expected_attrs = {"endpoint_url": "should_be_included"}
+    S3FileSystem.assert_called_once_with(**expected_attrs)
+
+
+@patch("trollmoves.movers.S3FileSystem")
+def test_s3_copy_file_to_prefix_with_trailing_slash(S3FileSystem):
+    """Test that when destination ends in a slash, the original file basename is added to it."""
+    s3_mover = _get_s3_mover(ORIGIN, "s3://data-bucket/upload/")
+    s3_mover.copy()
+
+    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/upload/" + ORIGIN_FILENAME)
+
+
+@patch("trollmoves.movers.S3FileSystem")
+def test_s3_copy_file_to_prefix_no_trailing_slash(S3FileSystem):
+    """Test giving destination without trailing slash to see it is used as object name."""
+    s3_mover = _get_s3_mover(ORIGIN, "s3://data-bucket/upload")
+    s3_mover.copy()
+
+    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/upload")
+
+
+@patch("trollmoves.movers.S3FileSystem")
+def test_s3_copy_file_to_prefix_urlparse(S3FileSystem):
+    """Test that giving urlparse() result as destination works."""
+    s3_mover = _get_s3_mover(ORIGIN, urlparse("s3://data-bucket/upload/my_satellite_data.h5"))
+    s3_mover.copy()
+
+    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/upload/my_satellite_data.h5")
+
+
+@patch("trollmoves.movers.S3FileSystem")
+def test_s3_copy_file_to_base_using_connection_parameters(S3FileSystem):
+    """Test copying to base of S3 bucket."""
+    # Get the connection parameters:
+    config = yaml.safe_load(test_yaml_s3_connection_params)
+    attrs = config["target-s3-example1"]["connection_parameters"]
+
+    s3_mover = _get_s3_mover(ORIGIN, "s3://data-bucket/", **attrs)
+    assert s3_mover.attrs["client_kwargs"] == {
+        "endpoint_url": "https://minio-server.mydomain.se:9000", "verify": False}
+    assert s3_mover.attrs["secret"] == "my-super-secret-key"
+    assert s3_mover.attrs["key"] == "my-access-key"
+    assert s3_mover.attrs["use_ssl"] is True
+
+    s3_mover.copy()
+
+    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/" + ORIGIN_FILENAME)
+
+
+@patch("trollmoves.movers.S3FileSystem")
 def test_s3_copy_file_to_sub_directory(S3FileSystem):
     """Test copying to sub directory of a S3 bucket."""
     # The target directory doesn't exist
@@ -93,10 +220,10 @@ def test_s3_copy_file_to_sub_directory(S3FileSystem):
     s3_mover.copy()
 
     S3FileSystem.return_value.mkdirs.assert_called_once_with("data-bucket/target/directory")
-    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/target/directory/filename.ext")
+    S3FileSystem.return_value.put.assert_called_once_with(ORIGIN, "data-bucket/target/directory/" + ORIGIN_FILENAME)
 
 
-@patch('trollmoves.movers.S3FileSystem')
+@patch("trollmoves.movers.S3FileSystem")
 def test_s3_move(S3FileSystem):
     """Test moving a file."""
     import os
@@ -111,3 +238,68 @@ def test_s3_move(S3FileSystem):
     except AssertionError:
         os.remove(fname)
         raise OSError("File was not deleted after transfer.")
+
+
+@pytest.mark.parametrize("hostname", ["localhost", "localhost:22"])
+def test_sftp_copy(tmp_file, tmp_path, monkeypatch, hostname):
+    """Test the sftp mover's copy functionality."""
+    patch_ssh_client_for_auto_add_policy(monkeypatch)
+    origin = tmp_file
+    destination = tmp_path / "dest.ext"
+    from trollmoves.movers import SftpMover
+
+    dest = urlunparse(("sftp", hostname, os.fspath(destination), None, None, None))
+    SftpMover(origin, dest).copy()
+    assert os.path.exists(destination)
+
+
+def patch_ssh_client_for_auto_add_policy(monkeypatch):
+    """Patch the `paramiko.SSHClient` to use the `AutoAddPolicy`."""
+    import paramiko
+    SSHClient = paramiko.SSHClient
+
+    def new_ssh_client(*args, **kwargs):
+        client = SSHClient(*args, **kwargs)
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        return client
+
+    monkeypatch.setattr(paramiko, "SSHClient", new_ssh_client)
+
+
+@pytest.fixture
+def tmp_file(tmp_path):
+    """Create a simple file with content."""
+    path = tmp_path / "file.ext"
+    with open(path, mode="w") as fd:
+        fd.write("dummy file")
+    return path
+
+
+def test_ensure_remote_dirs_ftp_raises_when_directory_cannot_be_created():
+    """A directory that can neither be entered nor created must raise, not be ignored."""
+    import ftplib
+    from unittest.mock import MagicMock
+
+    from trollmoves._mover_utils import _ensure_remote_dirs_ftp
+
+    conn = MagicMock()
+    conn.pwd.return_value = "/original"
+    conn.cwd.side_effect = ftplib.error_perm("550 Failed to change directory")
+    conn.mkd.side_effect = ftplib.error_perm("550 Permission denied")
+
+    with pytest.raises(ftplib.error_perm, match="Permission denied"):
+        _ensure_remote_dirs_ftp(conn, ["data", "archive"])
+
+
+def test_ensure_remote_dirs_sftp_raises_when_directory_cannot_be_created():
+    """SFTP directory creation failures must surface instead of being swallowed."""
+    from unittest.mock import MagicMock
+
+    from trollmoves._mover_utils import _ensure_remote_dirs_sftp
+
+    conn = MagicMock()
+    conn.stat.side_effect = OSError("No such file")
+    conn.mkdir.side_effect = PermissionError("Permission denied")
+
+    with pytest.raises(OSError, match="Permission denied"):
+        _ensure_remote_dirs_sftp(conn, ["data", "archive"])

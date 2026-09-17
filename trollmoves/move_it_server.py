@@ -1,0 +1,104 @@
+"""Trollmoves Server.
+
+Moving and unpacking files
+==========================
+
+This program is comprised of two parts: this script and the configuration file.
+
+The usage of this script is quite straightforward, just call it with the name
+of the configuration file as argument.
+
+The configuration file is comprised of sections describing the chain of
+moving/unpacking.
+
+Installation
+------------
+
+This scripts needs watchdog and argparse which are available on pypi, or via
+pip. Other than this, the script doesn't need any installation, and can be run as is.
+If you wish though, you can install it to your standard python path with::
+
+  python setup.py install
+
+
+Configuration file
+------------------
+
+For example::
+
+  [eumetcast_hrit]
+  origin=/tmp/H-000-{series:_<6s}-{platform_name:_<12s}-{channel:_<9s}-{segment:_<9s}-{nominal_time:%Y%m%d%H%M}-{compression:1s}_
+  publisher_port=9011
+  compression=xrit
+  prog=/home/a001673/usr/src/PublicDecompWT/Image/Linux_32bits/xRITDecompress
+  topic=/1b/hrit/zds
+  info=sensor=seviri;sublon=0
+  request_port=9092
+  working_directory=/tmp/unpacked
+
+* 'origin' is the directory and pattern of files to watch for. For a description
+  of the pattern format, see the trollsift documentation:
+  http://trollsift.readthedocs.org/en/latest/index.html
+
+* 'working_directory' is telling where to unpack the files before they are put
+  in their final destination. This can come in handy in case the file has to be
+  transfered by ftp and cannot be unpacked in the origin directory. The default
+  for this parameter is the '/tmp' directory.
+
+* Available compressions are 'xrit' and 'bzip'.
+
+* The prog parameter is used for the 'xrit' unpacking function to know which
+  external program to call for unpack xRIT files.
+
+  .. note:: The 'xrit' unpacking function is dependent on a program that can
+    unpack xRIT files. Such a program is available from the `Eumetsat.int
+    <http://www.eumetsat.int/Home/Main/DataAccess/SupportSoftwareTools/index.htm?l=en>`_
+    website.
+
+* 'topic', 'publish_port', and 'info' define the messaging behaviour using posttroll. 'info' being a ';' separated
+  list of 'key=value' items that has to be added to the message info.
+
+Recovering from broken chains
+-----------------------------
+
+A chain can stop working without the process noticing it: the thread watching the files can die on
+an unexpected error, and the thread watchdog uses to watch a directory dies silently when that
+directory becomes unavailable, for example when a network filesystem is disconnected. The server
+therefore checks every ``--chain-check-interval`` seconds that each chain is still working, and
+recreates the notifier of the chains that are not. After a successful restart the files that arrived
+while the chain was not working are handled, unless ``--disable-backlog`` is used.
+
+If a chain can not be brought back to a working state in ``--max-notifier-restarts`` consecutive
+attempts, the server exits with an error so that a process manager such as Supervisord can restart
+it. Use ``--max-notifier-restarts 0`` to keep retrying forever instead.
+
+Logging
+-------
+
+The logging is done on stdout per default. It is however possible to specify a logging config file with the -c
+or --log-config option::
+
+  move_it_server --log-config /path/to/mylogconfig.yaml myconfig.ini
+"""
+from trollmoves.logging import setup_logging
+from trollmoves.server import MoveItServer, parse_args
+
+
+def main():
+    """Start the server."""
+    cmd_args = parse_args()
+    logger = setup_logging("move_it_server", cmd_args)
+    server = MoveItServer(cmd_args)
+
+    try:
+        server.reload_cfg_file(cmd_args.config_file)
+        server.run()
+    except KeyboardInterrupt:
+        logger.debug("Stopping Trollmoves server")
+    finally:
+        if server.running:
+            server.chains_stop()
+
+
+if __name__ == "__main__":
+    main()

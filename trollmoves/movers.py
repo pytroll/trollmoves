@@ -1,60 +1,68 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-#
-# Copyright (c) 2012-2020
-#
-# Author(s):
-#
-#   Martin Raspaud <martin.raspaud@smhi.se>
-#   Panu Lahtinen <panu.lahtinen@fmi.fi>
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 """Movers for the move_it scripts."""
 
-from doctest import ELLIPSIS_MARKER
 import logging
+import netrc
 import os
 import shutil
+import socket
 import sys
 import time
 import traceback
+from contextlib import contextmanager
+from ftplib import FTP, all_errors
 from threading import Event, Lock, Thread, current_thread
 from urllib.parse import urlparse
-import netrc
 
-from ftplib import FTP, all_errors, error_perm
-from paramiko import SSHClient, SSHException, AutoAddPolicy
-from scp import SCPClient, SCPException
 try:
     from s3fs import S3FileSystem
 except ImportError:
     S3FileSystem = None
+try:
+    import boto3
+except ImportError:
+    boto3 = None
 
 from trollmoves.utils import clean_url
+
+from ._mover_utils import ensure_final_directory_for_rename, ensure_remote_dirs
+
+S3_ALLOWED_SETTINGS = ["anon", "endpoint_url", "key", "secret",
+                       "token", "use_ssl", "s3_additional_kwargs", "client_kwargs",
+                       "requester_pays", "default_block_size", "default_fill_cache",
+                       "default_cache_type", "version_aware", "cache_regions",
+                       "asynchronous", "config_kwargs", "kwargs", "session",
+                       "max_concurrency", "fixed_upload_size", "profile",
+                       # allow our atomic-transfer and multipart options to pass through sanitize
+                       "use_tmp_on_transfer", "s3_use_multipart", "s3_use_copy", "tmp_prefix",
+                       "s3_multipart_chunksize"]
+
+# Keys consumed by S3Mover logic; must not be forwarded to S3FileSystem or boto3 client
+_S3_MOVER_INTERNAL_KEYS = frozenset({"use_tmp_on_transfer", "s3_use_multipart", "s3_use_copy",
+                                     "tmp_prefix", "s3_multipart_chunksize"})
+
+#: Default number of times an ssh operation is attempted before giving up.
+DEFAULT_NUM_SSH_RETRIES = 3
+#: Number of seconds to wait between two ssh attempts.
+SSH_RETRY_SLEEP = 2
+#: Default number of seconds the scp client waits for a response from the remote host.
+DEFAULT_SCPCLIENT_TIMEOUT = 10
+#: The message scp uses when the remote host did not answer within the socket timeout.
+SCP_RESPONSE_TIMEOUT_MESSAGE = "Timeout waiting for scp response"
 
 LOGGER = logging.getLogger(__name__)
 
 
-def move_it(pathname, destination, attrs=None, hook=None, rel_path=None):
+def move_it(pathname, destination, attrs=None, hook=None, rel_path=None, backup_targets=None):
     """Check if the file pointed by *pathname* is in the filelist, and move it if it is.
 
     The *destination* provided is used, and if *rel_path* is provided, it will
     be appended to the destination path.
 
     """
-    dest_url = urlparse(destination)
+    try:
+        dest_url = urlparse(destination)
+    except AttributeError:
+        dest_url = destination
     if rel_path is not None:
         new_path = os.path.join(dest_url.path, rel_path)
     else:
@@ -62,35 +70,43 @@ def move_it(pathname, destination, attrs=None, hook=None, rel_path=None):
     new_dest = dest_url._replace(path=new_path)
     fake_dest = clean_url(new_dest)
 
-    LOGGER.debug("new_dest = %s", new_dest)
     LOGGER.debug("Copying to: %s", fake_dest)
     try:
         LOGGER.debug("Scheme = %s", str(dest_url.scheme))
-        mover = MOVERS[dest_url.scheme]
+        mover_cls = MOVERS[dest_url.scheme]
     except KeyError:
         LOGGER.error("Unsupported protocol '" + str(dest_url.scheme) +
                      "'. Could not copy " + pathname + " to " + str(destination))
         raise
 
     try:
-        mover(pathname, new_dest, attrs=attrs).copy()
+        mover = mover_cls(pathname, new_dest, attrs=attrs, backup_targets=backup_targets)
+        mover.copy()
+        if mover.destination != new_dest:
+            # The mover may have failed over to a backup host, or resolved a directory
+            # destination into a filename. Report where the file actually landed.
+            new_dest = mover.destination
+            fake_dest = clean_url(new_dest)
         if hook:
             hook(pathname, new_dest)
     except Exception as err:
+        # Intentionally broad: logs and re-raises any failure from copy/finalize across all protocols.
         exc_type, exc_value, exc_traceback = sys.exc_info()
         LOGGER.error("Something went wrong during copy of %s to %s: %s",
                      pathname, str(fake_dest), str(err))
         LOGGER.debug("".join(traceback.format_tb(exc_traceback)))
         raise err
     else:
-        LOGGER.info("Successfully copied %s to %s",
-                    pathname, str(fake_dest))
+        LOGGER.info("Successfully copied %s to %s", pathname, str(fake_dest))
+    return mover.destination
 
 
-class Mover(object):
+class Mover:
     """Base mover object. Doesn't do anything as it has to be subclassed."""
 
-    def __init__(self, origin, destination, attrs=None):
+    def __init__(self, origin, destination, attrs=None, backup_targets=None):
+        """Initialize the Mover."""
+        LOGGER.debug("destination = %s", str(destination))
         try:
             self.destination = urlparse(destination)
         except AttributeError:
@@ -101,46 +117,186 @@ class Mover(object):
 
         LOGGER.debug("Destination: %s", str(destination))
         self.origin = origin
-        self.attrs = attrs or {}
+        # Copy: callers (e.g. Trollmoves Server) reuse one connection_parameters dict for
+        # every transfer, so a mover must never mutate what it was handed.
+        self.attrs = dict(attrs) if attrs else {}
+        self.backup_targets = backup_targets
+
+        self._final_dest = self._resolve_destination_filename(self.destination)
+        self._tmp_dest = self._compute_tmp_dest()
+
+    def _resolve_destination_filename(self, destination):
+        """Return *destination* with the origin filename appended if it names a directory.
+
+        A destination path ending in "/" means "keep the original filename". That name
+        has to be resolved before a temporary destination can be derived from it, or the
+        tmp name would be built from an empty basename and lose the filename entirely.
+        """
+        try:
+            path = destination.path
+        except AttributeError:
+            return destination
+        if not path.endswith("/"):
+            return destination
+        return destination._replace(path=path + os.path.basename(self.origin))
+
+    def _compute_tmp_dest(self):
+        """Compute the temporary destination URL if atomic transfer is requested.
+
+        Returns the tmp URL when ``use_tmp_on_transfer`` is set in attrs and the
+        mover class supports atomic transfers, otherwise returns None.
+        """
+        if not self.attrs.get("use_tmp_on_transfer"):
+            return None
+        if not self.supports_atomic:
+            LOGGER.warning(
+                "Mover '%s' does not support atomic transfers. "
+                "Falling back to transfer without temporary files.",
+                self.__class__.__name__,
+            )
+            return None
+        tmp_prefix = self.attrs.get("tmp_prefix", ".")
+        return self.__class__.tmp_destination_for(self._final_dest, tmp_prefix)
 
     def copy(self):
-        """Copy the file."""
-        raise NotImplementedError("Copy for scheme " + self.destination.scheme +
-                                  " not implemented (yet).")
+        """Copy the file, using a temporary destination if configured.
+
+        When ``use_tmp_on_transfer`` is set in attrs and the mover supports
+        atomic transfers, the file is first written to a temporary path and then
+        renamed to the final destination via :meth:`finalize_atomic_transfer`.
+        Subclasses must implement :meth:`_copy` for the actual transfer.
+        """
+        if not self._tmp_dest:
+            self._copy()
+            return
+
+        self.destination = self._tmp_dest
+        try:
+            self._copy()
+            self.finalize_atomic_transfer(*self._destinations_on_current_host())
+        except Exception:
+            try:
+                self._clean_up_tmp_file(self._destinations_on_current_host()[0])
+            finally:
+                raise
+
+    def _clean_up_tmp_file(self, tmp_destination):
+        """Remove a leftover temporary file, without masking why the transfer failed."""
+        try:
+            self.remove_tmp_file(tmp_destination)
+        except Exception:
+            # Intentionally broad: cleanup is best-effort and must never replace the
+            # original transfer error, whatever the protocol backend raises here.
+            LOGGER.warning("Could not remove temporary file %s", clean_url(tmp_destination),
+                           exc_info=True)
+
+    def remove_tmp_file(self, tmp_destination):
+        """Remove the temporary file left behind by a failed transfer.
+
+        The default implementation removes a local file. Movers for remote schemes
+        must override this, or the temporary file is orphaned on the remote side.
+        """
+        path = getattr(tmp_destination, "path", None)
+        if path and os.path.exists(path):
+            os.remove(path)
+
+    def _destinations_on_current_host(self):
+        """Return the (tmp, final) destinations on the host the transfer actually used.
+
+        A mover may fail over to a backup host while copying (see
+        :meth:`ScpMover.open_connection`), which rewrites the netloc of
+        ``self.destination``. The rename has to happen on that host, and the
+        finalized destination has to name it too.
+        """
+        try:
+            netloc = self.destination.netloc
+            return (self._tmp_dest._replace(netloc=netloc),
+                    self._final_dest._replace(netloc=netloc))
+        except AttributeError:
+            return self._tmp_dest, self._final_dest
+
+    def _copy(self):
+        """Perform the actual file transfer to self.destination.
+
+        Subclasses must override this method. It is called by :meth:`copy` and
+        should write the file to ``self.destination`` without any tmp/finalize
+        logic (that is handled by the base :meth:`copy` template).
+        """
+        raise NotImplementedError("_copy for scheme " + self.destination.scheme +
+                                   " not implemented (yet).")
 
     def move(self):
         """Move the file."""
         raise NotImplementedError("Move for scheme " + self.destination.scheme +
                                   " not implemented (yet).")
 
+    @property
+    def supports_atomic(self):
+        """Return True if this mover supports atomic tmp→final transfers.
+
+        The default is False (conservative). Subclasses that implement
+        finalize_atomic_transfer should override and return True (or, in
+        the case of S3Mover, inspect self.attrs to decide).
+        """
+        return False
+
+    @staticmethod
+    def tmp_destination_for(dest, tmp_prefix="."):
+        """Return a copy of dest with the basename prefixed by tmp_prefix."""
+        try:
+            path = dest.path
+        except AttributeError:
+            return dest
+        dirname = os.path.dirname(path)
+        basename = os.path.basename(path)
+        tmp_name = tmp_prefix + basename
+        return dest._replace(path=os.path.join(dirname, tmp_name))
+
+    def finalize_atomic_transfer(self, tmp_destination, final_destination):
+        """Finalize atomic transfer by renaming tmp to final.
+
+        Default implementation works for local filesystems (empty or 'file' scheme).
+        Subclasses handling remote schemes must override this method.
+        """
+        try:
+            tmp_path = tmp_destination.path
+            final_path = final_destination.path
+        except AttributeError:
+            raise NotImplementedError("Finalize atomic transfer not implemented for remote schemes")
+
+        final_dir = os.path.dirname(final_path)
+        if final_dir:
+            os.makedirs(final_dir, exist_ok=True)
+        # Use os.replace for atomic rename where possible
+        os.replace(tmp_path, final_path)
+        # Update mover's destination to final
+        self.destination = final_destination
+
     def get_connection(self, hostname, port, username=None):
         """Get the connection."""
         with self.active_connection_lock:
-            LOGGER.debug("Destination username and passwd: %s %s",
-                         self._dest_username, self._dest_password)
-            LOGGER.debug('Getting connection to %s@%s:%s',
-                         username, hostname, port)
-            try:
-                connection, timer = self.active_connections[(hostname, port, username)]
-                if not self.is_connected(connection):
-                    del self.active_connections[(hostname, port, username)]
-                    LOGGER.debug('Resetting connection')
-                    connection = self.open_connection()
-                timer.cancel()
-            except KeyError:
-                connection = self.open_connection()
-
-            timer = CTimer(int(self.attrs.get('connection_uptime', 30)),
-                           self.delete_connection, (connection,))
+            connection = self._get_connection(hostname, port, username)
+            timer = CTimer(int(self.attrs.get("connection_uptime", 30)), self.delete_connection, (connection,))
             timer.start()
-            self.active_connections[(hostname, port, username)] = connection, timer
+            self.active_connections[(self.destination.hostname, port, username)] = connection, timer
 
             return connection
+
+    def _get_connection(self, hostname, port, username=None):
+        LOGGER.debug("Getting connection to %s@%s:%s", username, hostname, port)
+        if (hostname, port, username) in self.active_connections:
+            connection, timer = self.active_connections[(hostname, port, username)]
+            timer.cancel()
+            if self.is_connected(connection):
+                return connection
+            del self.active_connections[(hostname, port, username)]
+            LOGGER.debug("Resetting connection")
+        return self.open_connection()
 
     def delete_connection(self, connection):
         """Delete active connection *connection*."""
         with self.active_connection_lock:
-            LOGGER.debug('Closing connection to %s@%s:%s',
+            LOGGER.debug("Closing connection to %s@%s:%s",
                          self._dest_username, self.destination.hostname, self.destination.port)
             try:
                 if current_thread().finished.is_set():
@@ -150,17 +306,26 @@ class Mover(object):
             try:
                 self.close_connection(connection)
             finally:
-                for key, val in self.active_connections.items():
-                    if val[0] == connection:
-                        del self.active_connections[key]
-                        break
+                self._remove_connection_from_active_connections(connection)
+
+    def _remove_connection_from_active_connections(self, connection):
+        for key, (current_connection, current_timer) in self.active_connections.items():
+            if current_connection == connection:
+                del self.active_connections[key]
+                current_timer.cancel()
+                break
 
 
 class FileMover(Mover):
     """Move files in the filesystem."""
 
-    def copy(self):
-        """Copy the file."""
+    @property
+    def supports_atomic(self):
+        """Local filesystem always supports atomic rename via os.replace."""
+        return True
+
+    def _copy(self):
+        """Copy the file to self.destination on the local filesystem."""
         dirname = os.path.dirname(self.destination.path)
         if not os.path.exists(dirname):
             os.makedirs(dirname)
@@ -185,13 +350,13 @@ class CTimer(Thread):
 
     """
 
-    def __init__(self, interval, function, args=(), kwargs={}):
+    def __init__(self, interval, function, args=(), kwargs=None):
         """Initialize the timer."""
         Thread.__init__(self)
         self.interval = interval
         self.function = function
         self.args = args
-        self.kwargs = kwargs
+        self.kwargs = kwargs or {}
         self.finished = Event()
 
     def cancel(self):
@@ -212,12 +377,17 @@ class FtpMover(Mover):
     active_connections = dict()
     active_connection_lock = Lock()
 
+    @property
+    def supports_atomic(self):
+        """FTP supports atomic rename via RNFR/RNTO."""
+        return True
+
     def _get_netrc_authentication(self):
-        """Get login authentications from netrc file if available"""
+        """Get login authentications from netrc file if available."""
         try:
             secrets = netrc.netrc()
         except (netrc.NetrcParseError, FileNotFoundError) as e__:
-            LOGGER.warning('Failed retrieve authentification details from netrc file! Exception: %s', str(e__))
+            LOGGER.warning("Failed retrieve authentification details from netrc file! Exception: %s", str(e__))
             return
 
         LOGGER.debug("Destination hostname: %s", self.destination.hostname)
@@ -225,7 +395,7 @@ class FtpMover(Mover):
         LOGGER.debug("Check if hostname matches any listed in the netrc file")
         if self.destination.hostname in list(secrets.hosts.keys()):
             self._dest_username, account, self._dest_password = secrets.authenticators(self.destination.hostname)
-            LOGGER.debug('Got username and password from netrc file!')
+            LOGGER.debug("Got username and password from netrc file!")
 
     def open_connection(self):
         """Open the connection and login."""
@@ -270,24 +440,35 @@ class FtpMover(Mover):
         self.copy()
         os.remove(self.origin)
 
-    def copy(self):
-        """Upload the file."""
+    def _copy(self):
+        """Upload the file to self.destination via FTP."""
         connection = self.get_connection(self.destination.hostname, self.destination.port, self._dest_username)
 
-        def cd_tree(current_dir):
-            if current_dir != "":
-                try:
-                    connection.cwd(current_dir)
-                except (IOError, error_perm):
-                    cd_tree("/".join(current_dir.split("/")[:-1]))
-                    connection.mkd(current_dir)
-                    connection.cwd(current_dir)
+        destination_dirname, destination_filename = os.path.split(self.destination.path)
+        if not destination_filename:
+            destination_filename = os.path.basename(self.origin)
+        ensure_remote_dirs(connection, destination_dirname)
+        destination_path = os.path.join(destination_dirname, destination_filename)
+        with open(self.origin, "rb") as file_obj:
+            connection.storbinary("STOR " + destination_path, file_obj)
 
-        LOGGER.debug('cd to %s', os.path.dirname(self.destination.path))
-        cd_tree(os.path.dirname(self.destination.path))
-        with open(self.origin, 'rb') as file_obj:
-            connection.storbinary('STOR ' + os.path.basename(self.origin),
-                                  file_obj)
+    def remove_tmp_file(self, tmp_destination):
+        """Delete the temporary file from the FTP server."""
+        connection = self.get_connection(self.destination.hostname, self.destination.port, self._dest_username)
+        connection.delete(tmp_destination.path)
+
+    def finalize_atomic_transfer(self, tmp_destination, final_destination):
+        """Finalize atomic transfer by renaming tmp -> final on FTP server."""
+        connection = self.get_connection(self.destination.hostname, self.destination.port, self._dest_username)
+
+        dest_dirname = os.path.dirname(tmp_destination.path)
+        ensure_remote_dirs(connection, dest_dirname)
+        try:
+            connection.rename(tmp_destination.path, final_destination.path)
+        except all_errors as err:
+            LOGGER.exception("Failed to finalize FTP atomic transfer: %s", str(err))
+            raise
+        self.destination = final_destination
 
 
 class ScpMover(Mover):
@@ -296,36 +477,113 @@ class ScpMover(Mover):
     active_connections = dict()
     active_connection_lock = Lock()
 
-    def open_connection(self):
-        """Open a connection."""
-        retries = 3
-        ssh_key_filename = self.attrs.get("ssh_key_filename", None)
-        while retries > 0:
-            retries -= 1
-            try:
-                ssh_connection = SSHClient()
-                ssh_connection.set_missing_host_key_policy(AutoAddPolicy())
-                ssh_connection.load_system_host_keys()
-                ssh_connection.connect(self.destination.hostname,
-                                       username=self._dest_username,
-                                       port=self.destination.port or 22,
-                                       key_filename=ssh_key_filename)
-                LOGGER.debug("Successfully connected to %s:%s as %s",
-                             self.destination.hostname,
-                             self.destination.port or 22,
-                             self._dest_username)
-            except SSHException as sshe:
-                LOGGER.error("Failed to init SSHClient: %s", str(sshe))
-            except Exception as err:
-                LOGGER.error("Unknown exception at init SSHClient: %s",
-                             str(err))
-            else:
-                return ssh_connection
+    @property
+    def supports_atomic(self):
+        """SCP supports atomic rename via SFTP rename over the same SSH connection."""
+        return True
 
+    def open_connection(self):
+        """Open an ssh connection, falling back to the backup targets if the primary fails."""
+        backup_targets = list(self.backup_targets or [])
+        while True:
+            try:
+                return self._run_with_retries(self._connect, "ssh connect", Exception)
+            except Exception as err:
+                if not backup_targets:
+                    raise IOError(self._failed_to_connect_message()) from err
+                self._switch_to_backup_target(backup_targets.pop(0))
+
+    def _run_with_retries(self, attempt, description, transient_errors):
+        """Call *attempt*, retrying it while it raises one of *transient_errors*.
+
+        The number of attempts comes from the num_ssh_retries connection parameter.
+        The error from the last attempt is re-raised, so the caller still learns why
+        the operation really failed. *attempt* is expected to log the cause itself;
+        only the decision to try again is logged here.
+        """
+        num_attempts = self._num_ssh_retries()
+        for attempt_number in range(1, num_attempts + 1):
+            try:
+                return attempt()
+            except transient_errors:
+                if attempt_number == num_attempts:
+                    raise
+                time.sleep(SSH_RETRY_SLEEP)
+                LOGGER.debug("Retrying %s ...", description)
+
+    def _connect(self):
+        """Open a new ssh connection, logging why it failed before letting the caller retry."""
+        from paramiko import SSHException
+
+        try:
+            return self._create_ssh_connection()
+        except SSHException as sshe:
+            LOGGER.exception("Failed to init SSHClient: %s", str(sshe))
+            raise
+        except socket.timeout as sto:
+            LOGGER.exception("SSH connection timed out: %s", str(sto))
+            raise
+        except Exception as err:
+            # Intentionally broad: SSHClient.connect() may raise unexpected exceptions
+            # (e.g. from underlying transport or third-party SSH agents).
+            LOGGER.exception("Unknown exception at init SSHClient: %s", str(err))
+            raise
+
+    def _create_ssh_connection(self):
+        """Create an SSHClient connected to the current destination."""
+        from paramiko import SSHClient
+
+        ssh_connection = SSHClient()
+        try:
+            ssh_connection.load_system_host_keys()
+            ssh_connection.connect(self.destination.hostname,
+                                   username=self._dest_username,
+                                   port=self.destination.port or 22,
+                                   key_filename=self.attrs.get("ssh_key_filename", None),
+                                   timeout=self._ssh_connection_timeout())
+        except Exception:
             ssh_connection.close()
-            time.sleep(2)
-            LOGGER.debug("Retrying ssh connect ...")
-        raise IOError("Failed to ssh connect after 3 attempts")
+            raise
+        LOGGER.debug("Successfully connected to %s:%s as %s",
+                     self.destination.hostname,
+                     self.destination.port or 22,
+                     self._dest_username)
+        return ssh_connection
+
+    def _ssh_connection_timeout(self):
+        """Return the ssh connection timeout in seconds, or None when it is not configured."""
+        try:
+            return float(self.attrs.get("ssh_connection_timeout", None))
+        except TypeError:
+            return None
+
+    def _scpclient_timeout(self):
+        """Return how many seconds the scp client waits for a response from the remote host.
+
+        Values coming from an ini config file reach the mover as strings, so the
+        configured value is converted rather than used as-is.
+        """
+        return float(self.attrs.get("scpclient_timeout_seconds", DEFAULT_SCPCLIENT_TIMEOUT))
+
+    def _switch_to_backup_target(self, backup_target):
+        """Point the destination at *backup_target* so the next attempt uses that host."""
+        self.destination = self.destination._replace(netloc=f"{self.destination.username}@{backup_target}")
+        LOGGER.info("Changing destination to backup target: %s", self.destination.hostname)
+
+    def _num_ssh_retries(self):
+        """Return how many times an ssh operation is attempted before giving up.
+
+        Values coming from an ini config file reach the mover as strings, so the
+        configured value is converted rather than used as-is.
+        """
+        return int(self.attrs.get("num_ssh_retries", DEFAULT_NUM_SSH_RETRIES))
+
+    def _failed_to_connect_message(self):
+        """Describe how hard we tried before giving up, for the error raised to the caller."""
+        message = f"Failed to ssh connect after {self._num_ssh_retries()} attempts"
+        if self.backup_targets:
+            message += f" to primary and {len(self.backup_targets)} backup host(s)"
+        return message + "."
 
     @staticmethod
     def is_connected(connection):
@@ -352,16 +610,29 @@ class ScpMover(Mover):
         self.copy()
         os.remove(self.origin)
 
-    def copy(self):
-        """Upload the file."""
+    def _copy(self):
+        """Upload the file to self.destination via SCP, retrying transient failures.
+
+        A dropped connection or a remote hiccup mid-transfer is not a reason to lose
+        the file, so those are retried. A failure that retrying cannot fix, such as
+        the origin file not existing, is reported straight away.
+        """
+        from paramiko import SSHException
+        from scp import SCPException
+
+        self._run_with_retries(self._put_over_scp, "SCP transfer", (SCPException, SSHException))
+
+    def _put_over_scp(self):
+        """Upload the file to self.destination over a single SCP connection."""
+        from paramiko import SSHException
+        from scp import SCPClient, SCPException
+
         ssh_connection = self.get_connection(self.destination.hostname,
                                              self.destination.port or 22,
                                              self._dest_username)
-
         try:
-            scp = SCPClient(ssh_connection.get_transport(),
-                            socket_timeout=int(self.attrs.get('scpclient_timeout_seconds', 10)))
-        except Exception as err:
+            scp = SCPClient(ssh_connection.get_transport(), socket_timeout=self._scpclient_timeout())
+        except (TypeError, SSHException, OSError) as err:
             LOGGER.error("Failed to initiate SCPClient: %s", str(err))
             ssh_connection.close()
             raise
@@ -373,92 +644,92 @@ class ScpMover(Mover):
                 LOGGER.error("No such file or directory. File not transfered: "
                              "%s. Original error message: %s",
                              self.origin, str(osex))
+                return
             else:
                 LOGGER.error("OSError in scp.put: %s", str(osex))
                 raise
-        except SCPException as scpe:
-            if str(scpe) in "Timeout waiting for scp response":
-                LOGGER.error("SCPClient put got a socket timeout. You could add scpclient_timeout_seconds "
-                             "to your config to increase the timeout interval. Default timeout is 10 seconds.")
-            else:
-                LOGGER.error("SCPException: %s", str(scpe))
-            raise
-        except Exception as err:
+        except (SCPException, SSHException) as err:
             LOGGER.error("Something went wrong with scp: %s", str(err))
+            if SCP_RESPONSE_TIMEOUT_MESSAGE in str(err):
+                LOGGER.error("The scp client gave up after waiting %s seconds for a response. Increase "
+                             "scpclient_timeout_seconds in the configuration if the remote host needs longer.",
+                             self._scpclient_timeout())
             LOGGER.error("Exception name %s", type(err).__name__)
             LOGGER.error("Exception args %s", str(err.args))
             raise
         finally:
             scp.close()
 
+    def finalize_atomic_transfer(self, tmp_destination, final_destination):
+        """Finalize atomic transfer for SCP by performing remote rename via SFTP."""
+        ssh_connection = self.get_connection(self.destination.hostname,
+                                             self.destination.port or 22,
+                                             self._dest_username)
+        _rename_over_sftp(ssh_connection, tmp_destination, final_destination)
+        self.destination = final_destination
+
+    def remove_tmp_file(self, tmp_destination):
+        """Delete the temporary file from the remote host over SFTP."""
+        ssh_connection = self.get_connection(self.destination.hostname,
+                                             self.destination.port or 22,
+                                             self._dest_username)
+        with ssh_connection.open_sftp() as sftp:
+            sftp.remove(tmp_destination.path)
+
+
+def _rename_over_sftp(ssh_connection, tmp_destination, final_destination):
+    """Rename tmp_destination to final_destination on remote host via SFTP."""
+    with ssh_connection.open_sftp() as sftp:
+        ensure_final_directory_for_rename(sftp, final_destination.path)
+        sftp.rename(tmp_destination.path, final_destination.path)
+
 
 class SftpMover(Mover):
     """Move files over sftp."""
 
+    @property
+    def supports_atomic(self):
+        """SFTP supports atomic rename."""
+        return True
+
     def move(self):
-        """Push it !"""
+        """Push the file."""
         self.copy()
         os.remove(self.origin)
 
-    def _agent_auth(self, transport):
-        """Attempt to authenticate to the given transport using any of the private
-        keys available from an SSH agent ... or from a local private RSA key file
-        (assumes no pass phrase).
+    @contextmanager
+    def _connected_ssh_client(self):
+        """Yield a connected paramiko SSHClient, closed again on exit."""
+        import paramiko
+        with paramiko.SSHClient() as ssh:
+            ssh.load_system_host_keys()
+            ssh.connect(self.destination.hostname,
+                        port=self.destination.port or 22,
+                        username=self._dest_username,
+                        allow_agent=True,
+                        key_filename=self.attrs.get("ssh_private_key_file"))
+            yield ssh
 
-        PFE: http://code.activestate.com/recipes/576810-copy-files-over-ssh-using-paramiko/
+    def _copy(self):
+        """Copy the file to self.destination via SFTP.
+
+        Uses high level paramiko functions.
         """
-        import paramiko
+        with self._connected_ssh_client() as ssh:
+            with ssh.open_sftp() as sftp:
+                sftp.put(self.origin, self.destination.path)
 
-        agent = paramiko.Agent()
+    def finalize_atomic_transfer(self, tmp_destination, final_destination):
+        """Finalize atomic transfer for SFTP by renaming tmp -> final on remote host."""
+        with self._connected_ssh_client() as ssh:
+            _rename_over_sftp(ssh, tmp_destination, final_destination)
+        self.destination = final_destination
 
-        private_key_file = self.attrs.get("ssh_private_key_file", None)
-        if private_key_file:
-            private_key_file = os.path.expanduser(private_key_file)
-            LOGGER.info("Loading keys from local file %s", private_key_file)
-            agent_keys = (paramiko.RSAKey.from_private_key_file(private_key_file),)
-        else:
-            LOGGER.info("Loading keys from SSH agent")
-            agent_keys = agent.get_keys()
-        if len(agent_keys) == 0:
-            raise IOError("No available keys")
-
-        for key in agent_keys:
-            LOGGER.debug('Trying ssh key %s',
-                         key.get_fingerprint().encode('hex'))
-            try:
-                transport.auth_publickey(self._dest_username, key)
-                LOGGER.debug('... ssh key success!')
-                return
-            except paramiko.SSHException:
-                continue
-
-        # We found no valid key
-        raise IOError("RSA key auth failed!")
-
-    def copy(self):
-        """Upload the file."""
-        import paramiko
-
-        transport = paramiko.Transport((self.destination.hostname,
-                                        self.destination.port or 22))
-        transport.start_client()
-
-        self._agent_auth(transport)
-
-        if not transport.is_authenticated():
-            raise IOError("RSA key auth failed!")
-
-        sftp = transport.open_session()
-        sftp = paramiko.SFTPClient.from_transport(transport)
-        # sftp.get_channel().settimeout(300)
-
-        try:
-            sftp.mkdir(os.path.dirname(self.destination.path))
-        except IOError:
-            # Assuming remote directory exist
-            pass
-        sftp.put(self.origin, self.destination.path)
-        transport.close()
+    def remove_tmp_file(self, tmp_destination):
+        """Delete the temporary file from the remote host over SFTP."""
+        with self._connected_ssh_client() as ssh:
+            with ssh.open_sftp() as sftp:
+                sftp.remove(tmp_destination.path)
 
 
 class S3Mover(Mover):
@@ -466,7 +737,7 @@ class S3Mover(Mover):
 
     The transfer is initiated by Trollmoves Client by having destination that starts with "s3://".
 
-    All the connection configurations and such are done using the `fsspec` configuration system:
+    All the connection configurations and such may be done using the `fsspec` configuration system:
 
     https://filesystem-spec.readthedocs.io/en/latest/features.html#configuration
 
@@ -480,30 +751,257 @@ class S3Mover(Mover):
             }
         }
 
+    However, using the this procedure may not be useful if having several
+    endpoints/buckets with their own access/secret keys. Instead one can use
+    aws profiles (placed in `.aws/config`) to for instance set the
+    access/secret keys for various endpoints and then keep the actual url of
+    the endpoints in the yaml configuration (see examples/dispatch.yaml).
+
+    See documentation on profiles here:
+    https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html#using-a-configuration-file
+
+
+    NB! Special behaviour on destination filepath:
+
+    If the destination prefix (~filepath) has a trailing slash ('/') the
+    original filename will be appended (analogous to moving a file from one
+    directory to another keeping the same filename).
+
+    If the destination prefix does not have a trailing slash the operation will
+    be analogous to moving a file from one directory to a new destination
+    changing the filename. The new destination filename will be the last part
+    of the provided destination following the last slash ('/').
+
+    In the Trollmoves Server config, which is in .ini format, the connection parameters
+    and other dictionary-like items can be defined with douple underscore format::
+
+        connection_parameters__secret = secret
+        connection_parameters__client_kwargs__endpoint_url = https://endpoint.url
+        connection_parameters__client_kwargs__verify = false
+
+    will result in a nested dictionary item::
+
+        {
+            'connection_parameters': {
+                'secret': 'secret',
+                'client_kwargs': {
+                    'endpoint_url': 'https://endpoint.url',
+                    'verify': False
+                }
+            }
+        }
+
+    Note that boolean values are converted. Numeric values are handled where they are used.
+
     """
 
-    def copy(self):
-        """Copy the file to a bucket."""
-        if S3FileSystem is None:
-            raise ImportError("S3Mover requires 's3fs' to be installed.")
-        s3 = S3FileSystem()
+    def __init__(self, origin, destination, attrs=None, backup_targets=None):
+        """Initialize the S3Mover."""
+        super().__init__(origin, destination, attrs, backup_targets)
+        self._sanitize_attrs()
+
+    @property
+    def supports_atomic(self):
+        """S3 supports atomic transfers only when multipart upload or copy+delete is configured."""
+        return bool(self.attrs.get("s3_use_multipart")) or bool(self.attrs.get("s3_use_copy"))
+
+    def _copy(self):
+        """Copy the file to a bucket at self.destination.
+
+        For multipart uploads (``s3_use_multipart`` + boto3), the file is uploaded
+        directly to the final S3 key regardless of the current ``self.destination``
+        value — the tmp prefix is stripped internally to preserve the optimization
+        of not needing a server-side rename step.  For all other cases the file is
+        uploaded to the path represented by ``self.destination``.
+        """
+        if S3FileSystem is None and boto3 is None:
+            raise ImportError("S3Mover requires 's3fs' or 'boto3' to be installed.")
+
         destination_file_path = self._get_destination()
+        LOGGER.debug("destination_file_path = %s", destination_file_path)
+
+        if bool(self.attrs.get("s3_use_multipart", False)) and boto3 is not None:
+            # A multipart upload is atomic in itself: the object only becomes visible on
+            # CompleteMultipartUpload. Upload straight to the final key, skipping any
+            # temporary key an atomic transfer may have staged.
+            self._multipart_upload(self._get_destination(self._final_dest))
+            return
+
+        # Fallback: use s3fs put to destination_file_path (tmp or final)
+        if S3FileSystem is None:
+            raise ImportError("S3Mover requires 's3fs' to be installed for non-multipart operations.")
+        s3 = S3FileSystem(**self._backend_attrs())
+        LOGGER.debug("Before call to put: destination_file_path = %s", destination_file_path)
+        LOGGER.debug("self.origin = %s", self.origin)
         _create_s3_destination_path(s3, destination_file_path)
         s3.put(self.origin, destination_file_path)
 
-    def _get_destination(self):
-        bucket_parts = []
-        bucket_parts.append(self.destination.netloc)
-        if self.destination.path != '/':
-            bucket_parts.append(self.destination.path.strip('/'))
-        bucket_parts.append(os.path.basename(self.origin))
+    def _backend_attrs(self):
+        """Return the attrs to hand to S3FileSystem, minus the mover's own options."""
+        return {key: value for key, value in self.attrs.items() if key not in _S3_MOVER_INTERNAL_KEYS}
 
-        return '/'.join(bucket_parts)
+    def _build_boto3_client(self):
+        """Build and return a boto3 S3 client from attrs.
+
+        Reads client_kwargs, key, secret, and token from self.attrs.
+        Falls back to boto3 default credential chain when key/secret are absent.
+        """
+        client_kwargs = self.attrs.get("client_kwargs", {})
+        boto_kwargs = dict(client_kwargs) if isinstance(client_kwargs, dict) else {}
+        if self.attrs.get("key") and self.attrs.get("secret"):
+            return boto3.client(
+                "s3",
+                aws_access_key_id=self.attrs["key"],
+                aws_secret_access_key=self.attrs["secret"],
+                aws_session_token=self.attrs.get("token"),
+                **boto_kwargs,
+            )
+        return boto3.client("s3", **boto_kwargs)
+
+    def _do_multipart_upload(self, client, bucket, final_key):
+        """Perform a multipart upload of self.origin to bucket/final_key.
+
+        Uploads in chunks of s3_multipart_chunksize bytes (default 8 MB).
+        On failure, aborts the multipart upload (best-effort) and re-raises.
+        """
+        from botocore.exceptions import BotoCoreError
+        from botocore.exceptions import ClientError as BotoCoreClientError
+
+        chunk_size = int(self.attrs.get("s3_multipart_chunksize", 8 * 1024 * 1024))
+        upload_id = None
+        try:
+            mp = client.create_multipart_upload(Bucket=bucket, Key=final_key)
+            upload_id = mp["UploadId"]
+            upload_parts = []
+            part_number = 1
+            with open(self.origin, "rb") as f:
+                while True:
+                    data = f.read(chunk_size)
+                    if not data:
+                        break
+                    resp = client.upload_part(
+                        Bucket=bucket, Key=final_key, PartNumber=part_number,
+                        UploadId=upload_id, Body=data,
+                    )
+                    upload_parts.append({"ETag": resp["ETag"], "PartNumber": part_number})
+                    part_number += 1
+            client.complete_multipart_upload(
+                Bucket=bucket, Key=final_key, UploadId=upload_id,
+                MultipartUpload={"Parts": upload_parts},
+            )
+        except (BotoCoreClientError, BotoCoreError, OSError) as e:
+            LOGGER.exception("Multipart upload failed: %s", str(e))
+            if upload_id is not None:
+                try:
+                    client.abort_multipart_upload(Bucket=bucket, Key=final_key, UploadId=upload_id)
+                except (BotoCoreClientError, BotoCoreError):
+                    pass
+            raise
+
+    def _multipart_upload(self, final_file_path):
+        """Orchestrate a boto3 multipart upload to *final_file_path* (``bucket/key``)."""
+        bucket, _, final_key = final_file_path.partition("/")
+
+        client = self._build_boto3_client()
+        self._do_multipart_upload(client, bucket, final_key)
+        self.destination = urlparse("s3://" + bucket + "/" + final_key)
+
+    def _sanitize_attrs(self):
+        for key in list(self.attrs):
+            if key not in S3_ALLOWED_SETTINGS:
+                LOGGER.debug("S3 keyword '%s' not allowed - removed from attributes.", key)
+                del self.attrs[key]
+
+    def _get_destination(self, destination=None):
+        """Return the ``bucket/key`` path for *destination*, defaulting to self.destination."""
+        if destination is None:
+            destination = self.destination
+
+        bucket_parts = []
+        bucket_parts.append(destination.netloc)
+
+        if destination.path != "/":
+            bucket_parts.append(destination.path.strip("/"))
+        if destination.path.endswith("/"):
+            bucket_parts.append(os.path.basename(self.origin))
+
+        return "/".join(bucket_parts)
 
     def move(self):
         """Move the file."""
         self.copy()
         os.remove(self.origin)
+
+    def remove_tmp_file(self, tmp_destination):
+        """Delete the temporary object from the bucket.
+
+        Multipart uploads write straight to the final key and abort themselves on
+        failure, so there is no temporary object to remove in that mode.
+        """
+        if bool(self.attrs.get("s3_use_multipart", False)) and boto3 is not None:
+            return
+
+        tmp_path = self._get_destination(tmp_destination)
+        if S3FileSystem is not None:
+            s3 = S3FileSystem(**self._backend_attrs())
+            if s3.exists(tmp_path):
+                s3.rm(tmp_path)
+            return
+        if boto3 is not None:
+            bucket, _, key = tmp_path.partition("/")
+            self._build_boto3_client().delete_object(Bucket=bucket, Key=key)
+
+    def finalize_atomic_transfer(self, tmp_destination, final_destination):
+        """Finalize atomic transfer for S3.
+
+        If multipart upload was used, copy() already wrote to the final key — just update
+        self.destination. Otherwise perform a server-side copy+delete to move the tmp key
+        to the final key (requires s3_use_copy=True).
+        """
+        use_multipart = bool(self.attrs.get("s3_use_multipart", False))
+        use_copy = bool(self.attrs.get("s3_use_copy", False))
+
+        # Derive source (tmp) S3 path from tmp_destination
+        if tmp_destination:
+            tmp_bucket = tmp_destination.netloc
+            tmp_key = tmp_destination.path.lstrip("/")
+            tmp_path = (tmp_bucket + "/" + tmp_key) if tmp_key else tmp_bucket
+        else:
+            tmp_path = self._get_destination()
+            tmp_parts = tmp_path.split("/")
+            tmp_bucket = tmp_parts[0]
+            tmp_key = "/".join(tmp_parts[1:]) if len(tmp_parts) > 1 else ""
+
+        # Derive destination (final) S3 path from final_destination
+        final_bucket = final_destination.netloc
+        final_key = final_destination.path.lstrip("/")
+        final_path = (final_bucket + "/" + final_key) if final_key else final_bucket
+
+        # If multipart upload was used, copy() already wrote to the final key
+        if use_multipart and boto3 is not None:
+            self.destination = final_destination
+            return
+
+        if not use_copy:
+            raise NotImplementedError("S3 atomic finalize requires either multipart uploads or copy+delete fallback")
+
+        # use s3fs or boto3 to copy and delete tmp key
+        if S3FileSystem is not None:
+            s3 = S3FileSystem(**self._backend_attrs())
+            s3.copy(tmp_path, final_path)
+            s3.rm(tmp_path)
+            self.destination = final_destination
+            return
+
+        if boto3 is None:
+            raise ImportError("No S3 backend available for copy+delete finalize")
+        # boto3 copy_object and delete_object
+        client = self._build_boto3_client()
+        copy_source = {"Bucket": tmp_bucket, "Key": tmp_key}
+        client.copy_object(CopySource=copy_source, Bucket=final_bucket, Key=final_key)
+        client.delete_object(Bucket=tmp_bucket, Key=tmp_key)
+        self.destination = final_destination
+
 
 
 def _create_s3_destination_path(s3, destination_file_path):
@@ -512,10 +1010,10 @@ def _create_s3_destination_path(s3, destination_file_path):
         s3.mkdirs(destination_path)
 
 
-MOVERS = {'ftp': FtpMover,
-          'file': FileMover,
-          '': FileMover,
-          'scp': ScpMover,
-          'sftp': SftpMover,
-          's3': S3Mover,
+MOVERS = {"ftp": FtpMover,
+          "file": FileMover,
+          "": FileMover,
+          "scp": ScpMover,
+          "sftp": SftpMover,
+          "s3": S3Mover,
           }

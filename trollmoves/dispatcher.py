@@ -1,26 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-#
-# Copyright (c) 2012-2020
-#
-# Author(s):
-#
-#   Martin Raspaud <martin.raspaud@smhi.se>
-#   Panu Lahtinen <panu.lahtinen@fmi.fi>
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 """Dispatcher dispatches(!) files to some destination.
 
 It listens to posttroll messages to find out what to dispatch.
@@ -33,21 +10,22 @@ Format of the configuration file
 
 Example config::
 
+    # Optional direct subscriptions
+    # posttroll_subscriber:
+    #   subscribe_addresses:
+    #     - tcp://127.0.0.1:40000
+    # Nameserver to connect to. Optional. Defaults to localhost
+    #   nameserver: 127.0.0.1
+    # Subscribe to specific services. Optional. Default: connect to all services
+    #   subscribe_services:
+    #     - service_name_1
+    #     - service_name_2
     target1:
       host: ftp://ftp.target1.com
       connection_parameters:
         connection_uptime: 60
       filepattern: '{platform_name}_{start_time}.{format}'
       directory: /input_data/{sensor}
-      # Optional direct subscriptions
-      # subscribe_addresses:
-      #   - tcp://127.0.0.1:40000
-      # Nameserver to connect to. Optional. Defaults to localhost
-      # nameserver: 127.0.0.1
-      # Subscribe to specific services. Optional. Default: connect to all services
-      # subscribe_services:
-      #   - service_name_1
-      #   - service_name_2
       # Message topics for published messages. Required if command-line option
       #   "-p"/"--publish-port" is used.  The topic can be composed using
       #   metadata from incoming message
@@ -78,14 +56,21 @@ Example config::
               coverage: '>50'
 
 
-The configuration file is divided in sections for each host receiving data.
+Some general configuration can be provided at the main level:
+
+    - `nameserver` (optional): Address of a nameserver to connect to.  Default: 'localhost'.
+    - `addresses` (optional): List of TCP connections to listen for messages.
+    - `services` (optional): List of service names to subscribe to.  Default: connect to all services.
+
+The rest of the configuration file is divided in sections for each host receiving data.
 
 Each host section have to contain the following information:
 
-    - `host`: The host to tranfer to. If it's empty (`""`), the files will be
-      dispatched to localhost.
+    - `host`: The host to transfer to. If it's empty (`""`), the files will be
+      dispatched to localhost using regular copy operations.
     - `filepattern`: The file pattern to use. The fields that can be used are
-      the ones that are available in the message metadata.
+      the ones that are available in the message metadata. Moreover, the file creation time can be accessed through
+      the `file_creation_time` item, and is a datetime object.
       See the trollsift documentation for details on the field formats.
     - `directory`: The directory to dispatch the data to on the receiving host.
       Can also make use of the fields from the message metadata.
@@ -94,9 +79,6 @@ Each host section have to contain the following information:
       pass to the moving function. See the `trollmoves.movers` module documentation.
     - `aliases` (optional): A dictionary of metadata items to change for the
       final filename. These are not taken into account for checking the conditions.
-    - `nameserver` (optional): Address of a nameserver to connect to.  Default: 'localhost'.
-    - `addresses` (optional): List of TCP connections to listen for messages.
-    - `services` (optional): List of service names to subscribe to.  Default: connect to all services.
 
 Note that the `host`, `filepattern`, and `directory` items can be overridden in
 the dispatch_configs section.
@@ -149,230 +131,115 @@ metadata::
 The comparison operators that can be used are the ones that can be used in
 python: `==`, `!=`, `<`, `>`, `<=`, `>=`.
 """
-
+import argparse
+import contextlib
 import logging
 import os
 import signal
-from queue import Empty
-from threading import Thread
-from urllib.parse import urlsplit, urlunsplit, urlparse
 import socket
+import sys
+from datetime import datetime
+from queue import Empty
+from urllib.parse import urlparse, urlsplit, urlunsplit
 
 import yaml
-import inotify.adapters
-from inotify.constants import IN_MODIFY, IN_CLOSE_WRITE, IN_CREATE, IN_MOVED_TO
 from posttroll.listener import ListenerContainer
-from posttroll.publisher import NoisyPublisher
 from posttroll.message import Message
+from posttroll.publisher import NoisyPublisher, create_publisher_from_dict_config
 from trollsift import compose
 
+from trollmoves.logging import add_logging_options_to_parser, setup_logging
 from trollmoves.movers import move_it
-from trollmoves.utils import (clean_url, is_file_local)
+from trollmoves.utils import clean_url, is_file_local
 
 logger = logging.getLogger(__name__)
 
-INOTIFY_MASK = IN_MODIFY | IN_CLOSE_WRITE | IN_CREATE | IN_MOVED_TO
+
+def read_config(filename):
+    """Read the configuration from file."""
+    logger.info("Reading config from %s", filename)
+    with open(filename, "r") as fd:
+        return yaml.safe_load(fd.read())
 
 
-class Notifier(Thread):
-    """Class to handle file notifications."""
-
-    def __init__(self, filename, event_types, callback):
-        """Initialize the notifier."""
-        self.filename = filename
-        self.loop = True
-        self.inotify = inotify.adapters.Inotify()
-        self.inotify.add_watch(filename, mask=INOTIFY_MASK)
-        self.event_types = set(event_types)
-        self.callback = callback
-        super().__init__()
-
-    def run(self):
-        """Run the notifier."""
-        for event in self.inotify.event_gen():
-            if event is None:
-                if not self.loop:
-                    logger.info('Terminating watch on %s', self.filename)
-                    return
-                else:
-                    continue
-            (_, type_names, path, filename) = event
-            if self.event_types.intersection(set(type_names)):
-                self.callback()
-
-    def close(self):
-        """Close the notifier."""
-        self.loop = False
+def _create_publisher(publish_port, publish_nameservers):
+    if publish_port is not None:
+        publisher = NoisyPublisher("dispatcher", port=publish_port,
+                                   nameservers=publish_nameservers)
+        publisher.start()
+        return publisher
 
 
-class YAMLConfig():
-    """Class to hold and watch for configuration changes."""
-
-    def __init__(self, filename):
-        """Initialize the config handler."""
-        self.err = None
-        self.filename = filename
-        self.config = None
-        self.read_config()
-        self.notifier = Notifier(filename,
-                                 ['IN_CLOSE_WRITE', 'IN_MOVED_TO', 'IN_CREATE'],
-                                 self.read_config)
-        self.notifier.start()
-        signal.signal(signal.SIGUSR1, self.signal_reread)
-
-    def signal_reread(self, *args, **kwargs):
-        """Read the config when a signal is received."""
-        self.read_config()
-
-    def read_config(self):
-        """Trigger a reread of the config file."""
-        logger.info('Reading config from %s', self.filename)
-        with open(self.filename, 'r') as fd:
-            self.config = yaml.safe_load(fd.read())
-
-    def close(self):
-        """Close the config handler."""
-        try:
-            self.notifier.close()
-            self.notifier.join()
-        except AttributeError as err:
-            self.err = err
-
-    def __del__(self, *args, **kwargs):
-        """Delete the config handler."""
-        self.close()
-
-
-class DispatchConfig(YAMLConfig):
-    """Class to handle dispatch configs."""
-
-    def __init__(self, filename, callback):
-        """Initialize dispatch configuration class."""
-        self.callback = callback
-        super().__init__(filename)
-
-    def read_config(self):
-        """Read configuration file."""
-        super().read_config()
-        self.callback(self.config)
-
-
-class Dispatcher(Thread):
+class Dispatcher:
     """Class that dispatches files."""
 
-    def __init__(self, config_file, publish_port=None,
-                 publish_nameservers=None):
-        """Initialize dispatcher class."""
-        super().__init__()
-        self.config = None
-        self.topics = None
-        self.listener = None
-        self._publish_port = publish_port
-        self._publish_nameservers = publish_nameservers
-        self.publisher = None
+    # Idea for future refactoring: the publish arguments should really be provided in the configuration file, see
+    # https://github.com/pytroll/trollmoves/issues/159
+
+    def __init__(self, config_file, publish_port=None, publish_nameservers=None, messages=None):
+        """Initialize dispatcher class.
+
+        Arguments:
+            messages: an iterable of messages to use in the dispatcher. This short-circuits the posttroll reception.
+                      Useful for testing.
+        """
+        self.config = read_config(config_file)
+
+        self.messages = messages
+
+        if publish_port is not None:
+            self.publisher = PublisherReporter(self.config, publish_port, publish_nameservers)
+
+        else:
+            self.publisher = None
+
         self.host = socket.gethostname()
-        self._create_publisher()
-        self.loop = True
-        self.config_handler = DispatchConfig(config_file, self.update_config)
-        signal.signal(signal.SIGTERM, self.signal_shutdown)
 
-    def _create_publisher(self):
-        if self._publish_port is not None:
-            self.publisher = NoisyPublisher("dispatcher", port=self._publish_port,
-                                            nameservers=self._publish_nameservers)
-            self.publisher.start()
+        signal.signal(signal.SIGTERM, self.close)
 
-    def signal_shutdown(self, *args, **kwargs):
-        """Shutdown dispatcher."""
-        self.close()
-
-    def update_config(self, new_config):
-        """Update configuration and reload listeners."""
-        old_config = self.config
-        topics = set()
-        try:
-            for _client, client_config in new_config.items():
-                topics |= set(sum([item['topics'] for item in client_config['dispatch_configs']], []))
-            if self.topics != topics:
-                self.config = new_config
-                self._create_listener(client_config, topics)
-        except KeyError as err:
-            logger.warning('Invalid config for %s, keeping the old one running: %s', _client, str(err))
-            self.config = old_config
-
-    def _create_listener(self, client_config, topics):
-        if self.listener is not None:
-            # FIXME: make sure to get the last messages though
-            self.listener.stop()
-        addresses = client_config.get('subscribe_addresses', None)
-        nameserver = client_config.get('nameserver', 'localhost')
-        services = client_config.get('subscribe_services', '')
-        self.listener = ListenerContainer(topics=topics,
-                                          addresses=addresses,
-                                          nameserver=nameserver,
-                                          services=services)
-        self.topics = topics
+    def close(self, *args, **kwargs):
+        """Shut down the dispatcher."""
+        logger.info("Terminating dispatcher.")
+        with contextlib.suppress(AttributeError):
+            self.messages.stop()
+        if self.publisher:
+            try:
+                self.publisher.stop()
+            except Exception:
+                logger.exception("Couldn't stop publisher.")
 
     def run(self):
         """Run dispatcher."""
-        while self.loop:
-            try:
-                msg = self.listener.output_queue.get(timeout=1)
-            except Empty:
-                continue
-            if msg.type != 'file':
-                continue
-            self._dispatch_from_message(msg)
+        if self.messages is None:
+            self.messages = PosttrollMessageIterator(self.config)
 
-    def _dispatch_from_message(self, msg):
+        for msg in self.messages:
+            if msg.type == "file":
+                self.dispatch_from_message(msg)
+            elif msg.type == "dataset":
+                # Loop through files in the dataset and publish a message for each one of them
+                file_messages = self._get_file_messages_from_dataset_message(msg)
+                for fmsg in file_messages:
+                    self.dispatch_from_message(fmsg)
+            else:
+                continue
+
+    def dispatch_from_message(self, msg):
+        """Dispatch from message."""
         destinations = self.get_destinations(msg)
         if destinations:
             # Check if the url are on another host:
-            url = urlparse(msg.data['uri'])
+            url = urlparse(msg.data["uri"])
             _check_file_locality(url, self.host)
             success = dispatch(url.path, destinations)
             if self.publisher:
-                self._publish(msg, destinations, success)
-
-    def _publish(self, msg, destinations, success):
-        """Publish a message.
-
-        The URI is replaced with the URI on the target server.
-
-        """
-        for url, _, client in destinations:
-            if not success[client]:
-                continue
-            msg = self._get_new_message(msg, url, client)
-            if msg is None:
-                continue
-            logger.debug('Publishing %s', str(msg))
-            self.publisher.send(str(msg))
-
-    def _get_new_message(self, msg, url, client):
-        info = self._get_message_info(msg, url)
-        topic = self._get_topic(client, info)
-        if topic is None:
-            return None
-        return Message(topic, 'file', info)
-
-    def _get_message_info(self, msg, url):
-        info = msg.data.copy()
-        info["uri"] = urlsplit(url).path
-        return info
-
-    def _get_topic(self, client, info):
-        topic = self.config[client].get("publish_topic")
-        if topic is None:
-            logger.error("Publish topic not configured for '%s'", client)
-            return None
-        return compose(topic, info)
+                self.publisher.publish(msg, destinations, success)
 
     def get_destinations(self, msg):
         """Get the destinations for this message."""
         destinations = []
         for client, config in self.config.items():
-            for dispatch_config in config['dispatch_configs']:
+            for dispatch_config in config["dispatch_configs"]:
                 destination = self._get_destination(dispatch_config, msg, client)
                 if destination is None:
                     continue
@@ -391,37 +258,138 @@ class Dispatcher(Thread):
         config = self.config[client].copy()
         _verify_filepattern(config, msg)
         config.update(conf)
-        connection_parameters = config.get('connection_parameters')
+        connection_parameters = config.get("connection_parameters")
 
-        host = config['host']
+        host = config["host"]
 
         metadata = _get_metadata_with_aliases(msg, config)
 
         path = compose(
-            os.path.join(config['directory'],
-                         config['filepattern']),
+            os.path.join(config["directory"],
+                         config["filepattern"]),
             metadata)
         parts = urlsplit(host)
         host_path = urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment))
         return host_path, connection_parameters, client
 
-    def close(self):
-        """Shutdown the dispatcher."""
-        logger.info('Terminating dispatcher.')
-        self.loop = False
-        try:
-            self.listener.stop()
-        except Exception:
-            logger.exception("Couldn't stop listener.")
-        if self.publisher:
+    def _get_file_messages_from_dataset_message(self, msg):
+        """From a dataset type message create individual messages for each file in the dataset."""
+        basic_msg_data = msg.data.copy()
+        dataset_part = basic_msg_data.pop("dataset")
+        file_msgs = []
+        for item in dataset_part:
+            content = {}
+            content.update(basic_msg_data)
+            content["uid"] = item["uid"]
+            content["uri"] = item["uri"]
+            file_msgs.append(Message(msg.subject, "file", data=content))
+
+        return file_msgs
+
+
+class PublisherReporter:
+    """This class uses a posttroll publisher to report the results of the dispatching.
+
+    This is the first of possibly many reporting classes, eg for monitoring or generating reports daily.
+    """
+
+    # Idea for future refactoring: This could be made flexible enough to be used in other parts of trollmoves, eg in
+    # move_it_client to report moved files. The main problem is the to pass the right configuration/topic for the
+    # messages to be correct. See https://github.com/pytroll/trollmoves/issues/160
+
+    def __init__(self, config, publish_port, publish_nameservers):
+        """Set up the reporter."""
+        self.config = config
+
+        pub_settings = {
+            "name": "dispatcher",
+            "port": publish_port,
+            "nameservers": publish_nameservers
+        }
+
+        self._pub_starter = create_publisher_from_dict_config(pub_settings)
+        self.publisher = self._pub_starter.start()
+
+    def publish(self, msg, destinations, success):
+        """Publish a message.
+
+        The URI is replaced with the URI on the target server.
+        """
+        for url, _, client in destinations:
+            if not success[client]:
+                continue
             try:
-                self.publisher.stop()
-            except Exception:
-                logger.exception("Couldn't stop publisher.")
+                msg = self._get_new_message(msg, url, client)
+            except ValueError as err:
+                logger.error(str(err))
+                continue
+            logger.debug("Publishing %s", str(msg))
+            self.publisher.send(str(msg))
+
+    def _get_new_message(self, msg, url, client):
+        info = self._get_message_info(msg, url)
+        topic = self._get_topic(client, info)
+        if topic is None:
+            return None
+        return Message(topic, "file", info)
+
+    def _get_message_info(self, msg, url):
+        info = msg.data.copy()
+        info["uri"] = urlsplit(url).path
+        return info
+
+    def _get_topic(self, client, info):
         try:
-            self.config_handler.close()
-        except Exception:
-            logger.exception("Couldn't stop config handler.")
+            topic = self.config[client]["publish_topic"]
+        except KeyError:
+            raise ValueError(f"Publish topic not configured for '{client}'")
+        return compose(topic, info)
+
+    def stop(self):
+        """Stop the reporter."""
+        self._pub_starter.stop()
+
+
+class PosttrollMessageIterator:
+    """Posttroll message iterator."""
+
+    def __init__(self, config):
+        """Set up the iterator."""
+        self.config = config
+        self.running = True
+
+    def __iter__(self):
+        """Iterate over messages from a listener container."""
+        with posttroll_listener(self.config) as listener:
+            while self.running:
+                try:
+                    yield listener.output_queue.get(timeout=0.05)
+                except Empty:
+                    continue
+
+    def stop(self):
+        """Stop the iterator."""
+        self.running = False
+
+
+@contextlib.contextmanager
+def posttroll_listener(new_config):
+    """Create a posttroll listener."""
+    subscriber_config = new_config.pop("posttroll_subscriber", {})
+    addresses = subscriber_config.pop("subscribe_addresses", None)
+    nameserver = subscriber_config.pop("nameserver", "localhost")
+    services = subscriber_config.pop("subscribe_services", "")
+
+    topics = set()
+    for _client, client_config in new_config.items():
+        topics |= set(sum([item["topics"] for item in client_config["dispatch_configs"]], []))
+
+    listener = ListenerContainer(topics=topics,
+                                 addresses=addresses,
+                                 nameserver=nameserver,
+                                 services=services)
+    yield listener
+    listener.stop()
 
 
 def _check_file_locality(url, host):
@@ -434,21 +402,22 @@ def _check_file_locality(url, host):
 
 
 def _has_correct_topic(dispatch_config, msg):
-    for topic in dispatch_config['topics']:
+    for topic in dispatch_config["topics"]:
         if msg.subject.startswith(topic):
             return True
     return False
 
 
 def _verify_filepattern(defaults, msg):
-    if 'filepattern' not in defaults:
-        source_filename = os.path.basename(urlsplit(msg.data['uri']).path)
-        defaults['filepattern'] = source_filename
+    if "filepattern" not in defaults:
+        source_filename = os.path.basename(urlsplit(msg.data["uri"]).path)
+        defaults["filepattern"] = source_filename
 
 
 def _get_metadata_with_aliases(msg, defaults):
     metadata = msg.data.copy()
-    for key, aliases in defaults.get('aliases', {}).items():
+    metadata["file_creation_time"] = get_uri_creation_time(msg)
+    for key, aliases in defaults.get("aliases", {}).items():
         if isinstance(aliases, dict):
             aliases = [aliases]
 
@@ -457,6 +426,11 @@ def _get_metadata_with_aliases(msg, defaults):
             if key in msg.data:
                 metadata[new_key] = alias.get(msg.data[key], msg.data[key])
     return metadata
+
+
+def get_uri_creation_time(msg):
+    """Get the creation time of the file pointed to by the uri."""
+    return datetime.fromtimestamp(os.path.getctime(msg.data.get("uri")))
 
 
 def check_conditions(msg, item):
@@ -480,10 +454,9 @@ def check_conditions(msg, item):
     'green_snow' from NOAA-15. 'true_color' from MODIS will not be dispatched.
 
     """
-    # Fixme: except !
-    if 'conditions' not in item:
+    if "conditions" not in item:
         return True
-    for condition_set in item['conditions']:
+    for condition_set in item["conditions"]:
         if _check_condition_set(msg, condition_set):
             return True
     return False
@@ -508,13 +481,13 @@ def _check_condition_set(msg, condition_set, negate=False):
     """
     for key, value in condition_set.items():
         try:
-            if key == 'except':
+            if key == "except":
                 if not _check_condition_set(msg, value, negate=True):
                     return negate
             elif not _check_condition(msg, key, value):
                 return negate
         except KeyError as err:
-            logger.warning('Missing metadata info to check condition: %s', err)
+            logger.warning("Missing metadata info to check condition: %s", err)
             return False
     return not negate
 
@@ -532,7 +505,7 @@ def _check_condition(msg, key, value):
         if msg.data[key] not in value:
             return False
     else:
-        if isinstance(value, str) and value[0] in ['<', '>', '=', '!']:
+        if isinstance(value, str) and value[0] in ["<", ">", "=", "!"]:
             return eval(str(float(msg.data[key])) + value)
         elif msg.data[key] != value:
             return False
@@ -567,3 +540,41 @@ def dispatch(source, destinations):
         logger.info("Dispatched all files.")
 
     return success
+
+
+def parse_args():
+    """Parse commandline arguments."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config_file",
+                        help="The configuration file to run on.")
+    parser.add_argument(
+        "-p", "--publish-port", type=int, dest="pub_port", nargs="?",
+        const=0, default=None,
+        help="Publish messages for dispatched files on this port. "
+        "Default: no publishing.")
+    parser.add_argument("-n", "--publish-nameserver", nargs="*",
+                        dest="pub_nameservers",
+                        help="Nameserver for publisher to connect to")
+    add_logging_options_to_parser(parser, legacy=True)
+    return parser.parse_args()
+
+
+def main():
+    """Start and run the dispatcher."""
+    cmd_args = parse_args()
+    logger = setup_logging("dispatcher", cmd_args)
+    logger.info("Starting up.")
+
+    try:
+        dispatcher = Dispatcher(cmd_args.config_file,
+                                publish_port=cmd_args.pub_port,
+                                publish_nameservers=cmd_args.pub_nameservers)
+    except Exception as err:
+        logger.error("Dispatcher crashed: %s", str(err))
+        sys.exit(1)
+    try:
+        dispatcher.run()
+    except KeyboardInterrupt:
+        logger.debug("Interrupting")
+    finally:
+        dispatcher.close()

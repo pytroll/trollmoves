@@ -1,206 +1,149 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-#
-# Copyright (c) 2012, 2013, 2014, 2015, 2016
-#
-# Author(s):
-#
-#   Martin Raspaud <martin.raspaud@smhi.se>
-#   Panu Lahtinen <panu.lahtinen@fmi.fi>
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 """Base class for move_it_{client,server,mirror}."""
 
+import fnmatch
 import logging
 import logging.handlers
 import os
+import signal
+import time
+from abc import ABC, abstractmethod
+from contextlib import suppress
+from threading import Lock
 
-import pyinotify
 from posttroll.publisher import Publisher
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 
 LOGGER = logging.getLogger("move_it_base")
-LOG_FORMAT = "[%(asctime)s %(levelname)-8s %(name)s] %(message)s"
 
 
-class MoveItBase(object):
+class MoveItBase(ABC):
     """Base class for Trollmoves."""
 
-    def __init__(self, cmd_args, chain_type, publisher=None):
+    def __init__(self, cmd_args, publisher=None):
         """Initialize the class."""
         self.cmd_args = cmd_args
-        self.chain_type = chain_type
         self.running = False
-        self.notifier = None
+        self.new_config_notifier = None
         self.watchman = None
         self.publisher = publisher
-        self._np = None
         self.chains = {}
-        setup_logging(cmd_args, chain_type)
         LOGGER.info("Starting up.")
-        self.setup_watchers(cmd_args)
-
-    def reload_cfg_file(self, filename, *args, **kwargs):
-        """Reload configuration file."""
-        if self.chain_type == "client":
-            from trollmoves.client import reload_config
-            reload_config(filename, self.chains, *args, **kwargs)
-        else:
-            # Also Mirror uses the reload_config from the Server
-            from trollmoves.server import reload_config
-            reload_config(filename, self.chains, *args, publisher=self.publisher,
-                          use_watchdog=self.cmd_args.watchdog,
-                          disable_backlog=self.cmd_args.disable_backlog)
-
-    def signal_reload_cfg_file(self, *args):
-        """Handle reload signal."""
-        del args
-        if self.chain_type == "client":
-            from trollmoves.client import reload_config
-            reload_config(self.cmd_args.config_file, self.chains,
-                          publisher=self.publisher)
-        else:
-            from trollmoves.server import reload_config
-            reload_config(self.cmd_args.config_file, self.chains,
-                          publisher=self.publisher,
-                          use_watchdog=self.cmd_args.watchdog,
-                          disable_backlog=self.cmd_args.disable_backlog)
+        self.setup_watchers()
+        self.run_lock = Lock()
 
     def chains_stop(self, *args):
         """Stop all transfer chains."""
         del args
-        if self.chain_type == "client":
-            from trollmoves.client import terminate
-        else:
-            from trollmoves.server import terminate
+        with suppress(RuntimeError):
+            self.run_lock.acquire(timeout=1)
+
         self.running = False
-        self.notifier.stop()
         try:
-            self._np.stop()
-        except AttributeError:
-            pass
-        terminate(self.chains)
+            self.new_config_notifier.stop()
+        except RuntimeError as err:
+            LOGGER.warning("Could not stop notifier: %s", err)
+        with suppress(AttributeError):
+            self.publisher.stop()
+        self.terminate()
 
-    def setup_watchers(self, cmd_args):
+    @abstractmethod
+    def terminate(self):
+        """Terminate the chains and threads."""
+
+    def setup_watchers(self):
         """Set up watcher for the configuration file."""
-        mask = (pyinotify.IN_CLOSE_WRITE |
-                pyinotify.IN_MOVED_TO |
-                pyinotify.IN_CREATE)
-        self.watchman = pyinotify.WatchManager()
+        config_file = self.cmd_args.config_file
+        reload_function = self.reload_cfg_file
 
-        event_handler = EventHandler(self.reload_cfg_file,
-                                     watchManager=self.watchman,
-                                     tmask=mask,
-                                     cmd_filename=self.cmd_args.config_file)
-        self.notifier = pyinotify.ThreadedNotifier(self.watchman, event_handler)
-        self.watchman.add_watch(os.path.dirname(cmd_args.config_file), mask)
+        self.new_config_notifier = create_notifier_for_file(config_file, reload_function)
+
+    def run(self):
+        """Start the transfer chains."""
+        try:
+            signal.signal(signal.SIGTERM, self.chains_stop)
+            signal.signal(signal.SIGHUP, self.signal_reload_cfg_file)
+        except ValueError:
+            LOGGER.warning("Signals could not be set up.")
+        self.new_config_notifier.start()
+        self.running = True
+        while self.running:
+            time.sleep(1)
+            # FIXME: should we use timeout instead?
+            shutting_down = not self.run_lock.acquire(blocking=False)
+            if shutting_down:
+                break
+            try:
+                self._run()
+            finally:
+                self.run_lock.release()
+
+    @abstractmethod
+    def _run(self):
+        raise NotImplementedError
 
 
-def setup_logging(cmd_args, chain_type):
-    """Set up logging."""
-    global LOGGER
-    LOGGER = logging.getLogger('')
-    if cmd_args.verbose:
-        LOGGER.setLevel(logging.DEBUG)
+def create_notifier_for_file(file_to_watch, function_to_run_on_file):
+    """Create a notifier for a given file."""
+    observer = Observer()
+    handler = WatchdogChangeHandler(function_to_run_on_file)
 
-    if cmd_args.log:
-        fh_ = logging.handlers.TimedRotatingFileHandler(
-            os.path.join(cmd_args.log),
-            "midnight",
-            backupCount=7)
-    else:
-        fh_ = logging.StreamHandler()
-
-    formatter = logging.Formatter(LOG_FORMAT)
-    fh_.setFormatter(formatter)
-
-    LOGGER.addHandler(fh_)
-    logger_name = "move_it_server"
-    if chain_type == "client":
-        logger_name = "move_it_client"
-    elif chain_type == "mirror":
-        logger_name = "move_it_mirror"
-    LOGGER = logging.getLogger(logger_name)
-    pyinotify.log.handlers = [fh_]
+    observer.schedule(handler, file_to_watch)
+    return observer
 
 
 def create_publisher(port, publisher_name):
-    """Create a publisher using port *port*."""
+    """Create a publisher using port *port* and start it."""
     LOGGER.info("Starting publisher on port %s.", str(port))
-    return Publisher("tcp://*:" + str(port), publisher_name)
+    if port is None:
+        return None
+    publisher = Publisher("tcp://*:" + str(port), publisher_name)
+    publisher.start()
+    return publisher
 
 
-# Generic event handler
-# fixme: on deletion, the file should be removed from the filecache
-class EventHandler(pyinotify.ProcessEvent):
-    """Handle events with a generic *fun* function."""
+class _WatchdogHandler(FileSystemEventHandler):
+    """Trigger processing on filesystem events, with filename matching."""
 
-    def __init__(self, fun, *args, **kwargs):
-        """Initialize event handler."""
-        pyinotify.ProcessEvent.__init__(self, *args, **kwargs)
-        self._cmd_filename = kwargs.get('cmd_filename')
-        if self._cmd_filename:
-            self._cmd_filename = os.path.abspath(self._cmd_filename)
-        self._fun = fun
-        self._watched_dirs = dict()
-        self._watchManager = kwargs.get('watchManager', None)
-        self._tmask = kwargs.get('tmask', None)
+    def __init__(self, fun, pattern=None):
+        """Initialize the processor."""
+        super().__init__()
+        self.fun = fun
+        self.pattern = pattern
 
-    def process_IN_CLOSE_WRITE(self, event):
-        """On closing after writing."""
-        if self._cmd_filename and os.path.abspath(
-                event.pathname) != self._cmd_filename:
+    def dispatch(self, event):
+        """Dispatches events to the appropriate methods."""
+        if self.pattern is None:
+            return super().dispatch(event)
+        if event.is_directory:
             return
-        self._fun(event.pathname)
+        if getattr(event, "dest_path", None):
+            pathname = os.fsdecode(event.dest_path)
+        elif event.src_path:
+            pathname = os.fsdecode(event.src_path)
+        if fnmatch.fnmatch(pathname, self.pattern):
+            super().dispatch(event)
 
-    def process_IN_CREATE(self, event):
-        """On closing after linking."""
-        if (event.mask & pyinotify.IN_ISDIR):
-            self._watched_dirs.update(self._watchManager.add_watch(event.pathname, self._tmask))
 
-        if self._cmd_filename and os.path.abspath(
-                event.pathname) != self._cmd_filename:
-            return
-        try:
-            if os.stat(event.pathname).st_nlink > 1:
-                self._fun(event.pathname)
-        except OSError:
-            return
+class WatchdogChangeHandler(_WatchdogHandler):
+    """Trigger processing on filesystem events that change a file (moving, close (write))."""
 
-    def process_IN_MOVED_TO(self, event):
-        """On closing after moving."""
-        if self._cmd_filename and os.path.abspath(
-                event.pathname) != self._cmd_filename:
-            return
-        self._fun(event.pathname)
+    def on_closed(self, event):
+        """Process file closed."""
+        self.fun(event.src_path)
 
-    def process_IN_DELETE(self, event):
-        """On delete."""
-        if (event.mask & pyinotify.IN_ISDIR):
-            try:
-                try:
-                    self._watchManager.rm_watch(self._watched_dirs[event.pathname], quiet=False)
-                except pyinotify.WatchManagerError:
-                    # As the directory is deleted prior removing the
-                    # watch will cause a error message from
-                    # pyinotify. This is ok, so just pass the
-                    # exception.
-                    pass
-                finally:
-                    del self._watched_dirs[event.pathname]
-            except KeyError:
-                LOGGER.warning(
-                    "Dir %s not watched by inotify. Can not delete watch.",
-                    event.pathname)
-        return
+    def on_moved(self, event):
+        """Process a file being moved to the destination directory."""
+        self.fun(event.dest_path)
+
+
+class WatchdogCreationHandler(_WatchdogHandler):
+    """Trigger processing on filesystem events that create a file (moving, creation)."""
+
+    def on_created(self, event):
+        """Process file closing."""
+        self.fun(event.src_path)
+
+    def on_moved(self, event):
+        """Process a file being moved to the destination directory."""
+        self.fun(event.dest_path)
