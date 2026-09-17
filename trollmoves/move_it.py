@@ -158,8 +158,14 @@ def publish_hook(pathname, dest_url, config, publisher):
     publisher.send(str(msg))
 
 
-def process_notify(pathname, publisher, chain_config):
-    """Execute unpacking and copying/moving of *pathname*."""
+def process_notify(pathname, publisher, chain_config, deleter=None):
+    """Execute unpacking and copying/moving of *pathname*.
+
+    Move It removes the file it decompressed as soon as the copy is done, so it has no
+    use for the chain's *deleter*, which delays the removal for the benefit of clients
+    that still have to request the file.
+    """
+    del deleter
     LOGGER.info("We have a match: %s", str(pathname))
     new_path = unpack(pathname, **chain_config)
     try:

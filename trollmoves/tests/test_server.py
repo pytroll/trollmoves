@@ -571,6 +571,75 @@ def _create_server(tmp_path, directory, *extra_args):
     return server
 
 
+def _create_compressed_file(directory):
+    """Write a bzipped file in *directory* and return its path."""
+    import bz2
+
+    compressed_file = directory / "my_file.txt.bz2"
+    with open(compressed_file, "wb") as fd_:
+        fd_.write(bz2.compress(b"hello world", 5))
+    return compressed_file
+
+
+def _compressing_chain_config(directory, working_directory):
+    return {"origin": os.path.join(str(directory), "{product}.txt.bz2"),
+            "topic": "/topic",
+            "request_port": "9001",
+            "compression": "bzip",
+            "working_directory": str(working_directory)}
+
+
+def test_process_path_schedules_the_decompressed_file_for_removal(tmp_path):
+    """Test that a decompressed file is scheduled for removal even if nobody requests it."""
+    from trollmoves.server import process_path
+
+    compressed_file = _create_compressed_file(tmp_path)
+    working_directory = tmp_path / "work"
+    working_directory.mkdir()
+    deleter = MagicMock()
+
+    process_path(_compressing_chain_config(tmp_path, working_directory), str(compressed_file),
+                 MagicMock(), deleter=deleter)
+
+    deleter.add.assert_called_once_with(str(working_directory / "my_file.txt"))
+
+
+def test_process_path_does_not_schedule_a_file_that_was_not_decompressed(tmp_path):
+    """Test that the file that was found is not removed when there is nothing to decompress."""
+    from trollmoves.server import process_path
+
+    found_file = tmp_path / "my_file.tif"
+    found_file.write_bytes(b"hello world")
+    config = {"origin": str(tmp_path / "{product}.tif"), "topic": "/topic", "request_port": "9001"}
+    deleter = MagicMock()
+
+    process_path(config, str(found_file), MagicMock(), deleter=deleter)
+
+    deleter.add.assert_not_called()
+
+
+def test_chain_creates_a_deleter_for_the_decompressed_files(tmp_path):
+    """Test that a chain that decompresses files gets a deleter for them."""
+    working_directory = tmp_path / "work"
+    working_directory.mkdir()
+
+    chain = _create_chain(tmp_path, **_compressing_chain_config(tmp_path, working_directory))
+    try:
+        assert chain.unpacked_file_deleter is not None
+        assert chain.function_to_run.keywords["deleter"] is chain.unpacked_file_deleter
+    finally:
+        chain.stop()
+
+
+def test_chain_without_decompression_has_no_deleter_for_decompressed_files(tmp_path):
+    """Test that no deleter is created when the chain does not decompress anything."""
+    chain = _create_chain(tmp_path)
+    try:
+        assert chain.unpacked_file_deleter is None
+    finally:
+        chain.stop()
+
+
 def test_process_path_skips_a_file_that_has_disappeared(tmp_path, caplog):
     """Test that a file that is gone when it is handled is skipped instead of raising."""
     from trollmoves.server import process_path
@@ -675,7 +744,7 @@ def test_restarting_a_chain_handles_the_files_that_arrived_meanwhile(tmp_path):
         chain.process_backlog()
 
         assert chain.check_health() is None
-        function_to_run.assert_called_once_with(str(missed_file), chain_config=chain.config)
+        function_to_run.assert_called_once_with(str(missed_file), chain_config=chain.config, deleter=None)
     finally:
         chain.stop()
 
