@@ -1,6 +1,7 @@
 """Test the trollmoves client."""
 
 import copy
+import logging
 import os
 import time
 from collections import deque
@@ -1034,6 +1035,62 @@ def test_request_push_single_call(send_ack, send_request, clean_ongoing_transfer
     # The transferred file should be in the cache
     assert MSG_FILE2.data["uid"] in file_cache
     assert len(file_cache) == 1
+
+
+@patch("trollmoves.client.ongoing_transfers", new_callable=dict)
+@patch("trollmoves.client.file_cache", new_callable=deque)
+@patch("trollmoves.client.clean_ongoing_transfer")
+@patch("trollmoves.client.send_request")
+@patch("trollmoves.client.send_ack")
+def test_request_push_logs_the_source_of_the_data(send_ack, send_request, clean_ongoing_transfer,
+                                                  file_cache, ongoing_transfers, caplog):
+    """Test that the host and the file the data came from are logged at INFO level."""
+    from tempfile import gettempdir
+
+    from trollmoves.client import request_push
+
+    msg = Message("/topic", "file", data={"uid": "file3.png",
+                                          "uri": "/data_dir/file3.png",
+                                          "request_address": "some.server:9001"})
+    clean_ongoing_transfer.return_value = [msg]
+    send_request.return_value = [msg, "some.server"]
+    kwargs = {"transfer_req_timeout": 1.0, "req_timeout": 1.0}
+
+    with caplog.at_level(logging.INFO, logger="trollmoves.client"):
+        request_push(msg, gettempdir(), "secretuser:secretpasswd", publisher=MagicMock(), **kwargs)
+
+    source_records = [record for record in caplog.records if "done sending file" in record.getMessage()]
+    assert len(source_records) == 1
+    assert source_records[0].levelno == logging.INFO
+    assert source_records[0].getMessage() == "'some.server' done sending file '/data_dir/file3.png'"
+    assert "secretuser" not in caplog.text
+
+
+@patch("trollmoves.client.ongoing_transfers", new_callable=dict)
+@patch("trollmoves.client.file_cache", new_callable=deque)
+@patch("trollmoves.client.clean_ongoing_transfer")
+@patch("trollmoves.client.send_request")
+@patch("trollmoves.client.send_ack")
+def test_request_push_logs_every_file_of_a_dataset(send_ack, send_request, clean_ongoing_transfer,
+                                                   file_cache, ongoing_transfers, caplog):
+    """Test that each file of a dataset is reported with the host it came from."""
+    from tempfile import gettempdir
+
+    from trollmoves.client import request_push
+
+    msg = Message("/topic", "dataset", data={"dataset": [{"uid": "file4.png", "uri": "/data_dir/file4.png"},
+                                                         {"uid": "file5.png", "uri": "/data_dir/file5.png"}],
+                                             "request_address": "some.server:9001"})
+    clean_ongoing_transfer.return_value = [msg]
+    send_request.return_value = [msg, "some.server"]
+    kwargs = {"transfer_req_timeout": 1.0, "req_timeout": 1.0}
+
+    with caplog.at_level(logging.INFO, logger="trollmoves.client"):
+        request_push(msg, gettempdir(), None, publisher=MagicMock(), **kwargs)
+
+    messages = [record.getMessage() for record in caplog.records if "done sending file" in record.getMessage()]
+    assert messages == ["'some.server' done sending file '/data_dir/file4.png'",
+                        "'some.server' done sending file '/data_dir/file5.png'"]
 
 
 @patch("trollmoves.client.ongoing_transfers", new_callable=dict)
