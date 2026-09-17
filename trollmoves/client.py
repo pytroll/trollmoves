@@ -1020,8 +1020,8 @@ class MoveItClient(MoveItBase):
 
     def signal_reload_cfg_file(self, *args):
         """Handle reload signal."""
-        reload_config(self.cmd_args.config_file, self.chains,
-                      publisher=self.publisher)
+        del args
+        self.reload_cfg_file(self.cmd_args.config_file)
 
     def _run(self):
         for chain_name in self.chains:

@@ -1599,6 +1599,21 @@ class TestMoveItClient:
             client.signal_reload_cfg_file()
             mock_reload_config.assert_called_once()
 
+    @patch("trollmoves.move_it_base.Publisher")
+    def test_signal_reloads_config_on_example_config(self, fake_publisher, tmp_path):
+        """Test that the reload signal handler works with the real reload_config."""
+        config_filename = tmp_path / "my_config_file.ini"
+        with open(config_filename, "wb") as fd:
+            fd.write(config_without_nameservers)
+        cmd_args = parse_args([os.fspath(config_filename)])
+        with patch("trollmoves.client.Listener"):
+            client = MoveItClient(cmd_args)
+            try:
+                client.signal_reload_cfg_file()
+                assert "eumetcast_hrit_0deg_ftp" in client.chains
+            finally:
+                client.terminate()
+
     def test_reloads_config_on_newly_written_config_file(self, tmp_path):
         """Test that config can be reloaded with basic example."""
         config_filename = tmp_path / "my_config_file.ini"
