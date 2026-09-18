@@ -1,3 +1,54 @@
+## Version 0.19.0 (2026/09/18)
+
+### Issues Closed
+
+* [Issue 248](https://github.com/pytroll/trollmoves/issues/248) - Better error handling for network-mounted source directories ([PR 249](https://github.com/pytroll/trollmoves/pull/249) by [@pnuu](https://github.com/pnuu))
+* [Issue 242](https://github.com/pytroll/trollmoves/issues/242) - Error handling templates like "somedir/otherdirs-??/*.ext" in remove-script ([PR 243](https://github.com/pytroll/trollmoves/pull/243) by [@adybbroe](https://github.com/adybbroe))
+* [Issue 182](https://github.com/pytroll/trollmoves/issues/182) - reload_config is called with non existing publisher argument ([PR 250](https://github.com/pytroll/trollmoves/pull/250) by [@pnuu](https://github.com/pnuu))
+* [Issue 154](https://github.com/pytroll/trollmoves/issues/154) - Failed transfer reported as success when file was deleted before transfer completed ([PR 251](https://github.com/pytroll/trollmoves/pull/251) by [@pnuu](https://github.com/pnuu))
+* [Issue 148](https://github.com/pytroll/trollmoves/issues/148) - ScpMover to transfer to a temporary file and rename after completion ([PR 238](https://github.com/pytroll/trollmoves/pull/238) by [@pnuu](https://github.com/pnuu))
+* [Issue 143](https://github.com/pytroll/trollmoves/issues/143) - Add an AUTHORS.md file to record authors for the repo
+* [Issue 125](https://github.com/pytroll/trollmoves/issues/125) - Decompressed files are only deleted on Server only if they are moved ([PR 253](https://github.com/pytroll/trollmoves/pull/253) by [@pnuu](https://github.com/pnuu))
+* [Issue 120](https://github.com/pytroll/trollmoves/issues/120) - Add configurable timeout to SCPClient
+* [Issue 118](https://github.com/pytroll/trollmoves/issues/118) - Trollmoves Server should crash if "origin" directory doesn't exist
+* [Issue 93](https://github.com/pytroll/trollmoves/issues/93) - Log the source where transferred data originated from ([PR 254](https://github.com/pytroll/trollmoves/pull/254) by [@pnuu](https://github.com/pnuu))
+* [Issue 92](https://github.com/pytroll/trollmoves/issues/92) - Transfer files first to a temporary filename
+* [Issue 91](https://github.com/pytroll/trollmoves/issues/91) - Decompression should always use temporary directory and/or filename ([PR 252](https://github.com/pytroll/trollmoves/pull/252) by [@pnuu](https://github.com/pnuu))
+* [Issue 90](https://github.com/pytroll/trollmoves/issues/90) - Disabling backlog transfers not working when move_it.py reloads config
+* [Issue 70](https://github.com/pytroll/trollmoves/issues/70) - Have one publisher per chain in move_it_client
+* [Issue 68](https://github.com/pytroll/trollmoves/issues/68) - Move_it_client: subscription is lost and doesn't reconnect
+* [Issue 65](https://github.com/pytroll/trollmoves/issues/65) - Clarify attribute and class naming
+* [Issue 63](https://github.com/pytroll/trollmoves/issues/63) - Error in recv_multipart leaves push-pull connection unusable
+* [Issue 47](https://github.com/pytroll/trollmoves/issues/47) - local file copy needs unnecessary login option in move_it_client.ini
+* [Issue 19](https://github.com/pytroll/trollmoves/issues/19) - Add documentation and example configuration files
+
+In this release 19 issues were closed.
+
+### Pull Requests Merged
+
+#### Bugs fixed
+
+* [PR 253](https://github.com/pytroll/trollmoves/pull/253) - Bugfix server delete unpacked files ([125](https://github.com/pytroll/trollmoves/issues/125), [125](https://github.com/pytroll/trollmoves/issues/125))
+* [PR 251](https://github.com/pytroll/trollmoves/pull/251) - Report a failed scp transfer of a vanished file as a failure ([154](https://github.com/pytroll/trollmoves/issues/154), [154](https://github.com/pytroll/trollmoves/issues/154))
+* [PR 250](https://github.com/pytroll/trollmoves/pull/250) - Fix reload signal handler passing a non-existing publisher argument ([182](https://github.com/pytroll/trollmoves/issues/182), [182](https://github.com/pytroll/trollmoves/issues/182))
+* [PR 249](https://github.com/pytroll/trollmoves/pull/249) - Recover from origin files and directories disappearing ([248](https://github.com/pytroll/trollmoves/issues/248))
+* [PR 243](https://github.com/pytroll/trollmoves/pull/243) - Handle cases with wildcards inside the path to the basedir-template ([242](https://github.com/pytroll/trollmoves/issues/242))
+* [PR 241](https://github.com/pytroll/trollmoves/pull/241) - Make sure never to delete configured base dir even if old
+* [PR 239](https://github.com/pytroll/trollmoves/pull/239) - Fix S3 downloader test patching
+
+#### Features added
+
+* [PR 254](https://github.com/pytroll/trollmoves/pull/254) - Log which source each transferred file came from ([93](https://github.com/pytroll/trollmoves/issues/93), [93](https://github.com/pytroll/trollmoves/issues/93))
+* [PR 253](https://github.com/pytroll/trollmoves/pull/253) - Bugfix server delete unpacked files ([125](https://github.com/pytroll/trollmoves/issues/125), [125](https://github.com/pytroll/trollmoves/issues/125))
+* [PR 252](https://github.com/pytroll/trollmoves/pull/252) - Decompress to a temporary name before using the final one ([91](https://github.com/pytroll/trollmoves/issues/91), [91](https://github.com/pytroll/trollmoves/issues/91))
+* [PR 249](https://github.com/pytroll/trollmoves/pull/249) - Recover from origin files and directories disappearing ([248](https://github.com/pytroll/trollmoves/issues/248))
+* [PR 238](https://github.com/pytroll/trollmoves/pull/238) - Add option to transfer to temporary filename ([148](https://github.com/pytroll/trollmoves/issues/148))
+* [PR 235](https://github.com/pytroll/trollmoves/pull/235) - Allow removing hidden/dot files
+* [PR 153](https://github.com/pytroll/trollmoves/pull/153) - Add retries to SCPMover.copy()
+
+In this release 14 pull requests were closed.
+
+
 ## Version 0.18.0 (2026/02/26)
 
 ### Issues Closed
