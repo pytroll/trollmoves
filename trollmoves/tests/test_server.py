@@ -5,7 +5,6 @@ import logging
 import os
 import shutil
 import time
-import unittest
 from collections import deque
 from tempfile import NamedTemporaryFile, gettempdir
 from unittest.mock import MagicMock, patch
@@ -211,7 +210,7 @@ def test_process_notify_matching_file(file_cache, tmp_path):
     assert len(file_cache) == 1
 
 
-class TestDeleter(unittest.TestCase):
+class TestDeleter:
     """Test the deleter."""
 
     def test_empty_init_arguments_does_not_crash_add(self):
