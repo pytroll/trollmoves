@@ -3,7 +3,6 @@
 import copy
 import datetime
 import os
-import unittest
 from tempfile import gettempdir
 
 from posttroll.message import Message
@@ -41,7 +40,7 @@ def dummy_callback_translate_dict_item_to_dataset(var):
     return var
 
 
-class TestWalker(unittest.TestCase):
+class TestWalker:
     """Test walker."""
 
     def test_gen_dict_extract_message(self):
@@ -52,7 +51,7 @@ class TestWalker(unittest.TestCase):
 
         res = list(gen_dict_extract(Message(rawstr=orig).data, "uid"))
 
-        self.assertListEqual(expected_uid, res)
+        assert expected_uid == res
 
     def test_gen_dict_extract_dictionary(self):
         """Test extracting info from dictionary."""
@@ -84,7 +83,7 @@ class TestWalker(unittest.TestCase):
             "GDNBO_npp_d20181025_t0101464_e0103106_b36230_c20181025011333695023_cspp_dev.h5",
             "SVDNB_npp_d20181025_t0101464_e0103106_b36230_c20181025011353771298_cspp_dev.h5"]
 
-        self.assertListEqual(expected, list(gen_dict_extract(test_dict, "uid")))
+        assert expected == list(gen_dict_extract(test_dict, "uid"))
 
     def test_translate_dict_values_file_message(self):
         """Test translating message dictionary values."""
@@ -95,7 +94,7 @@ class TestWalker(unittest.TestCase):
 
         expected_dict = Message(rawstr=expected).data
         res = translate_dict_value(Message(rawstr=orig).data, "uri", dummy_callback_translate_dict_values)
-        self.assertDictEqual(expected_dict, res)
+        assert expected_dict == res
 
     def test_translate_dict_values_dataset_message(self):
         """Test translating message dictionary values."""
@@ -111,7 +110,7 @@ class TestWalker(unittest.TestCase):
 
         expected_dict = Message(rawstr=expected).data
         res = translate_dict_value(Message(rawstr=orig).data, "uri", dummy_callback_translate_dict_values)
-        self.assertDictEqual(expected_dict, res)
+        assert expected_dict == res
 
     def test_translate_dict_values_collection_message(self):
         """Test translating message dictionary values."""
@@ -127,7 +126,7 @@ class TestWalker(unittest.TestCase):
 
         expected_dict = Message(rawstr=expected).data
         res = translate_dict_value(Message(rawstr=orig).data, "uri", dummy_callback_translate_dict_values)
-        self.assertDictEqual(expected_dict, res)
+        assert expected_dict == res
 
     def test_translate_dict_value(self):
         """Test message data dictionary value translation."""
@@ -136,9 +135,9 @@ class TestWalker(unittest.TestCase):
 
         res = translate_dict_value(msg.data, "uri", dummy_callback_translate_dict_values)
         for uri in gen_dict_extract(res, "uri"):
-            self.assertTrue(uri.startswith(DEST_DIR))
+            assert uri.startswith(DEST_DIR)
 
-        self.assertDictEqual(orig_data, msg.data)
+        assert orig_data == msg.data
 
     def test_translate_dict_item(self):
         """Test translating dict items."""
@@ -150,7 +149,7 @@ class TestWalker(unittest.TestCase):
         expected_dict = Message(rawstr=expected).data
         res = translate_dict_item(Message(rawstr=orig).data, "uri", dummy_callback_translate_dict_item)
         res = translate_dict_item(res, "uid", dummy_callback_translate_dict_item)
-        self.assertDictEqual(expected_dict, res)
+        assert expected_dict == res
 
     def test_translate_dict_item_to_dataset(self):
         """Test translating dict items to dataset."""
@@ -161,8 +160,5 @@ class TestWalker(unittest.TestCase):
 
         expected_dict = Message(rawstr=expected).data
         res = translate_dict(Message(rawstr=orig).data, ("uri", "uid"), dummy_callback_translate_dict_item_to_dataset)
-        self.assertDictEqual(expected_dict, res)
+        assert expected_dict == res
 
-
-if __name__ == "__main__":
-    unittest.main()

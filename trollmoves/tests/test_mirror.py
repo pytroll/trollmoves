@@ -1,6 +1,5 @@
 """Test Trollmoves mirror."""
 
-import unittest
 from tempfile import NamedTemporaryFile
 from unittest.mock import DEFAULT, patch
 
@@ -9,7 +8,7 @@ import pytest
 from trollmoves.mirror import MoveItMirror, parse_args
 
 
-class TestMirrorDeleter(unittest.TestCase):
+class TestMirrorDeleter:
     """Test the deleter."""
 
     def test_empty_init_arguments_does_not_crash(self):
@@ -24,7 +23,7 @@ class TestMirrorDeleter(unittest.TestCase):
         deleter.delete("some_filename")
 
 
-class TestMirrorRequestManager(unittest.TestCase):
+class TestMirrorRequestManager:
     """Test the MRM."""
 
     def test_deleter_gets_attrs(self):

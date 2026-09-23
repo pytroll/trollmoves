@@ -2,11 +2,8 @@
 
 import errno
 import logging
-import shutil
+import pathlib
 import socket
-import sys
-import unittest
-from tempfile import NamedTemporaryFile, mkdtemp
 from unittest.mock import MagicMock, Mock, patch
 from urllib.parse import urlparse
 
@@ -15,18 +12,20 @@ from paramiko import SSHException
 
 import trollmoves
 
-logger = logging.getLogger()
 
-class TestSSHMovers(unittest.TestCase):
+class TestSSHMovers:
     """Tests for SSH Mover."""
 
-    def setUp(self):
+    @pytest.fixture(autouse=True)
+    def _setup(self, tmp_path):
         """Create temporary directories and setup configurations."""
-        self.origin_dir = mkdtemp()
-        with NamedTemporaryFile("w", delete=False, dir=self.origin_dir) as temporary_file:
-            self.origin = temporary_file.name
+        origin_dir = tmp_path / "origin"
+        origin_dir.mkdir()
+        self.origin = str(origin_dir / "origin_file")
+        open(self.origin, "w").close()
 
-        self.dest_dir = mkdtemp()
+        self.dest_dir = str(tmp_path / "dest")
+        pathlib.Path(self.dest_dir).mkdir()
 
         self.hostname = "localhost"
         self.login = "user"
@@ -39,14 +38,6 @@ class TestSSHMovers(unittest.TestCase):
 
         self._attrs_empty = {}
         self._attrs_connection_uptime = {"connection_uptime": 0}
-
-    def tearDown(self):
-        """Remove temporary directories."""
-        try:
-            shutil.rmtree(self.origin_dir, ignore_errors=True)
-            shutil.rmtree(self.dest_dir, ignore_errors=True)
-        except OSError:
-            pass
 
     def test_scp(self):
         """Check ScpMover init."""
@@ -65,7 +56,7 @@ class TestSSHMovers(unittest.TestCase):
 
             scp_mover = trollmoves.movers.ScpMover(self.origin, self.destination_no_login, attrs=self._attrs_empty)
 
-            self.assertEqual(scp_mover.open_connection(), "testing")
+            assert scp_mover.open_connection() == "testing"
 
     def test_scp_get_connection(self):
         """Check scp get_connection."""
@@ -75,7 +66,7 @@ class TestSSHMovers(unittest.TestCase):
             scp_mover = trollmoves.movers.ScpMover(self.origin, self.destination_no_login_no_port,
                                                    attrs=self._attrs_empty)
 
-            self.assertEqual(scp_mover.get_connection(self.hostname, self.port, self.login), "testing")
+            assert scp_mover.get_connection(self.hostname, self.port, self.login) == "testing"
 
     @patch("paramiko.SSHClient", autospec=True)
     def test_scp_open_connection_login_name(self, mock_sshclient):
@@ -135,32 +126,23 @@ class TestSSHMovers(unittest.TestCase):
             scp_mover.open_connection()
 
     @patch("paramiko.SSHClient.connect", autospec=True)
-    def test_scp_open_connection_socket_timeout_exception(self, mock_sshclient_connect):
+    def test_scp_open_connection_socket_timeout_exception(self, mock_sshclient_connect, caplog):
         """Check scp get_connection failing with socket timeout."""
         from trollmoves.movers import ScpMover
-        stream_handler = logging.StreamHandler(sys.stdout)
-        logger.addHandler(stream_handler)
-        logger.setLevel(logging.INFO)
 
         mocked_client = MagicMock(side_effect=socket.timeout)
         mock_sshclient_connect.side_effect = mocked_client
 
         scp_mover = ScpMover(self.origin, self.destination_no_port,
                              attrs={"ssh_connection_timeout": 1})
-        try:
-            with self.assertLogs(logger, level=logging.INFO) as lc, self.assertRaises(IOError):
-                scp_mover.open_connection()
-            self.assertIn(("SSH connection timed out:"), lc.output[0])
-        finally:
-            logger.removeHandler(stream_handler)
+        with caplog.at_level(logging.INFO), pytest.raises(IOError):
+            scp_mover.open_connection()
+        assert "SSH connection timed out:" in caplog.messages[0]
 
     @patch("paramiko.SSHClient", autospec=True)
-    def test_scp_open_connection_backup_targets(self, mock_sshclient):
+    def test_scp_open_connection_backup_targets(self, mock_sshclient, caplog):
         """Check scp get_connection using backup targets."""
         from trollmoves.movers import ScpMover
-        stream_handler = logging.StreamHandler(sys.stdout)
-        logger.addHandler(stream_handler)
-        logger.setLevel(logging.INFO)
 
         mocked_client = MagicMock(side_effect=socket.timeout)
         mock_sshclient.return_value.connect.side_effect = mocked_client
@@ -169,16 +151,13 @@ class TestSSHMovers(unittest.TestCase):
                              attrs={"ssh_connection_timeout": 1},
                              backup_targets=["backup_host1",
                                              "backup_host2"])
-        try:
-            with self.assertLogs(logger, level=logging.INFO) as lc, self.assertRaises(IOError):
-                scp_mover.open_connection()
-            assert "SSH connection timed out:" in lc.output[0]
-            assert "Changing destination to backup target: backup_host1" in lc.output[3]
-            assert "Changing destination to backup target: backup_host2" in lc.output[7]
-            mock_sshclient.return_value.connect.assert_called_with("backup_host2", username="user", port=22,
-                                                                    key_filename=None, timeout=1)
-        finally:
-            logger.removeHandler(stream_handler)
+        with caplog.at_level(logging.INFO), pytest.raises(IOError):
+            scp_mover.open_connection()
+        assert "SSH connection timed out:" in caplog.messages[0]
+        assert "Changing destination to backup target: backup_host1" in caplog.messages[3]
+        assert "Changing destination to backup target: backup_host2" in caplog.messages[7]
+        mock_sshclient.return_value.connect.assert_called_with("backup_host2", username="user", port=22,
+                                                                key_filename=None, timeout=1)
 
     @patch("paramiko.SSHClient.connect", autospec=True)
     def test_scp_open_connection_generic_exception(self, mock_sshclient_connect):
@@ -224,17 +203,13 @@ class TestSSHMovers(unittest.TestCase):
 
         assert mock_sshclient.return_value.connect.call_count == 2
 
-    @patch("paramiko.SSHClient.connect", autospec=True)
-    def test_scp_is_connected_exception(self, mock_sshclient_connect):
+    def test_scp_is_connected_exception(self):
         """Check scp is_connected() exception resulting in no connection."""
         from trollmoves.movers import ScpMover
 
-        mocked_client = Mock()
-        mock_sshclient_connect.return_value = mocked_client
-
         scp_mover = ScpMover(self.origin, self.destination_no_port,
                              attrs=self._attrs_connection_uptime)
-        connection = scp_mover.get_connection(self.hostname, 22, username=self.login)
+        connection = Mock()
         connection.get_transport.side_effect = AttributeError
 
         result = scp_mover.is_connected(connection)
@@ -326,14 +301,14 @@ class TestSSHMovers(unittest.TestCase):
 
     @patch("paramiko.SSHClient", autospec=True)
     @patch("scp.SCPClient", autospec=True)
-    def test_scp_copy_of_vanished_file_is_not_reported_as_success(self, mock_scp_client, mock_sshclient):
+    def test_scp_copy_of_vanished_file_is_not_reported_as_success(self, mock_scp_client, mock_sshclient, caplog):
         """Check that a file deleted before the transfer started is not reported as copied."""
         mock_scp_client.return_value.put.side_effect = OSError(errno.ENOENT, "message")
 
-        with self.assertLogs("trollmoves.movers", level=logging.ERROR) as logs, pytest.raises(OSError):
+        with caplog.at_level(logging.ERROR, logger="trollmoves.movers"), pytest.raises(OSError):
             trollmoves.movers.move_it(self.origin, self.destination_no_port, attrs=self._attrs_empty)
 
-        assert not any("Successfully copied" in message for message in logs.output)
+        assert not any("Successfully copied" in message for message in caplog.messages)
 
     @patch("scp.SCPClient", autospec=True)
     def test_scp_copy_put_exception(self, mock_scp_client):
@@ -395,7 +370,7 @@ class TestSSHMovers(unittest.TestCase):
 
     @patch("paramiko.SSHClient", autospec=True)
     @patch("scp.SCPClient", autospec=True)
-    def test_scp_copy_response_timeout_suggests_a_longer_timeout(self, mock_scp_client, mock_sshclient):
+    def test_scp_copy_response_timeout_suggests_a_longer_timeout(self, mock_scp_client, mock_sshclient, caplog):
         """Check that a timed-out scp response points the user at the setting that would help."""
         from scp import SCPException
 
@@ -405,10 +380,10 @@ class TestSSHMovers(unittest.TestCase):
 
         scp_mover = ScpMover(self.origin, self.destination_no_port, attrs={"num_ssh_retries": 1})
 
-        with self.assertLogs("trollmoves.movers", level=logging.ERROR) as logs, pytest.raises(SCPException):
+        with caplog.at_level(logging.ERROR, logger="trollmoves.movers"), pytest.raises(SCPException):
             scp_mover.copy()
 
-        assert any("scpclient_timeout_seconds" in message for message in logs.output)
+        assert any("scpclient_timeout_seconds" in message for message in caplog.messages)
 
     def test_scp_response_timeout_message_still_matches_the_scp_library(self):
         """Check the message the timeout hint keys on against what scp really raises.
@@ -432,7 +407,7 @@ class TestSSHMovers(unittest.TestCase):
 
     @patch("paramiko.SSHClient", autospec=True)
     @patch("scp.SCPClient", autospec=True)
-    def test_scp_copy_retries_and_explains_a_stalled_transfer(self, mock_scp_client, mock_sshclient):
+    def test_scp_copy_retries_and_explains_a_stalled_transfer(self, mock_scp_client, mock_sshclient, caplog):
         """Check that a transfer stalling past the socket timeout is retried and explained.
 
         paramiko raises a bare socket.timeout when a channel read or write stalls, so
@@ -444,11 +419,11 @@ class TestSSHMovers(unittest.TestCase):
 
         scp_mover = ScpMover(self.origin, self.destination_no_port, attrs={"num_ssh_retries": 2})
 
-        with self.assertLogs("trollmoves.movers", level=logging.ERROR) as logs, pytest.raises(TimeoutError):
+        with caplog.at_level(logging.ERROR, logger="trollmoves.movers"), pytest.raises(TimeoutError):
             scp_mover.copy()
 
         assert mock_scp_client.return_value.put.call_count == 2
-        assert any("scpclient_timeout_seconds" in message for message in logs.output)
+        assert any("scpclient_timeout_seconds" in message for message in caplog.messages)
 
     @patch("paramiko.SSHClient", autospec=True)
     @patch("scp.SCPClient", autospec=True)
@@ -483,6 +458,3 @@ class TestSSHMovers(unittest.TestCase):
         urlparse_destination = urlparse("scp://hostname/path/name")
         ret_destination = move_it(pathname, urlparse_destination)
         assert ret_destination == expected_destination
-
-if __name__ == "__main__":
-    unittest.main()
