@@ -108,7 +108,13 @@ from urllib.parse import urlparse
 from trollmoves.logging import setup_logging
 from trollmoves.move_it_base import create_publisher
 from trollmoves.movers import MOVERS
-from trollmoves.server import AbstractMoveItServer, create_message_with_request_info, parse_args, unpack
+from trollmoves.server import (
+    AbstractMoveItServer,
+    DecompressionError,
+    create_message_with_request_info,
+    parse_args,
+    unpack,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -167,7 +173,11 @@ def process_notify(pathname, publisher, chain_config, deleter=None):
     """
     del deleter
     LOGGER.info("We have a match: %s", str(pathname))
-    new_path = unpack(pathname, **chain_config)
+    try:
+        new_path = unpack(pathname, **chain_config)
+    except DecompressionError as err:
+        LOGGER.error("%s, not copying it", str(err))
+        return
     try:
         if publisher is not None:
             publisher_hook = partial(publish_hook, publisher=publisher, config=chain_config)
