@@ -994,7 +994,11 @@ def process_path(chain_config, path, publisher, deleter=None):
         LOGGER.debug("Ignoring empty file: %s", path)
     else:
         LOGGER.debug("We have a match: %s", path)
-        pathname = unpack(path, **chain_config)
+        try:
+            pathname = unpack(path, **chain_config)
+        except DecompressionError as err:
+            LOGGER.error("%s, not publishing it", str(err))
+            return
         publish_file(path, publisher, chain_config, pathname)
         schedule_decompressed_file_for_removal(deleter, path, pathname)
 
@@ -1127,28 +1131,52 @@ def bzip(origin, destination=None):
     return destfile
 
 
+DEFAULT_DECOMPRESSION_ATTEMPTS = 3
+DEFAULT_DECOMPRESSION_RETRY_DELAY = 5.0
+
+
+class DecompressionError(Exception):
+    """A file could not be decompressed."""
+
+
 def unpack(pathname,
            compression=None,
            working_directory=None,
            prog=None,
            delete=False,
+           decompression_attempts=DEFAULT_DECOMPRESSION_ATTEMPTS,
+           decompression_retry_delay=DEFAULT_DECOMPRESSION_RETRY_DELAY,
            **kwargs):
-    """Unpack *pathname*."""
+    """Unpack *pathname*.
+
+    The decompression is retried as the file can be incomplete when it is first seen. If none of
+    the attempts succeed, DecompressionError is raised: handing out the compressed file in place of
+    the decompressed one would mislead whoever expects the decompressed contents.
+    """
     del kwargs
-    if compression:
+    if not compression:
+        return pathname
+    try:
+        unpack_fun = eval(compression)
+    except Exception as err:
+        raise DecompressionError(f"Unknown compression {compression!r} for {pathname}") from err
+    args = (pathname, working_directory) if prog is None else (pathname, working_directory, prog)
+    new_path = _retry_decompression(unpack_fun, args, int(decompression_attempts), float(decompression_retry_delay))
+    if delete:
+        delete_file(pathname)
+    return new_path
+
+
+def _retry_decompression(unpack_fun, args, attempts, retry_delay):
+    pathname = args[0]
+    for attempt in range(1, attempts + 1):
         try:
-            unpack_fun = eval(compression)
-            if prog is not None:
-                new_path = unpack_fun(pathname, working_directory, prog)
-            else:
-                new_path = unpack_fun(pathname, working_directory)
-        except Exception:
-            LOGGER.exception("Could not decompress %s", pathname)
-        else:
-            if delete:
-                delete_file(pathname)
-            return new_path
-    return pathname
+            return unpack_fun(*args)
+        except Exception as err:
+            LOGGER.warning("Could not decompress %s (attempt %d of %d): %s", pathname, attempt, attempts, str(err))
+        if attempt < attempts:
+            time.sleep(retry_delay)
+    raise DecompressionError(f"Could not decompress {pathname} in {attempts} attempts")
 
 
 def parse_args(args=None, default_port=9010):

@@ -457,6 +457,61 @@ def test_unpack_with_delete(tmp_path):
     assert res == os.path.splitext(zipped_file)[0]
 
 
+def test_unpack_retries_a_failed_decompression(tmp_path):
+    """Test that a file that can not be decompressed at first, for example because it is incomplete, is retried."""
+    from trollmoves.server import unpack
+
+    decompressed_file = str(tmp_path / "my_file.txt")
+    with patch("trollmoves.server.bzip", side_effect=[OSError("Invalid data stream"), decompressed_file]) as bzip, \
+            patch("trollmoves.server.time.sleep") as sleep:
+        res = unpack(str(tmp_path / "my_file.txt.bz2"), compression="bzip", working_directory=str(tmp_path),
+                     decompression_attempts="3", decompression_retry_delay="2.5")
+
+    assert res == decompressed_file
+    assert bzip.call_count == 2
+    sleep.assert_called_once_with(2.5)
+
+
+def test_unpack_raises_when_all_decompression_attempts_fail(tmp_path):
+    """Test that the compressed file is not handed out as the result when it can not be decompressed."""
+    from trollmoves.server import DecompressionError, unpack
+
+    compressed_file = tmp_path / "my_file.txt.bz2"
+    compressed_file.write_bytes(b"this is not bzip2 data")
+
+    with patch("trollmoves.server.bzip", side_effect=OSError("Invalid data stream")) as bzip, \
+            patch("trollmoves.server.time.sleep") as sleep:
+        with pytest.raises(DecompressionError):
+            unpack(str(compressed_file), compression="bzip", working_directory=str(tmp_path), delete=True,
+                   decompression_attempts="3", decompression_retry_delay="0")
+
+    assert bzip.call_count == 3
+    assert sleep.call_count == 2
+    assert compressed_file.exists()
+
+
+def test_unpack_raises_decompression_error_for_an_unknown_compression(tmp_path):
+    """Test that a misconfigured compression is reported like any other failed decompression."""
+    from trollmoves.server import DecompressionError, unpack
+
+    with pytest.raises(DecompressionError):
+        unpack(str(tmp_path / "my_file.txt.bz2"), compression="no_such_compression",
+               working_directory=str(tmp_path), decompression_retry_delay="0")
+
+
+def test_unpack_uses_default_retries(tmp_path):
+    """Test that decompression is retried by default."""
+    from trollmoves.server import DEFAULT_DECOMPRESSION_ATTEMPTS, DecompressionError, unpack
+
+    with patch("trollmoves.server.bzip", side_effect=OSError("Invalid data stream")) as bzip, \
+            patch("trollmoves.server.time.sleep"):
+        with pytest.raises(DecompressionError):
+            unpack(str(tmp_path / "my_file.txt.bz2"), compression="bzip", working_directory=str(tmp_path))
+
+    assert DEFAULT_DECOMPRESSION_ATTEMPTS > 1
+    assert bzip.call_count == DEFAULT_DECOMPRESSION_ATTEMPTS
+
+
 def _names_in(directory):
     return sorted(os.path.basename(str(path)) for path in directory.iterdir())
 
@@ -602,6 +657,28 @@ def test_process_path_schedules_the_decompressed_file_for_removal(tmp_path):
                  MagicMock(), deleter=deleter)
 
     deleter.add.assert_called_once_with(str(working_directory / "my_file.txt"))
+
+
+def test_process_path_does_not_publish_a_file_that_could_not_be_decompressed(tmp_path, caplog):
+    """Test that the compressed file is not announced in place of the decompressed one."""
+    from trollmoves.server import process_path
+
+    compressed_file = tmp_path / "my_file.txt.bz2"
+    compressed_file.write_bytes(b"this is not bzip2 data")
+    working_directory = tmp_path / "work"
+    working_directory.mkdir()
+    config = _compressing_chain_config(tmp_path, working_directory)
+    config["decompression_retry_delay"] = "0"
+    publisher = MagicMock()
+    deleter = MagicMock()
+
+    with caplog.at_level(logging.ERROR):
+        process_path(config, str(compressed_file), publisher, deleter=deleter)
+
+    publisher.send.assert_not_called()
+    deleter.add.assert_not_called()
+    assert "my_file.txt.bz2" in caplog.text
+    assert _names_in(working_directory) == []
 
 
 def test_process_path_does_not_schedule_a_file_that_was_not_decompressed(tmp_path):
